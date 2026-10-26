@@ -2,7 +2,7 @@
 
 Branch `website/custom-domain` (the founder's rename of `research-streaming-v3`; same history),
 worktree `addis-ababa`, lane DB `clue_addis-ababa@55040` (throwaway, empty, at head `aaff3d831895`).
-Spec: `docs/superpowers/specs/2026-09-17-custom-domain-publishing-design.md` §7/§8.2/§10/§11.
+Spec: `docs/superpowers/specs/archive/2026-09-17-custom-domain-publishing-design.md` §7/§8.2/§10/§11.
 Plan: `docs/superpowers/plans/2026-09-17-custom-domain-publishing-s2.md`. Per-task briefs, reports
 and the full ruling ledger: `.superpowers/sdd/2026-09-17-custom-domain-publishing-s2/progress.md`.
 Predecessor: `_memory/2026-09-17-custom-domain-publishing-s1.md` (system hostnames live).

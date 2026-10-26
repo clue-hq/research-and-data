@@ -70,5 +70,5 @@ calls (one path per call), provider caller reports settled cost onto the tool ob
 redaction before export, ids stamped back onto ledger rows.
 
 ## Design note
-`docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md` (draft, written
+`docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md` (draft, written
 2026-09-14 after all three decisions were ruled; awaiting founder review; not committed).

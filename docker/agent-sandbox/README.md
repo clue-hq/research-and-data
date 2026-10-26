@@ -4,7 +4,7 @@ The Head-of-ABM agent's `run_python@1` tool does not run scripts on the serving 
 starts one throwaway container from this image, hands it the script on stdin, and throws the
 container away when the script is done. This directory is that image.
 
-Spec: `docs/superpowers/specs/2026-09-19-agent-code-execution-and-document-attachments-design.md`
+Spec: `docs/superpowers/specs/archive/2026-09-19-agent-code-execution-and-document-attachments-design.md`
 §3.4. The container flags (no network, read-only root, unprivileged user, cpu/memory/pids ceilings)
 live in `platform/api/clue_api/sandbox/docker_runner.py`, not here — this file is only the
 filesystem the script gets to stand on.

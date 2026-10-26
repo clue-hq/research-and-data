@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, pydantic, SQLAlchemy async, the toolbelt, pytest.
 
-**Spec:** `docs/superpowers/specs/2026-09-13-agent-workspace-reorganization-design.md` — W4 (read side), W9, §4.5. Builds on `2026-09-13-read-tools-hotfix.md` (byte budget, `offset` on the claims read, W10).
+**Spec:** `docs/superpowers/specs/archive/2026-09-13-agent-workspace-reorganization-design.md` — W4 (read side), W9, §4.5. Builds on `2026-09-13-read-tools-hotfix.md` (byte budget, `offset` on the claims read, W10).
 
 ## Global Constraints
 

@@ -13,6 +13,7 @@ from clue_api.sandbox.docker_runner import (
     SandboxLimits,
     build_command,
     docker_available,
+    kill_area_containers,
     run_script,
 )
 from clue_api.sandbox.workspaces import sandbox_mounts_for_lease
@@ -167,7 +168,7 @@ def test_real_output_can_be_snapshotted_without_permission_repair(tmp_path: Path
         assert output.stat().st_uid == os.getuid()
         assert stat.S_IMODE(output.stat().st_mode) == 0o600
         assert stat.S_IMODE(output.parent.stat().st_mode) == 0o700
-        refs = asyncio.run(workspace.lease.backend.snapshot_outputs(empty_after=True))
+        refs = asyncio.run(workspace.lease.backend.snapshot_outputs(reopen_after=True))
         assert len(refs) == 1
         assert workspace.sink.records == [
             (
@@ -177,7 +178,9 @@ def test_real_output_can_be_snapshotted_without_permission_repair(tmp_path: Path
                 "application/octet-stream",
             )
         ]
-        assert not output.exists()
+        # The file stays for the chat's next turn, writable again (F3 stopgap).
+        assert output.read_bytes() == b"account,acv\nExample,12\n"
+        assert stat.S_IMODE(output.stat().st_mode) == 0o600
     finally:
         workspace.close()
 
@@ -200,3 +203,32 @@ def test_run_resolves_docker_before_sanitizing_environment(
     assert result.exit_code == 0
     assert observed["command"][0] == executable
     assert observed["environment"] == {"PATH": "/usr/bin:/bin:/usr/local/bin"}
+
+
+# --- F3 Phase 1, plan Task 6 (WS-16; AW-19): a worker's containers carry its area ------------
+
+
+def test_build_command_carries_the_area_label(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(os, "getuid", lambda: 1234)
+    mounts = _mounts(tmp_path)
+    command = build_command(mounts, LIMITS, label="exec-1", area="area-2")
+    assert "--label" in command
+    assert "clue.worker-area=area-2" in command
+    assert "clue.execution=exec-1" in command
+    assert "clue.worker-area=area-2" not in build_command(mounts, LIMITS, label="exec-1")
+
+
+def test_kill_area_containers_kills_only_that_area(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(argv: list[str], **_: object) -> subprocess.CompletedProcess[bytes]:
+        calls.append(argv)
+        stdout = b"c1\nc2\n" if argv[:2] == ["docker", "ps"] else b""
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr=b"")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert kill_area_containers("area-2") == 2
+    assert calls[0] == ["docker", "ps", "-q", "--filter", "label=clue.worker-area=area-2"]
+    assert calls[1] == ["docker", "kill", "c1", "c2"]

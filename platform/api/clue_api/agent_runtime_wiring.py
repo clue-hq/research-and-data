@@ -42,6 +42,7 @@ from clue_agents import (
     ResolvedAgentProfile,
     SpecialistTaskEnvelope,
     VersionedWriteOutcome,
+    WorkspaceConflict,
 )
 from clue_agents.contracts import (
     MODEL_FORBIDDEN_AUTHORITY_KEYS,
@@ -847,14 +848,22 @@ class AgentFinalizationAuthority:
                 workspace_id=workspace_id,
                 usage=self._lease.usage_snapshot(),
             )
-            self._lease.authorize_cleanup(finalization_ref=existing)
             return existing
-        # Snapshot-then-empty: the first call of the turn persists and clears ``outputs/``
-        # for the thread's next turn, and any later call returns that same single-flight
-        # answer, so the two sites agree without re-walking an emptied folder.
-        expected_outputs = tuple(await self._lease.backend.snapshot_outputs(empty_after=True))
+        # Snapshot-then-reopen: the first call of the turn persists ``outputs/`` and hands it
+        # back writable, with its files, for the thread's next turn (F3 stopgap); any later
+        # call returns that same single-flight answer, so the two sites agree.
+        expected_outputs = tuple(await self._lease.backend.snapshot_outputs(reopen_after=True))
         if envelope.output_refs != expected_outputs:
             raise ValueError("finalization outputs differ from the frozen workspace snapshot")
+        # F3 (WS-9, AW-18): the agent's folders are saved as the chat's next version before the
+        # turn commits, so a finalized turn always has its files saved. A save that cannot reach
+        # storage after its retries raises here and the turn fails uncommitted; a save that lost
+        # its compare-and-set or the fleet lease is a zombie, which must not commit either.
+        saved = await self._lease.save_snapshot()
+        if saved.status in {"stale", "fenced"}:
+            raise WorkspaceConflict(
+                f"the turn's workspace save was refused ({saved.status}); it must not commit"
+            )
         await self._turns.record_workspace_usage(
             turn_id=turn_id,
             workspace_id=workspace_id,
@@ -899,7 +908,6 @@ class AgentFinalizationAuthority:
             execution_id=envelope.execution_id,
             node_key=None,
         )
-        self._lease.authorize_cleanup(finalization_ref=envelope_ref)
         return envelope_ref
 
     async def _existing(
@@ -1444,7 +1452,10 @@ class GovernedAgentToolFactory:
             model_input = ModelFinalizeRequest.model_validate(kwargs)
             # Every refusal must come before the completion guard writes outputs/ and before the
             # snapshot freezes it; afterwards the repair a refusal asks for cannot be made.
-            await self._execution.check_finalizable(status=model_input.status)
+            await self._execution.check_finalizable(
+                status=model_input.status,
+                open_gate_refs=model_input.open_gate_refs,
+            )
             if (
                 model_input.status is FinalizeStatus.COMPLETED
                 and self._required_output_path is not None
@@ -1501,7 +1512,7 @@ class GovernedAgentToolFactory:
                     ]
                 )
             )
-            output_refs = tuple(await self._lease.backend.snapshot_outputs(empty_after=True))
+            output_refs = tuple(await self._lease.backend.snapshot_outputs(reopen_after=True))
             domain_refs = _with_written_documents(
                 model_input.domain_refs,
                 written=self._lease.backend.written_documents,

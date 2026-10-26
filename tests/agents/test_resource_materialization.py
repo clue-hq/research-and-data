@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import stat
+from collections.abc import Mapping
 from pathlib import Path
 from uuid import UUID
 
@@ -155,7 +156,7 @@ def test_failed_materialization_never_writes_readiness_manifest_and_is_discardab
         assert not harness.lease.resources_frozen
         assert not (harness.thread_path / ".deepagent/manifest.json").exists()
 
-        harness.factory.discard_failed_materialization(harness.lease)
+        harness.factory.release(harness.lease)
         # The thread workspace persists; only this turn's lease is dropped, and the next
         # turn's materialization resets and rewrites the trusted trees.
         assert harness.thread_path.exists()
@@ -293,18 +294,167 @@ def test_verify_still_fails_loudly_when_the_rebuilt_bytes_are_wrong(
         seed_path.chmod(0o400)
         context_path.chmod(0o500)
 
-        original = AnchoredAgentWorkspaceBackend.materialize_bytes
+        original = AnchoredAgentWorkspaceBackend.sync_materialized_trees
+        prefix, _, relative = seeds[0].path.partition("/")
 
-        def corrupt(self: AnchoredAgentWorkspaceBackend, path: str, data: bytes) -> object:
-            payload = b'{"project":"still-wrong"}' if path == seeds[0].path else data
-            return original(self, path, payload)
+        def corrupt(
+            self: AnchoredAgentWorkspaceBackend, trees: Mapping[str, Mapping[str, bytes]]
+        ) -> object:
+            wrong = {**trees, prefix: {**trees[prefix], relative: b'{"project":"still-wrong"}'}}
+            return original(self, wrong)
 
-        monkeypatch.setattr(AnchoredAgentWorkspaceBackend, "materialize_bytes", corrupt)
+        monkeypatch.setattr(AnchoredAgentWorkspaceBackend, "sync_materialized_trees", corrupt)
         with pytest.raises(WorkspaceSecurityError, match="verification failed"):
             materializer.verify_materialized(
                 lease=harness.lease,
                 snapshot=snapshot,
                 seed_files=seeds,
+            )
+    finally:
+        harness.close()
+
+
+# --- F3 Phase 1, plan Task 5 (spec WS-36): recipe folders are written only where they changed ---
+
+
+def _input_seed(path: str, content: bytes) -> WorkspaceSeedFile:
+    return WorkspaceSeedFile(
+        path=path,
+        content=content,
+        sha256=hashlib.sha256(content).hexdigest(),
+        media_type="text/plain",
+    )
+
+
+def _open_next_turn(harness: WorkspaceHarness, execution: ExecutionId) -> None:
+    """Release this turn's lease and open the next turn's on the same thread folder."""
+
+    harness.lease.release()
+    harness.lease = harness.factory.acquire(
+        workspace_id="ws-1",
+        project_id="project-1",
+        thread_id="thread-1",
+        execution_id=execution,
+        policy=policy(),
+    )
+
+
+def _inode(path: Path) -> int:
+    return path.stat().st_ino
+
+
+def test_second_materialize_with_same_snapshot_writes_only_new_input(tmp_path: Path) -> None:
+    harness = make_workspace(tmp_path)
+    snapshot, seeds = resource_snapshot()
+    try:
+        AgentResourceMaterializer().materialize(
+            lease=harness.lease,
+            snapshot=snapshot,
+            seed_files=(*seeds, _input_seed("inputs/user-message.txt", b"first message")),
+        )
+        skill = harness.thread_path / ".deepagent/skills/project-planning/1.0.0/SKILL.md"
+        context = harness.thread_path / "context/project.json"
+        message = harness.thread_path / "inputs/user-message.txt"
+        before = (_inode(skill), _inode(context), _inode(message))
+
+        _open_next_turn(harness, _SECOND_EXECUTION)
+        AgentResourceMaterializer().materialize(
+            lease=harness.lease,
+            snapshot=snapshot,
+            seed_files=(*seeds, _input_seed("inputs/user-message.txt", b"second message")),
+        )
+        assert _inode(skill) == before[0]
+        assert _inode(context) == before[1]
+        assert _inode(message) != before[2]
+        assert message.read_bytes() == b"second message"
+        assert stat.S_IMODE(message.stat().st_mode) == 0o400
+    finally:
+        harness.close()
+
+
+def test_changed_budget_rewrites_only_budget(tmp_path: Path) -> None:
+    harness = make_workspace(tmp_path)
+    snapshot, seeds = resource_snapshot()
+    budget = "context/project/budget.json"
+    try:
+        AgentResourceMaterializer().materialize(
+            lease=harness.lease,
+            snapshot=snapshot,
+            seed_files=(*seeds, _input_seed(budget, b'{"spent":4.2}')),
+        )
+        card = harness.thread_path / "context/project.json"
+        card_inode = _inode(card)
+        _open_next_turn(harness, _SECOND_EXECUTION)
+        AgentResourceMaterializer().materialize(
+            lease=harness.lease,
+            snapshot=snapshot,
+            seed_files=(*seeds, _input_seed(budget, b'{"spent":6.1}')),
+        )
+        assert _inode(card) == card_inode
+        assert (harness.thread_path / budget).read_bytes() == b'{"spent":6.1}'
+    finally:
+        harness.close()
+
+
+def test_a_file_no_longer_pinned_is_removed(tmp_path: Path) -> None:
+    harness = make_workspace(tmp_path)
+    snapshot, seeds = resource_snapshot()
+    try:
+        AgentResourceMaterializer().materialize(
+            lease=harness.lease,
+            snapshot=snapshot,
+            seed_files=(*seeds, _input_seed("inputs/old-attachment-note.txt", b"x")),
+        )
+        _open_next_turn(harness, _SECOND_EXECUTION)
+        AgentResourceMaterializer().materialize(
+            lease=harness.lease, snapshot=snapshot, seed_files=seeds
+        )
+        assert not (harness.thread_path / "inputs/old-attachment-note.txt").exists()
+    finally:
+        harness.close()
+
+
+def test_agent_folders_untouched_by_materialize(tmp_path: Path) -> None:
+    harness = make_workspace(tmp_path)
+    snapshot, seeds = resource_snapshot()
+    try:
+        harness.lease.backend.write_text_sync("scratch/notes.md", "keep me")
+        note = harness.thread_path / "scratch/notes.md"
+        note_inode = _inode(note)
+        AgentResourceMaterializer().materialize(
+            lease=harness.lease, snapshot=snapshot, seed_files=seeds
+        )
+        _open_next_turn(harness, _SECOND_EXECUTION)
+        AgentResourceMaterializer().materialize(
+            lease=harness.lease, snapshot=snapshot, seed_files=seeds
+        )
+        assert note.read_text() == "keep me"
+        assert _inode(note) == note_inode
+    finally:
+        harness.close()
+
+
+def test_sync_materialized_trees_reports_what_it_wrote(tmp_path: Path) -> None:
+    harness = make_workspace(tmp_path)
+    try:
+        trees = {
+            ".deepagent": {"manifest.json": b"{}"},
+            "inputs": {"user-message.txt": b"hi"},
+            "context": {"project.json": b"{}"},
+        }
+        first = harness.lease.backend.sync_materialized_trees(trees)
+        second = harness.lease.backend.sync_materialized_trees(
+            {**trees, "inputs": {"user-message.txt": b"hello"}}
+        )
+        assert first[".deepagent"].written == ("manifest.json",)
+        assert second[".deepagent"].written == ()
+        assert second["context"].unchanged == 1
+        assert second["inputs"].written == ("user-message.txt",)
+        with pytest.raises(WorkspaceSecurityError):
+            harness.lease.backend.sync_materialized_trees({"scratch": {"x.md": b"no"}})
+        with pytest.raises(WorkspaceSecurityError):
+            harness.lease.backend.sync_materialized_trees(
+                {**trees, "context": {"bad.json": b"\xff\xfe"}}
             )
     finally:
         harness.close()

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12 / uv workspace (`uv run pytest`), pydantic tool models (`clue_toolbelt`), the ARV2 `ProviderCaller` + `provider_call_ledger`, YAML profile catalog with sha256 pins, JSON recipe revisions, the generated operating manual (`make manual`), LangChain `@tool` in the design runtime, one TypeScript label map in the frontend.
 
-**Spec:** `docs/superpowers/specs/2026-09-22-web-search-tool-design.md`
+**Spec:** `docs/superpowers/specs/archive/2026-09-22-web-search-tool-design.md`
 
 ## Global Constraints
 
@@ -464,7 +464,7 @@ Expected: FAIL with `ModuleNotFoundError: clue_api.web_search_tool`.
 
 ```python
 """``web_search@1`` — one open-web search for Head-of-ABM and the design agents, used LAST
-(spec ``docs/superpowers/specs/2026-09-22-web-search-tool-design.md``).
+(spec ``docs/superpowers/specs/archive/2026-09-22-web-search-tool-design.md``).
 
 The model authors a query, a result count and optional domain / date filters. Everything else that
 shapes the request is fixed here — ``type="deep-lite"``, a text ``outputSchema``, highlights on —
@@ -1437,7 +1437,7 @@ git commit -m "docs(design-agent): web search is the last resort — scene tools
 **Files:**
 - Modify: `docs/specs/M8B-exa-sumble-account-deep-integration-roadmap.md:105-106`
 - Modify: `docs/specs/ARV2-MASTER-PLAN.md:489`
-- Modify: `docs/superpowers/specs/2026-09-22-web-search-tool-design.md` (status line → implemented; §4 offline items ticked)
+- Modify: `docs/superpowers/specs/archive/2026-09-22-web-search-tool-design.md` (status line → implemented; §4 offline items ticked)
 - Modify: `_memory/2026-09-22-web-search-tool-design.md` (closing entry), `_memory/README.md` (index line)
 
 - [ ] **Step 1: M8B item 15**
@@ -1445,14 +1445,14 @@ git commit -m "docs(design-agent): web search is the last resort — scene tools
 Append to the item 15 paragraph (keep the original two sentences):
 
 ```
-    **Superseded 2026-09-22** by `docs/superpowers/specs/2026-09-22-web-search-tool-design.md`
+    **Superseded 2026-09-22** by `docs/superpowers/specs/archive/2026-09-22-web-search-tool-design.md`
     (`web_search@1`, granted to head-of-abm@v61 and design@v3, used last, text never a claim);
     M8B's target-locked acquisition is untouched.
 ```
 
 - [ ] **Step 2: Master plan**
 
-In `ARV2-MASTER-PLAN.md` line 489, after `the Exa MCP search tool on the main agent,` insert ` (landed 2026-09-22 as the direct governed tool ``web_search@1``, not MCP — spec ``docs/superpowers/specs/2026-09-22-web-search-tool-design.md``),`.
+In `ARV2-MASTER-PLAN.md` line 489, after `the Exa MCP search tool on the main agent,` insert ` (landed 2026-09-22 as the direct governed tool ``web_search@1``, not MCP — spec ``docs/superpowers/specs/archive/2026-09-22-web-search-tool-design.md``),`.
 
 - [ ] **Step 3: Spec status and memory**
 
@@ -1471,7 +1471,7 @@ Expected: all PASS, `manual-check` exit 0. Report any red honestly with its outp
 - [ ] **Step 5: Commit**
 
 ```bash
-git add docs/specs/M8B-exa-sumble-account-deep-integration-roadmap.md docs/specs/ARV2-MASTER-PLAN.md docs/superpowers/specs/2026-09-22-web-search-tool-design.md _memory/2026-09-22-web-search-tool-design.md _memory/README.md
+git add docs/specs/M8B-exa-sumble-account-deep-integration-roadmap.md docs/specs/ARV2-MASTER-PLAN.md docs/superpowers/specs/archive/2026-09-22-web-search-tool-design.md _memory/2026-09-22-web-search-tool-design.md _memory/README.md
 git commit -m "docs: web_search@1 supersedes M8B item 15; master plan Track O says direct tool, not MCP; spec status"
 ```
 

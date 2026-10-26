@@ -8,7 +8,7 @@
 
 **Tech Stack:** FastAPI + pydantic + SQLAlchemy text SQL, `clue_spend.ProviderCaller` over `HttpxTransport`, `asyncio` (backend); Next.js App Router, Zod, `node:test` via `tsx` (frontend).
 
-**Spec:** `docs/superpowers/specs/2026-09-18-conversation-naming-design.md`.
+**Spec:** `docs/superpowers/specs/archive/2026-09-18-conversation-naming-design.md`.
 
 ## Global Constraints
 
@@ -548,7 +548,7 @@ Expected: FAIL with `ModuleNotFoundError: No module named 'clue_api.conversation
 # platform/api/clue_api/conversation_naming.py
 """Conversation naming — one cheap call names a chat and, on the Home path, its project.
 
-Spec: docs/superpowers/specs/2026-09-18-conversation-naming-design.md. The namer is a service
+Spec: docs/superpowers/specs/archive/2026-09-18-conversation-naming-design.md. The namer is a service
 step with no agent authority: it is not a tool, appears in no profile, and never raises into the
 turn that started it. It fills only placeholders — ``agent_thread.title IS NULL`` and
 ``project.name = UNTITLED_PROJECT_NAME`` — so a human rename always wins (§4.5).
@@ -1886,7 +1886,7 @@ a minute (spec 2026-09-18-conversation-naming-design §4.7)."
 
 **Files:**
 - Modify: `apps/frontend/docs/api-contracts/projects.md` (§4, ~lines 1074–1090; the `"title": "Untitled project"` example in §5 keeps its value but gains one sentence)
-- Modify: `docs/superpowers/specs/2026-09-18-conversation-naming-design.md` (status line)
+- Modify: `docs/superpowers/specs/archive/2026-09-18-conversation-naming-design.md` (status line)
 - Modify: `_memory/2026-09-18-conversation-naming-design.md` and `_memory/README.md`
 
 - [ ] **Step 1: Rewrite contract §4**
@@ -1930,7 +1930,7 @@ Spec status line → `**Status:** approved 2026-09-18; implemented on branch res
 - [ ] **Step 3: Commit**
 
 ```bash
-git add apps/frontend/docs/api-contracts/projects.md docs/superpowers/specs/2026-09-18-conversation-naming-design.md _memory/2026-09-18-conversation-naming-design.md _memory/README.md
+git add apps/frontend/docs/api-contracts/projects.md docs/superpowers/specs/archive/2026-09-18-conversation-naming-design.md _memory/2026-09-18-conversation-naming-design.md _memory/README.md
 git commit -m "docs: conversation naming — contract §4 rewritten, spec status, session record"
 ```
 

@@ -7,7 +7,9 @@ which research run that turn's authority ended up launching.
 
 Everything here is a join over rows that already exist. Nothing is stored a second time, nothing is
 derived that a receipt does not already state, and "open" is the absence of an answer row (ratified
-§6-D3), never a column:
+§6-D3), never a column — with one more absence for one kind: a CRM write permission card is also
+closed once its proposal has moved on without an answer (a newer card ``replaced`` it, or a
+reconnect closed it), because such a card can never be answered (:data:`GATE_WITHDRAWN_SQL`):
 
 * :func:`open_gate_kinds_for_threads` answers the sidebar's question ("does this conversation want
   something from me?") for many threads at once, which is what the thread list needs;
@@ -29,12 +31,26 @@ from sqlalchemy import text
 from clue_db import ConnFactory, transaction
 
 __all__ = [
+    "GATE_WITHDRAWN_SQL",
     "GateAnswerView",
     "GateLaunchView",
     "GateView",
     "open_gate_kinds_for_threads",
     "thread_gates",
 ]
+
+
+#: A SQL predicate over an ``agent_gate`` row aliased ``g``: the gate can no longer be answered
+#: although nobody answered it. Today only a CRM write permission card is withdrawn, when its
+#: proposal is no longer waiting for it (``crm_write_proposal.status`` is ``replaced`` by a newer
+#: card, or ``finished`` because a reconnect closed it). Derived from the proposal row the card
+#: belongs to, never stored on the gate (gates and answers are append-only), and shared by every
+#: place that derives openness so none of them drifts.
+GATE_WITHDRAWN_SQL = (
+    "EXISTS (SELECT 1 FROM crm_write_proposal withdrawn_p "
+    "WHERE withdrawn_p.gate_id = g.gate_id AND withdrawn_p.workspace_id = g.workspace_id "
+    "AND withdrawn_p.status NOT IN ('prepared', 'awaiting_permission'))"
+)
 
 
 class GateAnswerView(BaseModel):
@@ -94,14 +110,16 @@ class GateView(BaseModel):
     snapshot_erasure_reason: str | None = None
     answer: GateAnswerView | None
     launches: tuple[GateLaunchView, ...]
+    #: Unanswered and no longer answerable (:data:`GATE_WITHDRAWN_SQL`).
+    withdrawn: bool = False
 
     @property
     def is_open(self) -> bool:
-        return self.answer is None and self.snapshot_erased_at is None
+        return self.answer is None and self.snapshot_erased_at is None and not self.withdrawn
 
 
 _OPEN_KINDS_SQL = text(
-    """
+    f"""
     SELECT g.thread_id, g.kind
     FROM agent_gate g
     LEFT JOIN agent_gate_answer a
@@ -109,6 +127,7 @@ _OPEN_KINDS_SQL = text(
     WHERE g.workspace_id = :workspace_id
       AND g.thread_id = ANY(CAST(:thread_ids AS text[]))
       AND a.gate_id IS NULL AND g.snapshot_erased_at IS NULL
+      AND NOT {GATE_WITHDRAWN_SQL}
     ORDER BY g.created_at, g.gate_id
     """
 )
@@ -142,8 +161,9 @@ async def open_gate_kinds_for_threads(
 
 
 _THREAD_GATES_SQL = text(
-    """
-    SELECT g.gate_id, g.workspace_id, g.project_id, g.thread_id, g.turn_id, g.kind,
+    f"""
+    SELECT {GATE_WITHDRAWN_SQL} AS withdrawn,
+           g.gate_id, g.workspace_id, g.project_id, g.thread_id, g.turn_id, g.kind,
            g.subject_ref, g.subject_revision, g.expected_subject_sha256, g.subject_snapshot,
            g.permitted_decisions, g.max_spend_cents, g.currency, g.addressee_user_id, g.created_at,
            g.snapshot_erased_at, g.snapshot_erasure_reason,
@@ -264,6 +284,7 @@ async def thread_gates(
                 launches=tuple(
                     launches_by_ref.get(answer.action_ref, ()) if answer is not None else ()
                 ),
+                withdrawn=answer is None and bool(row["withdrawn"]),
             )
         )
     return tuple(views)

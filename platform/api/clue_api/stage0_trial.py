@@ -754,7 +754,7 @@ class Stage0Trial:
             raise RuntimeError(
                 f"Recipe 0 did not reach its interaction gate (status={recipe_status.value})"
             )
-        lease = self._components.workspaces.acquire(
+        lease = await self._components.workspaces.acquire_restored(
             workspace_id=self.state.workspace_id,
             project_id=self.state.project_id,
             thread_id=self.state.thread_id,
@@ -844,7 +844,7 @@ class Stage0Trial:
             await self.export_report()
             return outcome, assistant_message
         finally:
-            lease.release()
+            await self._components.workspaces.release_saved(lease)
 
     async def _recompute_readiness(
         self,

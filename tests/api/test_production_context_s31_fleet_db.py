@@ -79,6 +79,7 @@ from clue_fleet import (
     claim_next_task,
     finish_task,
 )
+from clue_fleet.lease import WorkId, acquire_work_lease
 from clue_obs.otel.metrics import InMemorySink, get_metric_sink, set_metric_sink
 from clue_research.stage0 import (
     CLIENT_KNOWLEDGE_FIELDS,
@@ -264,6 +265,8 @@ def test_real_fleet_chain_keeps_original_pin_through_checkpoint_finalization_and
                 settings=settings,
                 source_root=source_root,
                 home_root=home_root,
+                # The snapshot store joins this test's rolled-back transaction (F3).
+                conn_factory=factory,
             )
             models = _ScriptedModels(_responses())
             artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=factory)
@@ -407,6 +410,17 @@ def test_real_fleet_chain_keeps_original_pin_through_checkpoint_finalization_and
                     project_run_id=work_id,
                 )
                 assert claimed is not None
+                # The fleet holds a lease on the thread for every turn; the save is fenced by it.
+                thread_lease = await acquire_work_lease(
+                    conn,
+                    work_id=WorkId(
+                        thread_work_id(
+                            workspace_id=seeded.workspace_id, thread_id=submission.thread_id
+                        )
+                    ),
+                    worker_id="s31-fleet-worker",
+                )
+                assert thread_lease is not None
                 handler = build_agent_turn_work_handler(
                     components=components,
                     tools=tools,
@@ -429,7 +443,7 @@ def test_real_fleet_chain_keeps_original_pin_through_checkpoint_finalization_and
                             thread_id=submission.thread_id,
                         ),
                         worker_id="s31-fleet-worker",
-                        lease_generation=claimed.attempts,  # type: ignore[arg-type]
+                        lease_generation=thread_lease.generation,
                         payload=claimed.payload,
                         stop_requested=__import__("asyncio").Event(),
                         lease_lost=__import__("asyncio").Event(),

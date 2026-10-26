@@ -1,7 +1,7 @@
 # Asset ingestion implementation and verification
 
 Implemented in San Diego on `asset-ingestion/improvements` against the unchanged
-[authorized design](../specs/2026-09-21-asset-context-and-bulk-upload-design.md).
+[authorized design](../specs/archive/2026-09-21-asset-context-and-bulk-upload-design.md).
 The full Fredericton ICP-definition transcript was read before implementation.
 Comparison/publication target remains `origin/integration/design-improvement`.
 

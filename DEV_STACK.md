@@ -76,7 +76,7 @@ mismatch. Every other wrapper keeps the defaults, so it is unchanged.
 
 Head-of-ABM's `run_python@1` runs the agent's own Python in a Docker container so it can open a
 PDF, Word, PowerPoint or Excel attachment (spec
-`docs/superpowers/specs/2026-09-19-agent-code-execution-and-document-attachments-design.md`).
+`docs/superpowers/specs/archive/2026-09-19-agent-code-execution-and-document-attachments-design.md`).
 The **fleet workers** start those containers, so a worker host needs three things, and `up` /
 `restart-workers` check all three before starting a worker and refuse on a miss:
 

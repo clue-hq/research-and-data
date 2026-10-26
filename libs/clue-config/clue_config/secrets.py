@@ -104,6 +104,9 @@ class Secrets(BaseSettings):
     parallel_api_key: SecretStr | None = None
     firecrawl_api_key: SecretStr | None = None
     crm_api_key: SecretStr | None = None
+    # Env: CLUE_COMPOSIO_API_KEY. The Composio project API key behind the CRM integration
+    # (HubSpot / Salesforce); sent as the ``x-api-key`` header by ``clue_api.crm.composio_gateway``.
+    composio_api_key: SecretStr | None = None
     # Env: CLUE_AI_ARK_API_KEY. Read by the ARV2 AI Ark client (people/company enrichment); sent
     # as the ``X-TOKEN`` header, which the ARV2 raw sink redacts before any record is written.
     ai_ark_api_key: SecretStr | None = None

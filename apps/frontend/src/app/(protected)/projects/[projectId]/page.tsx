@@ -4,6 +4,7 @@ import { ProjectsScreen } from "@/features/projects/components/projects-screen";
 import { ProjectWorkspaceShell } from "@/features/projects/components/project-workspace-shell";
 import { getProjectWorkspace } from "@/features/projects/data/project-workspace.repository";
 import { projectChatHref } from "@/features/chat-shell/model/chat-shell-routes";
+import { prefilledPrompt } from "@/features/projects/model/prefilled-prompt";
 
 export const metadata: Metadata = {
   title: "Project",
@@ -14,6 +15,7 @@ interface ProjectPageProps {
   searchParams: Promise<{
     edit?: string;
     handoff?: string;
+    prompt?: string | string[];
     selection?: string;
     surface?: string;
     thread?: string;
@@ -64,5 +66,12 @@ export default async function ProjectPage({
     );
   }
 
-  return <ProjectsScreen projectId={projectId} />;
+  // `?prompt=` (the Settings "Ask Clue to …" links) opens the Home with that
+  // text drafted in its composer — never sent until the person submits.
+  return (
+    <ProjectsScreen
+      initialPrompt={prefilledPrompt(query.prompt)}
+      projectId={projectId}
+    />
+  );
 }

@@ -1,6 +1,6 @@
 # 2026-09-29 — Head-of-ABM continuation, prompt caching and compaction
 
-Spec `docs/superpowers/specs/2026-09-29-head-of-abm-continuation-and-compaction-design.md`;
+Spec `docs/superpowers/specs/archive/2026-09-29-head-of-abm-continuation-and-compaction-design.md`;
 plan `docs/superpowers/plans/2026-09-29-head-of-abm-continuation-and-compaction.md`.
 Branch `codex/ai-ark-committee-discovery-spec-v1`, commits `cdec04fa7..` (local only).
 

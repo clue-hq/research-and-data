@@ -1091,6 +1091,22 @@ def test_workspace_erasure_removes_the_full_dynamic_kb_surface_and_blocks_resurr
             for artifact_key, body in artifact_keys.items():
                 await storage.put(artifact_key, body.encode(), media_type="text/plain")
 
+            # Review of F3 Phase 2: this eraser purges the keys its own transaction marked.
+            # ``purge_erased_artifacts`` opens with an unfiltered
+            # ``UPDATE artifact … WHERE expires_at <= now()`` and a sequential scan, which is
+            # the keyless maintenance sweep's work — not a workspace erasure's to do on rows
+            # that belong to other owners.
+            expiring = make_artifact_key(workspace_id, "e" * 64)
+            await storage.put(expiring, b"another owner's bytes", media_type="text/plain")
+            await conn.execute(
+                text(
+                    "INSERT INTO artifact (storage_key, workspace_id, content_sha256, "
+                    "media_type, size_bytes, expires_at) VALUES (:key, :ws, :sha, "
+                    "'text/plain', 21, now() - interval '1 second')"
+                ),
+                {"key": expiring, "ws": workspace_id, "sha": "e" * 64},
+            )
+
             eraser = DynamicClientKbWorkspaceEraser(conn_factory=_factory(conn), storage=storage)
             erased = await eraser.erase(
                 workspace_id=workspace_id,
@@ -1103,7 +1119,17 @@ def test_workspace_erasure_removes_the_full_dynamic_kb_surface_and_blocks_resurr
             assert erased.claim_count == 1
             assert erased.artifact_count == 2
             assert set(erased.marked_artifact_keys) == set(artifact_keys)
-            assert storage.objects == {}
+            assert set(storage.objects) == {expiring}
+            untouched = (
+                await conn.execute(
+                    text(
+                        "SELECT erased_at, purged_at, privacy_erased FROM artifact "
+                        "WHERE storage_key = :key"
+                    ),
+                    {"key": expiring},
+                )
+            ).one()
+            assert tuple(untouched) == (None, None, False)
 
             counts = (
                 await conn.execute(

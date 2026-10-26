@@ -1,6 +1,6 @@
 """agent authored discovery: brief, source, thread lock, stop, wake, exclusion (spec 2026-09-30).
 
-Spec: docs/superpowers/specs/2026-09-30-agent-authored-account-discovery-design.md §3–§5, §8.
+Spec: docs/superpowers/specs/archive/2026-09-30-agent-authored-account-discovery-design.md §3–§5, §8.
 A run stores the brief the Head of ABM wrote (``brief_json``) and the source it chose; a partial
 unique index holds one unreleased discovery per project (the project lock); a run carries its
 launching thread, stop request, wake turn and release. A candidate a ``must``/``must_not`` gate

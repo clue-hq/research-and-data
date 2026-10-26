@@ -5,7 +5,7 @@ Originally prepared against Irvine's
 `settings-page` at `5bd1a66c1`, after rebasing onto local `research-streaming` at `440b6a7db`.
 This plan concerns Settings and its actual consumers, not a rewrite of the platform.
 
-**Product specification:** [Settings integration design](../specs/2026-09-15-settings-integration-design.md).
+**Product specification:** [Settings integration design](../specs/archive/2026-09-15-settings-integration-design.md).
 **Implemented API contract:** [Settings contract](../../../apps/frontend/docs/api-contracts/settings.md).
 **Original discussion:** [_memory exploration](../../../_memory/2026-09-14-settings-integration-exploration.md).
 

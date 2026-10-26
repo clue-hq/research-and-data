@@ -176,9 +176,28 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # page briefs, ad headline suggestions) re-minted on main's v71; stage0@v47, manual@v20.
         # v75 (2026-10-19, merges research-streaming's v72): `launch_arv2_discovery@3`; stage0@v48,
         # manual@v21.
-        # v76 (2026-10-20, design/harness-alignment, under trial): prompt v19 (the design brief
-        # carries no copy; a menu of angles for variants); stage0@v49, manual@v22. Same grants.
-        AgentRole.HEAD_OF_ABM: ("f1335bb8c7ba4aa4739c72268d74dc65256726916a46b127c2c815b71c49dd80"),
+        # v76 (2026-10-20, CRM integration Phase 1): four CRM-integration tools granted; the new
+        # `crm-sales-analysis@v1`, stage0-interview@v49 and manual@v22.
+        # v77 (2026-10-22, CRM integration Phase 2): three CRM write tools granted; the new
+        # `crm-writing@v1`, stage0-interview@v50 and manual@v23.
+        # v78 (2026-10-23, CRM integration Phase 3): read_crm_targets, find_crm_list and
+        # link_crm_list granted; `crm-writing@v2`, stage0-interview@v51 and manual@v24.
+        # v79 (2026-10-24, Phase 3 Task 10): no address moves; `crm-writing@v3`,
+        # stage0-interview@v52 and manual@v25.
+        # v80 (2026-10-24, Phase 3 Task 11): no address moves; stage0-interview@v53 and manual@v26.
+        # v81 (2026-10-24, Phase 3 Task 12): no address moves; crm_write_log@1 at its new output
+        # digest, `crm-writing@v4`, stage0-interview@v54 and manual@v27.
+        # v82 (2026-10-25, Phase 4 Task 6): propose_clue_fields_setup@1 granted; read_crm_targets@1
+        # at its new output digest, `crm-writing@v5`, stage0-interview@v55 and manual@v28.
+        # v83 (2026-10-25, Phase 4 live check L4-3): no address moves; `crm-writing@v6`,
+        # stage0-interview@v56 and manual@v29.
+        # v84 (2026-10-25, F3 merged onto CRM Phase 4): no address moves; stage0-interview@v57
+        # and manual@v30 carry F3's workspace text re-minted above CRM.
+        # v85 (2026-10-25, R-14.6): no address moves; `read_crm_targets@1` re-pinned at its new
+        # output digest (clue_fit_level), `crm-writing@v7`, stage0-interview@v58 and manual@v31.
+        # v86 (2026-10-27, main merged into the CRM line): main's prompt v19, stage0-interview@v59
+        # and manual@v32; no address moves.
+        AgentRole.HEAD_OF_ABM: ("5faa39b7b333cbafa0013cde5b911101dff987864a63f6a18320696e54b7cf5c"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -323,7 +342,17 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # (175 -> 176).
     # launch_arv2_discovery@3 (2026-10-16, research-streaming: the brief's exclude list)
     # (176 -> 177).
-    assert len(by_address) == 177
+    # connect_crm@1 (CRM integration Phase 1), ungranted until Task 11 (177 -> 178);
+    # find_crm_actions@1 and run_crm_action@1 likewise (178 -> 180); write_brand_document@1
+    # (180 -> 181).
+    # propose_crm_changes@1 (CRM integration Phase 2), ungranted until the catalog bump
+    # (181 -> 182); crm_write_log@1 and manage_crm_grants@1 likewise (182 -> 184). All three are
+    # granted at head-of-abm@v77; the count is unmoved. read_crm_targets@1 (CRM integration
+    # Phase 3), ungranted until the Phase 3 catalog bump (184 -> 185); find_crm_list@1 and
+    # link_crm_list@1 likewise (185 -> 187). All three are granted at head-of-abm@v78; the count
+    # is unmoved. propose_clue_fields_setup@1 (Phase 4), ungranted until the Phase 4 catalog
+    # bump (187 -> 188), and granted at head-of-abm@v82; the count is unmoved.
+    assert len(by_address) == 188
     assert by_address["manage_products@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["launch_arv2_discovery@3"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["launch_arv2_discovery@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
@@ -454,7 +483,15 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # + manage_products@1 (2026-10-15, main), granted at head-of-abm@v71.
     # launch_arv2_discovery@3 (2026-10-16, research-streaming: the brief's exclude list)
     # (176 -> 177).
-    assert len(by_address) == 177  # + read_account_research@3 (2026-10-05)
+    # connect_crm@1 (CRM integration Phase 1), ungranted until Task 11 (177 -> 178);
+    # find_crm_actions@1 and run_crm_action@1 likewise (178 -> 180); write_brand_document@1
+    # (180 -> 181); propose_crm_changes@1 (CRM integration Phase 2), ungranted (181 -> 182);
+    # crm_write_log@1 and manage_crm_grants@1 likewise (182 -> 184); all three granted at
+    # head-of-abm@v77, the count unmoved; read_crm_targets@1 (Phase 3), ungranted (184 -> 185);
+    # find_crm_list@1 and link_crm_list@1 likewise (185 -> 187); all three granted at
+    # head-of-abm@v78, the count unmoved; propose_clue_fields_setup@1 (Phase 4), ungranted
+    # (187 -> 188), granted at head-of-abm@v82, the count unmoved.
+    assert len(by_address) == 188  # + read_account_research@3 (2026-10-05)
     assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     for address in (
         "create_thread@1",
@@ -561,6 +598,21 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "configure_project_targeting@1",
         # Product management (head-of-abm@v71, 2026-10-15).
         "manage_products@1",
+        # CRM integration Phase 1 (head-of-abm@v76, 2026-10-20).
+        "connect_crm@1",
+        "find_crm_actions@1",
+        "run_crm_action@1",
+        "write_brand_document@1",
+        # CRM integration Phase 2 (head-of-abm@v77, 2026-10-22).
+        "propose_crm_changes@1",
+        "crm_write_log@1",
+        "manage_crm_grants@1",
+        # CRM integration Phase 3 (head-of-abm@v78, 2026-10-23).
+        "read_crm_targets@1",
+        "find_crm_list@1",
+        "link_crm_list@1",
+        # CRM integration Phase 4 (head-of-abm@v82, 2026-10-25).
+        "propose_clue_fields_setup@1",
         "propose_field@2",
         "propose_source@1",
         "read_account_research@2",
@@ -640,9 +692,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v76"
+    assert production.profile_ref.address == "profile:head-of-abm@v86"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v49"
+        "skill:stage0-interview@v59"
     )
     # ARV2 onboarding O6 retired the S4-E Client-KB/Product-KB reader surface from this role: the
     # new lane's Stage-0 knowledge is brand knowledge documents the agent reads off its workspace,
@@ -682,7 +734,7 @@ def test_v70_grants_the_agent_authored_discovery_pair_and_its_teaching(
     stage0-interview version whose section 7b teaches how to write the brief.
     """
 
-    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v76"
+    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v86"
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
     granted = {pin.address for pin in head.profile.tools}
     # v72 re-pins it at `@3` (the brief's exclude list, spec 2026-10-16).
@@ -691,8 +743,8 @@ def test_v70_grants_the_agent_authored_discovery_pair_and_its_teaching(
     assert "launch_arv2_discovery@1" not in granted
     assert "read_discovery_run@3" in granted
     assert "read_discovery_run@2" not in granted
-    assert head.profile.skills[0].resource.address == "skill:stage0-interview@v49"
-    body = head.open_skill("skill:stage0-interview@v49")
+    assert head.profile.skills[0].resource.address == "skill:stage0-interview@v59"
+    body = head.open_skill("skill:stage0-interview@v59")
     assert "## 7b. Discover accounts for this project" in body
     assert "`must_not`" in body
     assert "discovery_in_progress" in body
@@ -715,7 +767,7 @@ def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents(
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v49")
+    body = production.open_skill("skill:stage0-interview@v59")
 
     assert "onboarding has not produced knowledge for this brand yet" in body
     assert "brand onboarding runs from the workspace's onboarding flow" in body
@@ -775,7 +827,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     # uncallable. v54 adds the fifteen manual chapters after it, in profile order: reference, not
     # procedure, each granting no tool.
     assert [item.resource.address for item in disclosures] == [
-        "skill:stage0-interview@v49",
+        "skill:stage0-interview@v59",
         # v55 adds the three document skills between the procedure and the reference shelf: each
         # one is the whole procedure for one document written under `project/`, and grants no tool.
         "skill:account-research-briefing@v3",
@@ -785,7 +837,19 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v22" for name in MANUAL_CHAPTERS),
+        # v76 adds the CRM sales analysis after it: the procedure for the four CRM-integration
+        # tools (and `run_python@1`) granted with it.
+        # v77 re-pins it at v2, whose read-only sentence points to crm-writing.
+        "skill:crm-sales-analysis@v2",
+        # v77 adds the CRM writes after it: the procedure for the three CRM write tools granted
+        # with it (and `connect_crm@1` and `find_crm_actions@1`).
+        # v78 re-pins it at v2, which adds section 3b for the three Phase 3 tools; v79 at v3,
+        # which adds the two lines on records a card creates; v81 at v4, which adds the one line
+        # on never showing Clue's write or proposal ids; v82 at v5, which adds section 3c,
+        # Clue's own fields; v83 at v6, which rewords section 3c items 2 and 3; v85 at v7, which
+        # names Clue's field "Clue fit level".
+        "skill:crm-writing@v7",
+        *(f"skill:manual-{name}@v32" for name in MANUAL_CHAPTERS),
     ]
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -795,7 +859,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     assert briefing_path in body
     assert briefing_path in head.prompt_body
     assert briefing_path in launch.model_description
-    assert briefing_path in head.open_skill("skill:manual-tools@v22")
+    assert briefing_path in head.open_skill("skill:manual-tools@v32")
     with pytest.raises(AgentCatalogError, match="not disclosed"):
         head.open_skill("skill:unknown@v1")
 
@@ -908,7 +972,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v49")
+    body = head.open_skill("skill:stage0-interview@v59")
 
     assert required_guidance in body
 
@@ -962,7 +1026,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     # procedure uncallable. What it can make is a chapter that over-describes the narrowed
     # surface, which is the manual's honesty problem, not the ceiling's.
     remaining = [item.resource.address for item in head.skill_disclosures()]
-    assert "skill:stage0-interview@v49" not in remaining
+    assert "skill:stage0-interview@v59" not in remaining
     # v55's three document skills survive with the manual chapters, and for the same reason: a
     # skill that requires no tool cannot be made uncallable by withdrawing one.
     assert remaining == [
@@ -973,7 +1037,19 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v22" for name in MANUAL_CHAPTERS),
+        # v76 adds the CRM sales analysis after it: the procedure for the four CRM-integration
+        # tools (and `run_python@1`) granted with it.
+        # v77 re-pins it at v2, whose read-only sentence points to crm-writing.
+        "skill:crm-sales-analysis@v2",
+        # v77 adds the CRM writes after it: the procedure for the three CRM write tools granted
+        # with it (and `connect_crm@1` and `find_crm_actions@1`).
+        # v78 re-pins it at v2, which adds section 3b for the three Phase 3 tools; v79 at v3,
+        # which adds the two lines on records a card creates; v81 at v4, which adds the one line
+        # on never showing Clue's write or proposal ids; v82 at v5, which adds section 3c,
+        # Clue's own fields; v83 at v6, which rewords section 3c items 2 and 3; v85 at v7, which
+        # names Clue's field "Clue fit level".
+        "skill:crm-writing@v7",
+        *(f"skill:manual-{name}@v32" for name in MANUAL_CHAPTERS),
     ]
 
 
@@ -1098,3 +1174,212 @@ def test_design_profile_resolves_with_the_full_granted_write_surface(
     # The pin is well-formed (one vendor segment); which model it names is an env setting.
     assert_well_formed_model_id(resolved.profile.model.model_id)
     assert resolved.profile.max_delegation_depth == 0
+
+
+def test_v80_teaches_that_a_message_clue_wrote_is_never_the_persons_words(
+    registry: AgentProfileRegistry,
+) -> None:
+    """R-12.14 (live check L-7): stage0-interview v53 says, where `record_interview_answer` is
+    taught, that a wake-up, a finished discovery or a connected CRM is never recorded."""
+
+    head = registry.resolve(AgentRole.HEAD_OF_ABM)
+    body = head.open_skill("skill:stage0-interview@v59")
+    passage = (
+        "Only the person's own words are recorded. A message Clue wrote — a wake-up after CRM "
+        "changes, a finished discovery, a connected CRM — is never recorded as an interview answer."
+    )
+    assert passage in body
+    section = body.split("## 6. Record in project context", 1)[1].split("\n## ", 1)[0]
+    assert passage in section and "record_interview_answer" in section
+
+
+def test_v81_teaches_never_to_show_clues_write_or_proposal_ids(
+    registry: AgentProfileRegistry,
+) -> None:
+    """R-12.17 (live check L-15): crm-writing v4 is v3 plus one founder-approved sentence in
+    section 8, the write log and undo."""
+
+    head = registry.resolve(AgentRole.HEAD_OF_ABM)
+    # v85 discloses v7, which keeps section 8 unchanged.
+    body = head.open_skill("skill:crm-writing@v7")
+    sentence = (
+        "Never show the person Clue's write or proposal ids; name the record and what changed "
+        "instead."
+    )
+    section = body.split("## 8. The write log and undo", 1)[1].split("\n## ", 1)[0]
+    assert sentence in section
+    root = Path(__file__).resolve().parents[2] / "platform" / "agents" / "catalog" / "skills"
+    v3 = (root / "crm-writing" / "v3" / "SKILL.md").read_text()
+    v4 = (root / "crm-writing" / "v4" / "SKILL.md").read_text()
+    v3_body = v3.split("\n---\n", 1)[1]
+    v4_body = v4.split("\n---\n", 1)[1]
+    assert v4_body.replace(" " + sentence, "") == v3_body
+
+
+def test_v82_grants_clue_fields_setup_and_teaches_clues_own_fields(
+    registry: AgentProfileRegistry,
+) -> None:
+    """CRM integration Phase 4 Task 6: head-of-abm v82 grants `propose_clue_fields_setup@1` and
+    pins crm-writing v5, which is v4's body plus the founder-approved section 1 bullets and
+    section 3c (2026-10-25), and nothing else."""
+
+    head = registry.resolve(AgentRole.HEAD_OF_ABM)
+    granted = {pin.address for pin in head.profile.tools}
+    assert "propose_clue_fields_setup@1" in granted
+    # v83 and later disclose crm-writing v6 or v7, so v5 is read from the catalog folder.
+    root = Path(__file__).resolve().parents[2] / "platform" / "agents" / "catalog" / "skills"
+    body = (root / "crm-writing" / "v5" / "SKILL.md").read_text()
+    section = body.split("## 3c. Clue's own fields", 1)[1].split("\n## ", 1)[0]
+    assert "call `propose_clue_fields_setup` for the project" in section
+    assert "Only a workspace owner or admin can allow it." in section
+    assert "you may propose `link_duplicate` between them" in section
+    v4_body = (root / "crm-writing" / "v4" / "SKILL.md").read_text().split("\n---\n", 1)[1]
+    v5_body = (root / "crm-writing" / "v5" / "SKILL.md").read_text().split("\n---\n", 1)[1]
+    added_bullets = (
+        "- Clue's own fields, once a workspace owner or admin has set them up: Clue tier and "
+        "research link on\n  companies; committee role and contact link on contacts; Clue id on "
+        'both.\n- A "Possible duplicate" link between two CRM records of the same person.\n'
+    )
+    section_3c = "## 3c. Clue's own fields" + section + "\n"
+    assert added_bullets in v5_body and section_3c in v5_body
+    assert v5_body.replace(added_bullets, "").replace(section_3c, "") == v4_body
+
+
+def test_v83_pins_crm_writing_v6_which_rewords_only_section_3c_items_2_and_3(
+    registry: AgentProfileRegistry,
+) -> None:
+    """Phase 4 live check L4-3: head-of-abm v83 moves no address and pins crm-writing v6, which is
+    v5 with section 3c items 2 and 3 reworded (a created record carries its Clue id; possible
+    duplicates are marked with the CRM's own actions), and nothing else."""
+
+    del registry
+    # v85 discloses crm-writing v7, so v6 is read from the catalog folder.
+    root = Path(__file__).resolve().parents[2] / "platform" / "agents" / "catalog" / "skills"
+    v5 = (root / "crm-writing" / "v5" / "SKILL.md").read_text()
+    v6 = (root / "crm-writing" / "v6" / "SKILL.md").read_text()
+    body = v6
+    section = body.split("## 3c. Clue's own fields", 1)[1].split("\n## ", 1)[0]
+    assert "A record Clue creates gets its Clue id by\n   itself." in section
+    assert "`HUBSPOT_CREATE_OBJECT_ASSOCIATION`" in section
+    assert "`Clue_Possible_Duplicate__c`" in section
+    assert "link_duplicate" not in body
+    v5_head, v5_body = v5.split("\n---\n", 1)
+    v6_head, v6_body = v6.split("\n---\n", 1)
+    assert v6_head == v5_head.replace("version: v5", "version: v6")
+
+    def without_items_2_and_3(text: str) -> str:
+        start = text.index("2. ", text.index("## 3c. Clue's own fields"))
+        end = text.index("\n## ", start)
+        return text[: text.rindex("\n", 0, start)] + text[end:]
+
+    assert without_items_2_and_3(v6_body) == without_items_2_and_3(v5_body)
+
+
+def test_v84_re_mints_f3s_workspace_text_above_crms_v83(
+    registry: AgentProfileRegistry,
+) -> None:
+    """F3 merged onto CRM Phase 4: head-of-abm v84 is v83's surface exactly. Of the hand-written
+    chapters only manual-workspace v30 differs from v29 beyond its version tokens, and it carries
+    F3's founder-approved retention text; the limits chapter carries F3's retention bullet."""
+
+    del registry
+    root = Path(__file__).resolve().parents[2] / "platform" / "agents" / "catalog"
+    profiles = root / "profiles" / "head-of-abm"
+    v83 = (profiles / "v83" / "profile.yaml").read_text()
+    v84 = (profiles / "v84" / "profile.yaml").read_text()
+
+    def tools_of(text: str) -> str:
+        return text.split("\ntools:\n", 1)[1]
+
+    assert tools_of(v84) == tools_of(v83)
+    # v85 discloses manual v31, so v30 is read from the catalog folder.
+    workspace = (root / "skills" / "manual-workspace" / "v30" / "SKILL.md").read_text()
+    assert "### What you have, and what has gone: `context/project/workspace_files.json`" in (
+        workspace
+    )
+    assert "Never deleted by age." in workspace
+    limits = (root / "skills" / "manual-limits" / "v30" / "SKILL.md").read_text()
+    assert "Files are deleted by age, not the folder" in limits
+    assert "CLUE_AGENT_WORKSPACE_RETENTION_S" not in limits
+    skills = root / "skills"
+    for name in MANUAL_CHAPTERS:
+        if name in {"workspace", "tools", "fields", "errors", "limits"}:
+            continue
+        v29 = (skills / f"manual-{name}" / "v29" / "SKILL.md").read_text()
+        v30 = (skills / f"manual-{name}" / "v30" / "SKILL.md").read_text()
+        assert v30.replace("v30", "v29") == v29, name
+
+
+def test_v85_names_clues_field_clue_fit_level(registry: AgentProfileRegistry) -> None:
+    """Founder ruling R-14.6: head-of-abm v85 moves no address. Its tools differ from v84's only in
+    `read_crm_targets@1`'s output digest (clue_tier -> clue_fit_level); crm-writing v7 is v6 with
+    the field named "Clue fit level" and that digest; the hand-written manual chapters v31 are v30
+    with their version tokens moved."""
+
+    # v86 is active and still discloses crm-writing v7; manual v31 is read from its folder.
+    head = registry.resolve(AgentRole.HEAD_OF_ABM)
+    root = Path(__file__).resolve().parents[2] / "platform" / "agents" / "catalog"
+    profiles = root / "profiles" / "head-of-abm"
+    v84 = (profiles / "v84" / "profile.yaml").read_text()
+    v85 = (profiles / "v85" / "profile.yaml").read_text()
+    old_digest = "df5ff954433733cc3b8a479e51a31a52f9780b0e0eca69c529691f72bc8ff79e"
+    new_digest = "cab4b7a16c84ae0ab7da63443d167306a2cca7b72c37330b0eb3fe38a5ac778f"
+
+    def tools_of(text: str) -> str:
+        return text.split("\ntools:\n", 1)[1]
+
+    assert tools_of(v85) == tools_of(v84).replace(old_digest, new_digest)
+    assert old_digest in tools_of(v84)
+
+    body = head.open_skill("skill:crm-writing@v7")
+    assert "Clue fit level" in body and "Clue tier" not in body
+    skills = root / "skills"
+    v6 = (skills / "crm-writing" / "v6" / "SKILL.md").read_text()
+    v7 = (skills / "crm-writing" / "v7" / "SKILL.md").read_text()
+    assert v7 == (
+        v6.replace("version: v6", "version: v7")
+        .replace("Clue tier", "Clue fit level")
+        .replace(old_digest, new_digest)
+        # Founder-approved 2026-10-26 (the Settings overwrites setting, R-6.5 note).
+        .replace(
+            "Overwriting a value a\n  person set always asks.",
+            "Overwriting a value a\n  person set still asks on the card, unless an owner or admin"
+            " set Overwrites to “Follow ‘Always\n  allow’” in Settings. Then a matching “Always"
+            " allow” covers it too.",
+        )
+    )
+    for name in MANUAL_CHAPTERS:
+        if name in {"tools", "fields", "errors", "limits"}:
+            continue
+        v30 = (skills / f"manual-{name}" / "v30" / "SKILL.md").read_text()
+        v31 = (skills / f"manual-{name}" / "v31" / "SKILL.md").read_text()
+        assert v31.replace("v31", "v30") == v30, name
+    tools_chapter = (skills / "manual-tools" / "v31" / "SKILL.md").read_text()
+    assert "clue_fit_level" in tools_chapter and "clue_tier" not in tools_chapter
+
+
+def test_v86_carries_mains_prompt_v19_above_crm(registry: AgentProfileRegistry) -> None:
+    """main merged into the CRM line (2026-10-27): head-of-abm v86 is v85 with main's prompt v19
+    (the design brief carries no copy; a menu of angles for variants), stage0-interview v59 and
+    manual v32; no address added or removed, the same tools and skills otherwise."""
+
+    head = registry.resolve(AgentRole.HEAD_OF_ABM)
+    assert head.profile_ref.address == "profile:head-of-abm@v86"
+    assert head.profile.prompt.address == "prompt:head-of-abm@v19"
+    root = Path(__file__).resolve().parents[2] / "platform" / "agents" / "catalog"
+    profiles = root / "profiles" / "head-of-abm"
+    v85 = (profiles / "v85" / "profile.yaml").read_text()
+    v86 = (profiles / "v86" / "profile.yaml").read_text()
+
+    def tools_of(text: str) -> str:
+        return text.split("\ntools:\n", 1)[1]
+
+    assert tools_of(v86) == tools_of(v85)
+    skills = root / "skills"
+    v58 = (skills / "stage0-interview" / "v58" / "SKILL.md").read_text()
+    v59 = (skills / "stage0-interview" / "v59" / "SKILL.md").read_text()
+    assert v59 == v58.replace("v31", "v32").replace("v58", "v59")
+    for name in MANUAL_CHAPTERS:
+        v31 = (skills / f"manual-{name}" / "v31" / "SKILL.md").read_text()
+        v32 = (skills / f"manual-{name}" / "v32" / "SKILL.md").read_text()
+        assert v32 == v31.replace("v31", "v32").replace("v85", "v86"), name

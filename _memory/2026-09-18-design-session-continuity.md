@@ -10,7 +10,7 @@ own `SummarizationMiddleware` (already installed by the harness) and its tool-re
 feeding it back is per provider. Sub-agents stay per task. One run per turn, the CAS, one open leg
 per thread and the same-document queue (also ruled 2026-09-18) all stay.
 
-Design note: `docs/superpowers/specs/2026-09-18-design-session-continuity-design.md` (for review;
+Design note: `docs/superpowers/specs/archive/2026-09-18-design-session-continuity-design.md` (for review;
 no plan, no code). Structural change is the tool substrate (`tools/substrate.py` mints
 `run_id`/`trace_dir` per construction) becoming session-bound and reloading the scene from the
 document; `checkpoint.py`'s restart branch becomes the resume branch.
@@ -83,7 +83,7 @@ re-entry replays the JOURNALED summary so the governed operation's parameters ma
 Not a sub-agent of head-of-abm: one stateless model call in the fleet worker before each leg turn.
 
 ## 2026-09-19 — design note: seller + target-account context for the design agent
-`docs/superpowers/specs/2026-09-19-design-agent-account-and-seller-context-design.md` (for review;
+`docs/superpowers/specs/archive/2026-09-19-design-agent-account-and-seller-context-design.md` (for review;
 no plan, no code). Founder rulings: the brief stays the primary channel; the target account is
 reached by TOOLS (grant `read_project_accounts@1`, `read_account_research@1`, `read_claims@1` to
 the design role, injected into the design runtime through the same platform-loop bridge the

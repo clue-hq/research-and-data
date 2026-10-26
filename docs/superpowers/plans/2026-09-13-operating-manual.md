@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, the agent catalog (`clue_agents.catalog`), the toolbelt descriptors, pytest.
 
-**Spec:** `docs/superpowers/specs/2026-09-13-head-of-abm-operating-manual-design.md` (§3 inventory, §5 generation, §6 cross-references, §7 defects, §9 decisions), evidence in `docs/superpowers/research/2026-09-13-head-of-abm-manual/`.
+**Spec:** `docs/superpowers/specs/archive/2026-09-13-head-of-abm-operating-manual-design.md` (§3 inventory, §5 generation, §6 cross-references, §7 defects, §9 decisions), evidence in `docs/superpowers/research/2026-09-13-head-of-abm-manual/`.
 
 ## Global Constraints
 

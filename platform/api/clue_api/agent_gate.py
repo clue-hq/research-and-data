@@ -30,17 +30,21 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_projections.gates import GATE_WITHDRAWN_SQL
+
 __all__ = [
     "DECISIONS",
     "DEFAULT_GATE_CURRENCY",
     "GATE_KINDS",
     "GATE_OBJECT_TYPE",
+    "KIND_CRM_WRITE_PERMISSION",
     "KIND_DIRECTIVE_CONFIRMATION",
     "KIND_ICP_CONFIRMATION",
     "KIND_PRODUCT_SELECTION",
@@ -49,6 +53,7 @@ __all__ = [
     "AgentGateRow",
     "AgentGateSubjectBinding",
     "GateAlreadyAnswered",
+    "crm_write_permission_gate_id",
     "directive_confirmation_gate_id",
     "product_selection_gate_id",
     "product_set_selection_gate_id",
@@ -59,7 +64,9 @@ __all__ = [
     "insert_gate_answer",
     "money_text",
     "open_gates_for_thread",
+    "open_gates_for_turn",
     "redact_gate_snapshots_for_subject",
+    "refuse_misnamed_gate_links",
 ]
 
 #: The ``DomainObjectRef.object_type`` flavour a finalization's ``open_gate_refs`` carries. The
@@ -78,6 +85,10 @@ KIND_PRODUCT_SELECTION = "product_selection"
 #: gate names its choices in ``decision_payload["selected_option_refs"]`` rather than in the
 #: single-valued ``selected_option_ref``; the answer trigger enforces membership per element.
 KIND_PRODUCT_SET_SELECTION = "product_set_selection"
+#: CRM integration Phase 2: a person's permission for the agent's proposed CRM writes. Its answer
+#: carries ``decision_payload`` ``{"selected_write_ids": [...], "always_allow": [...]}`` on
+#: approval (both arrays, nothing else) and nothing on rejection; the answer trigger enforces it.
+KIND_CRM_WRITE_PERMISSION = "crm_write_permission"
 GATE_KINDS = (
     KIND_DIRECTIVE_CONFIRMATION,
     KIND_ICP_CONFIRMATION,
@@ -85,6 +96,7 @@ GATE_KINDS = (
     KIND_PRODUCT_SET_SELECTION,
     "plan_approval",
     "budget_approval",
+    KIND_CRM_WRITE_PERMISSION,
 )
 
 #: What a human may answer. ``revised`` is not a soft ``rejected``: it records "I want changes",
@@ -104,6 +116,7 @@ _PRODUCT_SET_SELECTION_GATE_NAMESPACE = uuid5(
     NAMESPACE_URL, "clue:arv2:onboarding:product-set-selection-gate"
 )
 _ICP_ARTIFACT_GATE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:arv2:onboarding:icp-artifact-gate")
+_CRM_WRITE_PERMISSION_GATE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:crm:write-permission-gate")
 
 _GATE_COLUMNS = (
     "gate_id, workspace_id, project_id, thread_id, turn_id, kind, subject_ref, "
@@ -288,6 +301,17 @@ def icp_artifact_gate_id(
     return uuid5(_ICP_ARTIFACT_GATE_NAMESPACE, framed)
 
 
+def crm_write_permission_gate_id(*, workspace_id: str, proposal_id: UUID) -> UUID:
+    """Derive the one permission card of one CRM write proposal (CRM integration Phase 2).
+
+    The proposal id is itself derived from the presenting turn and the exact proposed batch, so a
+    replayed ``propose_crm_changes`` call presents the same card instead of a second one.
+    """
+
+    framed = "".join(f"{len(part)}:{part}" for part in (workspace_id, str(proposal_id)))
+    return uuid5(_CRM_WRITE_PERMISSION_GATE_NAMESPACE, framed)
+
+
 async def insert_gate(
     conn: AsyncConnection,
     *,
@@ -405,6 +429,50 @@ async def get_gate(
     return GateView(gate=gate, answer=answer)
 
 
+async def refuse_misnamed_gate_links(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    links: Sequence[tuple[str, str]],
+) -> None:
+    """Refuse a finalization link that points at a gate of this workspace under another type.
+
+    ``links`` are ``(object_type, object_id)`` pairs from ``open_gate_refs``. The chat draws a
+    card only for ``object_type == "agent_gate"``; a gate linked under any other type (the live
+    case: its kind, ``crm_write_permission``) shows the human an incomplete card they cannot
+    answer. Raises ``ValueError`` in words the agent can act on. A link whose id is not a gate row
+    of this workspace — a server-written ``design_leg``, anything else — is not this check's
+    business and passes untouched.
+    """
+
+    candidates: dict[UUID, str] = {}
+    for object_type, object_id in links:
+        if object_type == GATE_OBJECT_TYPE:
+            continue
+        try:
+            candidates[UUID(object_id)] = object_id
+        except ValueError:
+            continue
+    if not candidates:
+        return
+    found = (
+        await conn.execute(
+            text(
+                "SELECT gate_id FROM agent_gate "
+                "WHERE workspace_id = :workspace_id AND gate_id = ANY(:gate_ids)"
+            ),
+            {"workspace_id": workspace_id, "gate_ids": list(candidates)},
+        )
+    ).scalars()
+    gate_ids = sorted(str(gate_id) for gate_id in found)
+    if gate_ids:
+        gate_id = gate_ids[0]
+        raise ValueError(
+            f"open_gate_refs: {gate_id} is a card; link it as "
+            f'{{object_type: "{GATE_OBJECT_TYPE}", object_id: "{gate_id}"}}'
+        )
+
+
 async def insert_gate_answer(
     conn: AsyncConnection,
     *,
@@ -509,9 +577,53 @@ async def open_gates_for_thread(
     """Every unanswered gate of one thread, oldest first.
 
     "Unanswered" is an anti-join against the answer table — the derivation §6-D3 ratified — so a
-    thread's approval state cannot drift from the record of what was actually decided.
+    thread's approval state cannot drift from the record of what was actually decided. A withdrawn
+    gate (a CRM write card whose proposal moved on without an answer) is not open either.
     """
 
+    return await _open_gates(conn, workspace_id=workspace_id, scope="thread_id", value=thread_id)
+
+
+async def open_gates_for_turn(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    turn_id: UUID,
+) -> tuple[AgentGateRow, ...]:
+    """Every gate one turn presented that is still open, oldest first — the same openness as
+    :func:`open_gates_for_thread` (unanswered, not erased, not withdrawn) — except a draft the
+    turn superseded: a gate for which this turn later presented another gate of the same kind
+    and subject (a redraft gets a new gate id, since the id is keyed on the digest). The turn's
+    finalization links these so a card the turn created always shows (R-12.16)."""
+
+    return await _open_gates(
+        conn,
+        workspace_id=workspace_id,
+        scope="turn_id",
+        value=turn_id,
+        extra=_SUPERSEDED_IN_TURN_SQL,
+    )
+
+
+#: A newer gate of the same kind and subject, presented later in the same turn, supersedes ``g``.
+#: Strictly later only: two gates presented in one transaction share ``created_at`` and are both
+#: kept, rather than one hidden by an arbitrary tie-break.
+_SUPERSEDED_IN_TURN_SQL = (
+    "NOT EXISTS (SELECT 1 FROM agent_gate newer "
+    "WHERE newer.workspace_id = g.workspace_id AND newer.turn_id = g.turn_id "
+    "AND newer.kind = g.kind AND newer.subject_ref = g.subject_ref "
+    "AND newer.created_at > g.created_at)"
+)
+
+
+async def _open_gates(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    scope: Literal["thread_id", "turn_id"],
+    value: str | UUID,
+    extra: str = "TRUE",
+) -> tuple[AgentGateRow, ...]:
     rows = (
         (
             await conn.execute(
@@ -520,11 +632,12 @@ async def open_gates_for_thread(
                     "FROM agent_gate g "
                     "LEFT JOIN agent_gate_answer a "
                     "  ON a.gate_id = g.gate_id AND a.workspace_id = g.workspace_id "
-                    "WHERE g.workspace_id = :workspace_id AND g.thread_id = :thread_id "
+                    f"WHERE g.workspace_id = :workspace_id AND g.{scope} = :value "
                     "  AND a.gate_id IS NULL AND g.snapshot_erased_at IS NULL "
+                    f"  AND NOT {GATE_WITHDRAWN_SQL} AND {extra} "
                     "ORDER BY g.created_at, g.gate_id"
                 ),
-                {"workspace_id": workspace_id, "thread_id": thread_id},
+                {"workspace_id": workspace_id, "value": value},
             )
         )
         .mappings()

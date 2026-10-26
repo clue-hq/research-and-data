@@ -1,7 +1,7 @@
 # 2026-09-02 — Replace Image: upload / workspace asset-library picker + Brand context uploads — close-out
 
 Branch `design/replace-image-asset-library` (off `design/scene-ad-clipboard`), nashville worktree.
-Spec `docs/superpowers/specs/2026-09-02-replace-image-asset-library-design.md`; plan
+Spec `docs/superpowers/specs/archive/2026-09-02-replace-image-asset-library-design.md`; plan
 `docs/superpowers/plans/2026-09-02-replace-image-asset-library.md` (8 tasks, all ticked).
 Process: subagent-driven development, Opus-only implementers; every review, verification and ruling
 by the orchestrator (founder ruling 2026-09-02). All commits local; nothing pushed.

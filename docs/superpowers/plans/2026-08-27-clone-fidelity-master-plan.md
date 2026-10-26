@@ -264,7 +264,7 @@ default. A dedicated fragment inspector card (slot values from the manifest) lan
   becomes a selectable, draggable, or re-layoutable node. So the ruling now reads: a clone moves
   as a whole and exposes slot values AND per-element text overrides; nothing else inside it is
   editable. Spec:
-  `docs/superpowers/specs/2026-09-04-web-editor-annotations-and-clone-text-edits-design.md` §3.6.
+  `docs/superpowers/specs/archive/2026-09-04-web-editor-annotations-and-clone-text-edits-design.md` §3.6.
 - **D-F4 — sanitizer strictness: ADOPTED BY DEFAULT (not explicitly ruled; reversible on founder
   word):** strip `script`, `on*` handlers, `iframe/object/embed/form/meta/base/link`,
   `javascript:`/`data:` hrefs; every `src/srcset/url()` must resolve to a rehosted digest —

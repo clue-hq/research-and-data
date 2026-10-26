@@ -1,7 +1,7 @@
 # ARV2 media research: implementation plan
 
 **Status:** approved by founder 2026-09-22; offline implementation completed and verified; see the acceptance record. Live acceptance and activation remain separate.
-**Design:** [media discovery and reusable transcript research](../specs/2026-09-22-arv2-media-research-design.md).
+**Design:** [media discovery and reusable transcript research](../specs/archive/2026-09-22-arv2-media-research-design.md).
 **Base inspected:** `99253e5d4`; resolve the current branch/head again before implementation.
 **Founder direction:** AI Ark v2 is the default account/person flow. Build media research on
 that flow only; preserve old job pins for replay. The separate default-selector change is

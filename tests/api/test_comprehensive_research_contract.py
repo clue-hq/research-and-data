@@ -467,5 +467,5 @@ def test_the_comprehensive_directive_tool_is_the_granted_head_of_abm_version() -
     # the first version that takes tools AWAY (the three document tools, now file writes under
     # `project/`), and the directive draft is not among them, so the granted address is unmoved
     # and the two pins must still agree.
-    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v76"
-    assert PROJECT_CONVERSATION_AGENT_PROFILE_ID == "head-of-abm@v76"
+    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v86"
+    assert PROJECT_CONVERSATION_AGENT_PROFILE_ID == "head-of-abm@v86"

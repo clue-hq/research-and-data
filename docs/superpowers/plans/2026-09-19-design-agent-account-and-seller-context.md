@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, `clue_toolbelt` (`ToolInvoker`, `ToolContext`, `operation_id_from_key`), `clue_api.brand_knowledge_context`, `clue_spine.current_project_product_set`, LangChain `@tool`, deepagents 0.6.12, pytest.
 
-**Spec:** `docs/superpowers/specs/2026-09-19-design-agent-account-and-seller-context-design.md` (§3.3's card compilers are superseded by this plan: on this stack the seller's knowledge is the ARV2 brand-knowledge documents, not the old lane's Client-KB cards — ruling "ARV2 schema is the only truth", 2026-09-09).
+**Spec:** `docs/superpowers/specs/archive/2026-09-19-design-agent-account-and-seller-context-design.md` (§3.3's card compilers are superseded by this plan: on this stack the seller's knowledge is the ARV2 brand-knowledge documents, not the old lane's Client-KB cards — ruling "ARV2 schema is the only truth", 2026-09-09).
 
 ## Global Constraints
 

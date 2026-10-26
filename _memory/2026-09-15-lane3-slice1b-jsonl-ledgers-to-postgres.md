@@ -1,7 +1,7 @@
 # 2026-09-15 — Lane 3 slice 1b: every provider call on the Postgres ledger
 
 Branch `lane3/sice1b` (the founder's branch, rebased onto `research-streaming` after PR #55 — slice 1 —
-was merged and pushed on 2026-09-14; no upstream yet, not on origin). Design: `docs/superpowers/specs/2026-09-14-lane3-slice1b-jsonl-ledgers-to-postgres-design.md`
+was merged and pushed on 2026-09-14; no upstream yet, not on origin). Design: `docs/superpowers/specs/archive/2026-09-14-lane3-slice1b-jsonl-ledgers-to-postgres-design.md`
 (founder decisions D1–D3). Plan: `docs/superpowers/plans/2026-09-14-lane3-slice1b-jsonl-ledgers-to-postgres.md`.
 Commits: `e9fcee89e` (design), `aa7d1a8b6` (plan), `5ce794a8c` (T1 `LedgerStamp` optional
 project/run/job), `74d5f5c5a` (T2 OpenRouter reader stamps model + token counts), `9f9569bae`

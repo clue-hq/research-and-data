@@ -32,3 +32,22 @@ test("Settings rejects unknown routes and nesting outside Data model", () => {
     assert.equal(SettingsRouteSchema.safeParse(segments).success, false);
   }
 });
+
+test("Integrations nests one connected CRM's page under it", () => {
+  assert.deepEqual(SettingsRouteSchema.parse(["integrations"]), { section: "integrations" });
+  for (const provider of ["hubspot", "salesforce"]) {
+    assert.deepEqual(SettingsRouteSchema.parse(["integrations", provider]), {
+      section: "integrations",
+      provider,
+    });
+  }
+  for (const segments of [
+    ["integrations", "pipedrive"],
+    ["integrations", "hubspot", "fields"],
+    ["integrations", "accounts"],
+    ["data-model", "hubspot"],
+    ["pages", "hubspot"],
+  ]) {
+    assert.equal(SettingsRouteSchema.safeParse(segments).success, false, segments.join("/"));
+  }
+});

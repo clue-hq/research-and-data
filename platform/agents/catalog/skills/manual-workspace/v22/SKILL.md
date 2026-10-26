@@ -28,7 +28,7 @@ inside it. There is no host filesystem, no shell and no network here.
 | `scratch/` | read and write | your notebook. It persists across the turns of this chat and nobody else reads it. |
 | `reads/` | read | reserved for platform written spilled reads. It arrives with a later plan; nothing writes there today. |
 | `work/` | read and write | scratch inside one turn. Nothing is persisted from it. |
-| `outputs/` | read and write | the turn's durable product. Snapshotted to artifacts at finalize, then emptied. |
+| `outputs/` | read and write | the turn's durable product. Saved as artifacts at finalize and kept here for this chat's later turns, until the workspace is cleaned 24 hours after the chat's last turn. Check a file is there before relying on it. |
 | `.deepagent/` | read | your own manifest, profile, prompt and skills, including these manual chapters. |
 
 Writes are allowed only under `scratch/`, `work/`, `outputs/` and `project/`, only with the
@@ -37,7 +37,9 @@ outside those prefixes is refused `permission_denied`. `project/` is the version
 there lands a new version of the document the path names and refreshes the file you read back.
 Which three paths are writable, and what every other path refuses, is in
 `.deepagent/skills/manual-documents-decisions/v22/SKILL.md`. You still cannot edit a brand
-knowledge file: `brand/` is read only.
+knowledge file with your file tools: `brand/` is read only. When the person asks for a change,
+`write_brand_document` publishes a new version, and it appears under `brand/knowledge/` on the
+next turn.
 
 A script run by `run_python` sees the same tree at `/workspace` and answers to the same rules,
 with two differences. It may write the formats your own `write_file` may not — `.csv`, `.xlsx`,

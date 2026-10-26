@@ -9,9 +9,9 @@ surface.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Collection, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
-from typing import Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import UUID
 
 from langchain_core.language_models import BaseChatModel
@@ -30,9 +30,18 @@ from clue_agents.contracts import (
     ContinuationRef,
     DelegationRequest,
     DelegationResult,
+    DomainObjectRef,
     FinalizeStatus,
     ValidatedPlan,
     normalize_virtual_path,
+)
+from clue_agents.workspace_snapshot import (
+    LeaseFence,
+    Receipt,
+    SaveStatus,
+    SnapshotEntry,
+    SnapshotManifest,
+    SnapshotPointer,
 )
 from clue_core import ExecutionId
 
@@ -55,6 +64,9 @@ __all__ = [
     "HistoryMessageRef",
     "OperationFailure",
     "SpillSink",
+    "TurnBinding",
+    "ReceiptSource",
+    "WorkspaceSnapshotStore",
     "WorkspaceEntry",
 ]
 
@@ -194,6 +206,96 @@ class SpillSink(Protocol):
 
 
 @runtime_checkable
+class TurnBinding(Protocol):
+    """A per-turn, in-process registry told which workspace a running execution holds (WS-14).
+
+    The workspace factory binds every lease it hands out through ``acquire_restored`` and unbinds
+    it on release, so no caller binds a folder on its own (AW-8.2). The CRM read sinks and the
+    code sandbox's mount registry are the two today.
+    """
+
+    def bind(self, execution_id: ExecutionId, lease: Any) -> None: ...
+
+    def unbind(self, execution_id: ExecutionId) -> None: ...
+
+
+@runtime_checkable
+class WorkspaceSnapshotStore(Protocol):
+    """Where a chat's agent-folder snapshots live: a version record plus content-addressed files.
+
+    F3 (spec WS-1–WS-3, WS-8): ``save`` moves the record with a compare-and-set on the version the
+    turn restored, and only while the fence still holds the chat's fleet lease. Implemented over
+    Postgres and the artifact store in ``clue_api.agent_workspace_snapshots``.
+
+    The files live in the chat's own storage area (WS-30), so ``save`` and ``forget`` also erase
+    the ones they released that no other snapshot still holds. Nothing outside that area is ever
+    erased — bytes a person can see (uploads, Gallery artifacts, evidence snapshots) are some
+    other owner's, however exactly they match a chat's file (ruling AW-26).
+
+    A save is the chat being used, so it stamps the chat's last activity — except the expiry
+    job's, which passes ``activity=False``. A version the job publishes is housekeeping on a cold
+    chat: counting it as use would restart the 48-hour clock every pass and the 7-day window
+    would never elapse at all.
+    """
+
+    async def current(self, *, workspace_id: str, thread_id: str) -> SnapshotPointer | None: ...
+
+    async def read_manifest(
+        self, *, workspace_id: str, pointer: SnapshotPointer
+    ) -> SnapshotManifest: ...
+
+    async def read_file(self, *, workspace_id: str, entry: SnapshotEntry) -> bytes: ...
+
+    async def store_files(
+        self, *, workspace_id: str, files: Sequence[tuple[SnapshotEntry, bytes]]
+    ) -> int: ...
+
+    async def unmoved_files(
+        self, *, workspace_id: str, thread_id: str, sha256s: Collection[str]
+    ) -> frozenset[str]:
+        """The content addresses in ``sha256s`` this chat still holds where ``save`` will not.
+
+        A save skips the bytes its base version already holds — that is what keeps it cheap —
+        and holds every live file of the new version where the store keeps a chat's files today.
+        A version saved before the store moved them (F3 Phase 2's own area, WS-30) holds its
+        bytes somewhere else, so the skipped ones have to be stored again before that chat can
+        save at all (review C1). Only what this chat's current version holds is answered: bytes
+        that are gone because they expired are not "unmoved", and storing them again would bring
+        an expired file back. Where the store keeps files is its own business; this is the one
+        question a caller needs answered about it, in one round trip for the whole set.
+        """
+        ...
+
+    async def save(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        thread_id: str,
+        expected_version: int | None,
+        manifest: SnapshotManifest,
+        fence: LeaseFence | None,
+        activity: bool = True,
+    ) -> tuple[SaveStatus, SnapshotPointer | None]: ...
+
+    async def touch(self, *, workspace_id: str, thread_id: str) -> None: ...
+
+    async def forget(self, *, workspace_id: str, thread_id: str) -> None: ...
+
+
+@runtime_checkable
+class ReceiptSource(Protocol):
+    """Where a newly saved file came from, and how the agent could get it again (AW-22, AW-24).
+
+    F3 Phase 2: a raw input's or a working file's bytes expire, so the save asks this for a
+    :class:`Receipt` to keep in the file list in their place. It answers for every path — when it
+    knows nothing it says so — because a file is never dropped for want of a receipt.
+    """
+
+    async def receipt_for(self, *, workspace_id: str, thread_id: str, path: str) -> Receipt: ...
+
+
+@runtime_checkable
 class AgentModelProvider(Protocol):
     """Build a provider-neutral LangChain tool-calling model behind the gateway boundary."""
 
@@ -235,7 +337,7 @@ class AgentWorkspaceBackend(Protocol):
 
     async def edit_text(self, path: str, *, old: str, new: str) -> WorkspaceEntry: ...
 
-    async def snapshot_outputs(self, *, empty_after: bool = False) -> Sequence[ArtifactRef]: ...
+    async def snapshot_outputs(self, *, reopen_after: bool = False) -> Sequence[ArtifactRef]: ...
 
 
 @runtime_checkable
@@ -280,11 +382,17 @@ class AgentExecutionAdapter(Protocol):
 
     async def delegate(self, *, request: DelegationRequest) -> DelegationResult: ...
 
-    async def check_finalizable(self, *, status: FinalizeStatus) -> None:
+    async def check_finalizable(
+        self,
+        *,
+        status: FinalizeStatus,
+        open_gate_refs: Sequence[DomainObjectRef] = (),
+    ) -> None:
         """Refuse a finalization this execution cannot accept yet — before anything is frozen.
 
         Raises ``ValueError`` (a refusal the model can repair, e.g. unresolved failed tool
-        attempts for ``completed``); never changes state. ``finalize_turn`` calls it first,
+        attempts for ``completed``, or an ``open_gate_refs`` entry that names a gate under any
+        object type but ``agent_gate``); never changes state. ``finalize_turn`` calls it first,
         because once ``outputs/`` is snapshotted the repair the refusal asks for is impossible
         (production 2026-10-03, McKee).
         """

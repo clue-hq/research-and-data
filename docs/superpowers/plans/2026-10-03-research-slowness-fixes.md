@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, SQLAlchemy async + asyncpg, PostgreSQL (via pgbouncer in transaction mode in production), aioboto3 15.5 / aiobotocore 2.25 (Cloudflare R2), structlog via `clue_obs`, pytest (sync test bodies driving coroutines with `run_async`).
 
-**Spec:** `docs/superpowers/specs/2026-10-03-research-slowness-fixes-design.md` (read it first; the evidence behind every change is in `_memory/2026-10-03-production-research-slowness.md`).
+**Spec:** `docs/superpowers/specs/archive/2026-10-03-research-slowness-fixes-design.md` (read it first; the evidence behind every change is in `_memory/2026-10-03-production-research-slowness.md`).
 
 ## Global Constraints
 

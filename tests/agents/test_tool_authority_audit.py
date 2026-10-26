@@ -173,7 +173,29 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # until the design profile bump (148 -> 149).
     # Wave 2 Lane B: design_record_site_section (+1 name, +1 address) (149 -> 150).
     # Product management (2026-10-15, main): `manage_products@1` (+1) (150 -> 151).
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 151
+    # CRM integration Phase 1: `connect_crm@1`, registered ungranted until Task 11 (151 -> 152);
+    # `find_crm_actions@1` and `run_crm_action@1` likewise (152 -> 154), and
+    # `write_brand_document@1` (154 -> 155).
+    # CRM integration Phase 2: `propose_crm_changes@1`, ungranted until the catalog bump
+    # (155 -> 156); `crm_write_log@1` and `manage_crm_grants@1` likewise (156 -> 158). All three
+    # are GRANTED to the Head of ABM as of `head-of-abm@v77` (2026-10-22), the reviewed bump that
+    # pins their schema digests and mints the `crm-writing` skill. No new NAME joins.
+    # CRM integration Phase 3: `read_crm_targets@1`, ungranted until the Phase 3 catalog bump
+    # (158 -> 159); `find_crm_list@1` and `link_crm_list@1` likewise (159 -> 161). All three are
+    # GRANTED to the Head of ABM as of `head-of-abm@v78` (2026-10-23), the reviewed bump that pins
+    # their schema digests and mints `crm-writing` v2. No new NAME joins.
+    # CRM integration Phase 4: `propose_clue_fields_setup@1`, ungranted until the Phase 4 catalog
+    # bump (161 -> 162); GRANTED to the Head of ABM as of `head-of-abm@v82` (2026-10-25), the
+    # reviewed bump that pins its schema digests and mints `crm-writing` v5. No new NAME joins.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 162
+    assert C6_AGENT_TOOL_AUTHORITY["propose_clue_fields_setup"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("propose_clue_fields_setup@1") == (AgentRole.HEAD_OF_ABM,)
+    for phase3_tool in ("read_crm_targets", "find_crm_list", "link_crm_list"):
+        assert C6_AGENT_TOOL_AUTHORITY[phase3_tool] == (AgentRole.HEAD_OF_ABM,)
+        assert c6_roles_for_tool(f"{phase3_tool}@1") == (AgentRole.HEAD_OF_ABM,)
+    for crm_write_tool in ("propose_crm_changes", "crm_write_log", "manage_crm_grants"):
+        assert C6_AGENT_TOOL_AUTHORITY[crm_write_tool] == (AgentRole.HEAD_OF_ABM,)
+        assert c6_roles_for_tool(f"{crm_write_tool}@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["web_search"] == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
     assert c6_roles_for_tool("web_search@1") == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
     # 2026-09-19: three of them gain a SECOND holder and no new name — the DESIGN role, at

@@ -45,14 +45,20 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
+import shutil
+import stat
+import tempfile
+import time
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
+from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.ports import AgentModelProvider
-from clue_api.agent_cleanup import AgentWorkspaceCleanupJob
+from clue_agents.worker_area import WorkerArea
 from clue_api.agent_execution_wiring import DbAgentPlanJournal
 from clue_api.agent_model_wiring import build_agent_model_provider
 from clue_api.agent_platform_wiring import (
@@ -67,6 +73,12 @@ from clue_api.agent_turn_fleet_wiring import (
     sweep_turn_stream_retention,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.agent_workspace_cache import AgentWorkspaceCacheJob
+from clue_api.agent_workspace_retention import (
+    AgentWorkspaceRetentionJob,
+    run_retention_if_due,
+)
+from clue_api.agent_workspace_snapshots import DbWorkspaceSnapshotStore
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.arv2.account_research_driver import (
     Arv2AccountResearchWorkHandler,
@@ -82,6 +94,7 @@ from clue_api.arv2.display.fleet_handler import build_arv2_display_page_handler
 from clue_api.arv2.icp_authoring import DbIcpAuthoringService
 from clue_api.arv2.onboarding_driver import (
     CatalogRegenerator,
+    CurrentDocumentReader,
     IcpRef,
     IcpSynthesisOutcome,
     OnboardingRunWorkHandler,
@@ -94,12 +107,15 @@ from clue_api.arv2.onboarding_reconcile import CatalogReconciler, OpenRouterCata
 from clue_api.arv2.read_tools import DbArv2ReadService
 from clue_api.arv2.sinks import LedgerSink, RawSink
 from clue_api.arv2_wiring import register_arv2_wiring
+from clue_api.brand_knowledge_writes import current_brand_version
 from clue_api.chat.turn_stream import TurnStreamPolicy
 from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import build_pre_spend_gate, load_research_packs
 from clue_api.contact_content_handoff import ContactContentHandoffService
 from clue_api.contact_research_fleet_launch import ContactResearchSelectionApprover
 from clue_api.conversation_naming import build_conversation_namer
+from clue_api.crm.read_sinks import CrmReadSinks
+from clue_api.crm.write_executor import build_crm_write_handler
 from clue_api.design_fleet import (
     build_design_job_handler,
     build_design_leg_lane_driver,
@@ -150,7 +166,7 @@ from clue_api.onboarding_synthesis_wiring import (
 )
 from clue_api.persona_request_tools import DbPersonaRequestService
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
-from clue_api.product_management import regenerate_catalog
+from clue_api.product_management import read_brand_document, regenerate_catalog
 from clue_api.product_page_writer import build_product_page_handler
 from clue_api.product_path_preflight import assert_product_path_composition
 from clue_api.production_metrics import production_metrics_lifespan
@@ -181,6 +197,7 @@ from clue_api.run_composition import (
     build_stage0_claim_extractor,
 )
 from clue_api.run_events_wiring import build_run_event_emitter
+from clue_api.sandbox.docker_runner import kill_area_containers
 from clue_api.sandbox.workspaces import SandboxWorkspaces
 from clue_api.stage0_setup_fleet import Stage0ReconWorkHandler
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep_if_due
@@ -238,6 +255,15 @@ def _require_registered(phases: frozenset[ProjectPhase]) -> None:
 
 #: How often the fleet prunes ended work leases (on the maintenance clock below).
 _WORK_LEASE_PRUNE_EVERY = timedelta(days=1)
+#: With snapshots off a chat folder is the only copy, so it stays a day unused (the old purge).
+_LOCAL_IDLE_S = 86400.0
+#: A media download's temp folder older than this belongs to a process that died.
+_MEDIA_TEMP_MAX_AGE_S = 6 * 3600.0
+#: How often a worker ASKS whether the fleet owes its expiry pass — not how often the pass runs
+#: (that is ``agent_workspace_retention_sweep_interval_s``, daily, kept in the database). A check
+#: is one row read, and asking often is what keeps a restarted worker from skipping a whole day.
+#: A constant, not a knob, like ``_WORK_LEASE_PRUNE_EVERY`` above.
+_RETENTION_CHECK_EVERY_S = 300.0
 
 
 async def _orphan_sweep_loop(
@@ -370,40 +396,152 @@ def _start_chat_sweep(settings: Settings) -> asyncio.Task[None] | None:
     return asyncio.create_task(_chat_sweep_loop(settings))
 
 
-async def _agent_cleanup_loop(
-    settings: Settings,
-    job: AgentWorkspaceCleanupJob,
+async def _workspace_cache_sweep_loop(
+    interval_s: float,
+    job: AgentWorkspaceCacheJob,
     *,
     sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
 ) -> None:
     while True:
-        await sleep(settings.agent_cleanup_interval_s)
+        await sleep(interval_s)
         try:
-            result = await job.run_once()
-            if result.considered:
-                log.info(
-                    "fleet.agent_cleanup.completed",
-                    considered=result.considered,
-                    removed=result.removed,
-                    already_absent=result.already_absent,
-                )
-        except Exception as exc:  # noqa: BLE001 — cleanup failure must not sink run execution
-            log.warning("fleet.agent_cleanup.error", exc_info=True)
+            # Deleting folders is blocking file work; keep it off the event loop.
+            await asyncio.to_thread(job.run_once)
+        except Exception as exc:  # noqa: BLE001 — a cleanup fault must not sink run execution
+            log.warning("fleet.workspace_cache_sweep.error", exc_info=True)
             capture(exc)
 
 
-def _start_agent_cleanup(
-    settings: Settings,
-    job: AgentWorkspaceCleanupJob | None,
+def _workspace_cache_job(settings: Settings, area: WorkerArea) -> AgentWorkspaceCacheJob:
+    """The sweep for this worker's area (WS-16, WS-17; AW-11, AW-17).
+
+    With snapshots off a deleted folder is gone for good, so the idle window is a day, like the
+    old purge, instead of the 30 minutes a restorable copy can afford. With snapshots on, each
+    sweep also removes the switch's leftover ``<root>/local`` once no snapshots-off process is
+    alive (only the snapshots-on side ever removes it).
+    """
+
+    snapshots = settings.agent_workspace_snapshots_enabled
+    root = settings.agent_workspace_root
+    return AgentWorkspaceCacheJob(
+        area=area,
+        idle_s=settings.agent_workspace_cache_idle_s if snapshots else _LOCAL_IDLE_S,
+        max_bytes=settings.agent_workspace_cache_max_bytes,
+        leftover_local_root=Path(root) if snapshots and root is not None else None,
+    )
+
+
+def _start_workspace_cache_sweep(
+    settings: Settings, area: WorkerArea | None
 ) -> asyncio.Task[None] | None:
-    if (
-        job is None
-        or settings.agent_cleanup_interval_s <= 0
-        or settings.agent_workspace_root is None
-    ):
-        log.info("fleet.agent_cleanup.disabled")
+    if area is None:
+        log.info("fleet.workspace_cache_sweep.disabled")
         return None
-    return asyncio.create_task(_agent_cleanup_loop(settings, job))
+    return asyncio.create_task(
+        _workspace_cache_sweep_loop(
+            settings.agent_workspace_cache_sweep_interval_s,
+            _workspace_cache_job(settings, area),
+        )
+    )
+
+
+async def _workspace_retention_loop(
+    interval_s: float,
+    job: AgentWorkspaceRetentionJob,
+    every: timedelta,
+    *,
+    conn_factory: ConnFactory = transaction,
+    sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
+) -> None:
+    """Every ``interval_s`` seconds, ask whether the FLEET is due its expiry pass and run it if so.
+
+    ``every`` belongs to the fleet, not to this process:
+    :func:`~clue_api.agent_workspace_retention.run_retention_if_due` keeps the last run in the
+    database, so a restart never resets it, and the pass claims itself in a short transaction, so
+    one process runs while the others skip however long it takes. A fault is logged and the loop
+    continues — expiring old files must never sink run execution."""
+
+    while True:
+        await sleep(interval_s)
+        try:
+            report = await run_retention_if_due(job=job, every=every, conn_factory=conn_factory)
+            if report is not None:
+                log.info(
+                    "fleet.workspace_retention.ran",
+                    chats_checked=report.chats_checked,
+                    chats_expired=report.chats_expired,
+                    files_expired=report.files_expired,
+                    skipped_busy=report.skipped_busy,
+                    stale=report.stale,
+                    failed=report.failed,
+                )
+        except Exception as exc:  # noqa: BLE001 — a cleanup fault must not sink run execution
+            log.warning("fleet.workspace_retention.error", exc_info=True)
+            capture(exc)
+
+
+def _start_workspace_retention(
+    settings: Settings, storage: StorageBackend
+) -> asyncio.Task[None] | None:
+    """Start the F3 Phase 2 expiry job (WS-26, AW-24), or ``None`` when snapshots are off.
+
+    With snapshots off a chat's folder is the only copy of its files and nothing holds them in
+    storage, so there is nothing for this job to expire; the cache sweep's own day-long idle
+    window is the whole of retention then.
+    """
+
+    if not settings.agent_workspace_snapshots_enabled:
+        log.info("fleet.workspace_retention.disabled")
+        return None
+    job = AgentWorkspaceRetentionJob(
+        store=DbWorkspaceSnapshotStore(
+            storage=storage,
+            conn_factory=transaction,
+            concurrency=settings.agent_workspace_transfer_concurrency,
+        ),
+        conn_factory=transaction,
+        raw_s=settings.agent_workspace_raw_retention_s,
+        working_s=settings.agent_workspace_working_retention_s,
+    )
+    every = timedelta(seconds=settings.agent_workspace_retention_sweep_interval_s)
+    return asyncio.create_task(_workspace_retention_loop(_RETENTION_CHECK_EVERY_S, job, every))
+
+
+def _remove_stale_media_dirs(temp_root: Path, *, now: float | None = None) -> int:
+    """Remove ``arv2-media-*`` temp folders this user left over 6 hours ago; return how many.
+
+    A media download that died with its process leaves its ``TemporaryDirectory`` behind. Run at
+    start-up only; a live download's folder is never that old.
+    """
+
+    cutoff = (time.time() if now is None else now) - _MEDIA_TEMP_MAX_AGE_S
+    removed = 0
+    for folder in temp_root.glob("arv2-media-*"):
+        try:
+            metadata = folder.lstat()
+        except OSError:
+            continue
+        if (
+            not stat.S_ISDIR(metadata.st_mode)
+            or metadata.st_uid != os.getuid()
+            or metadata.st_mtime >= cutoff
+        ):
+            continue
+        shutil.rmtree(folder, ignore_errors=True)
+        removed += 1
+    return removed
+
+
+def _clean_up_at_start(settings: Settings, area: WorkerArea | None) -> None:
+    """What a worker's previous process may have left running or on disk (plan Task 10)."""
+
+    if area is not None and settings.agent_workspace_snapshots_enabled and settings.sandbox_enabled:
+        killed = kill_area_containers(area.name)
+        if killed:
+            log.info("fleet.sandbox.leftover_containers_killed", area=area.name, count=killed)
+    removed = _remove_stale_media_dirs(Path(tempfile.gettempdir()))
+    if removed:
+        log.info("fleet.media_temp.removed", count=removed)
 
 
 async def _external_research_wake_loop(
@@ -727,6 +865,7 @@ def _build_onboarding_handler(
         synthesis=synthesis,
         reconciler_factory=_build_catalog_reconciler_factory(settings, secrets),
         catalog_regenerator=_catalog_regenerator(storage),
+        current_document=_current_brand_document(storage),
     )
 
 
@@ -739,6 +878,29 @@ def _catalog_regenerator(storage: StorageBackend) -> CatalogRegenerator:
         )
 
     return regenerate
+
+
+def _current_brand_document(storage: StorageBackend) -> CurrentDocumentReader:
+    """R-4.5: the customers step reads the current ``proof/customers.md`` to keep its CRM rows."""
+
+    async def read(
+        conn: AsyncConnection, *, workspace_id: str, brand_id: str, path: str
+    ) -> str | None:
+        current = await current_brand_version(
+            conn, workspace_id=workspace_id, brand_id=brand_id, path=path
+        )
+        if current is None:
+            return None
+        found = await read_brand_document(
+            conn,
+            storage,
+            workspace_id=workspace_id,
+            brand_id=brand_id,
+            document_id=current.document_id,
+        )
+        return None if found is None else found[1]
+
+    return read
 
 
 def _build_catalog_reconciler_factory(
@@ -1039,23 +1201,16 @@ async def _serve() -> None:
         # project's library once their write has committed, so the settled state the frontend reads
         # is the state the tool just wrote rather than the state of the last turn. The factory is
         # this worker's own, on the shared root — the tree replace is atomic across processes — and
-        # it is the same one the workspace cleanup job closes below. Without a configured workspace
+        # it is the same one the workspace cache sweep cleans below. Without a configured workspace
         # root there is no refresher and both hooks are no-ops.
         agent_workspace_factory = (
             build_agent_workspace_factory(storage=storage, settings=settings)
             if settings.agent_workspace_root is not None
             else None
         )
-        project_library = (
-            ProjectLibraryRefresher(
-                storage=storage,
-                artifacts=DurableAgentArtifactStore(storage=storage),
-                workspaces=agent_workspace_factory,
-                conn_factory=transaction,
-            )
-            if agent_workspace_factory is not None
-            else None
-        )
+        # Since F3 (AW-20) the refresher writes nothing to disk: a forced refresh bumps the
+        # project's library epoch, and each chat resyncs its own copy on its next turn.
+        project_library = ProjectLibraryRefresher(conn_factory=transaction)
         # ICP authoring needs no flag of its own: writing a proposal spends nothing and confirms
         # nothing. What it needs is the storage the knowledge documents live in, so it composes
         # where the composed backend is. Without a service the tool registers and refuses by name.
@@ -1088,6 +1243,9 @@ async def _serve() -> None:
             if settings.sandbox_enabled
             else None
         )
+        # The CRM reads' one registry, for the same two-sided reason: ``run_crm_action@1`` looks
+        # the turn's ``reads/`` folder up in it, and the conversation engine binds it there.
+        crm_read_sinks = CrmReadSinks()
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
@@ -1127,6 +1285,7 @@ async def _serve() -> None:
             prose_synthesis=prose_synthesis,
             value_narrative=value_narrative,
             sandbox_workspaces=sandbox_workspaces,
+            crm_read_sinks=crm_read_sinks,
         )
         pin_registry = build_recipe_pin_registry(tool_registry=registry)
         compatibility = CompatibilityLoader(pin_registry)
@@ -1235,6 +1394,7 @@ async def _serve() -> None:
                 storage=storage,
                 tools=registry,
                 sandbox_workspaces=sandbox_workspaces,
+                crm_read_sinks=crm_read_sinks,
             )
         if settings.chat_enabled and platform_components is not None:
             assert memory is not None
@@ -1413,6 +1573,14 @@ async def _serve() -> None:
             storage=storage,
             artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
         )
+        # CRM integration Phase 2: approved CRM changes are sent in the background, one task per
+        # connection.
+        crm_write_handler = build_crm_write_handler(
+            settings=settings,
+            secrets=secrets,
+            conn_factory=transaction,
+            artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
+        )
         worker = build_multi_work_worker(
             settings,
             driver=driver,
@@ -1428,6 +1596,7 @@ async def _serve() -> None:
             arv2_discovery_handler=arv2_discovery_handler,
             arv2_display_page_handler=arv2_display_page_handler,
             product_page_handler=product_page_handler,
+            crm_write_handler=crm_write_handler,
             # Part II D5 Round B: design agent turns drain on THIS worker when the switch is on.
             design_handler=build_design_job_handler(
                 enabled=settings.design_runtime_enabled,
@@ -1457,17 +1626,14 @@ async def _serve() -> None:
             interval_s=settings.design_run_event_prune_interval_s,
             retention_s=settings.design_run_event_retention_s,
         )
-        agent_cleanup = _start_agent_cleanup(
-            settings,
-            (
-                AgentWorkspaceCleanupJob(
-                    settings=settings,
-                    workspaces=agent_workspace_factory,
-                )
-                if agent_workspace_factory is not None
-                else None
-            ),
+        workspace_area = (
+            agent_workspace_factory.area if agent_workspace_factory is not None else None
         )
+        _clean_up_at_start(settings, workspace_area)
+        workspace_cache_sweep = _start_workspace_cache_sweep(settings, workspace_area)
+        # F3 Phase 2 (WS-26, AW-24): the daily expiry of cold chats' raw inputs and
+        # working files. Its own loop, its own fleet clock in ``maintenance_run``.
+        workspace_retention = _start_workspace_retention(settings, storage)
         exa_discovery = _start_exa_discovery(
             settings,
             secrets=secrets,
@@ -1493,7 +1659,8 @@ async def _serve() -> None:
                 token_sweep,
                 design_reaper,
                 design_event_pruner,
-                agent_cleanup,
+                workspace_cache_sweep,
+                workspace_retention,
                 exa_discovery,
                 exa_targeted_enrichment,
                 external_research_wake,

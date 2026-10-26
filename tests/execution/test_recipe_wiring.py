@@ -236,3 +236,49 @@ def test_database_adapters_enforce_retirement_erasure_and_live_memory_switch() -
             ]
 
     run_async(scenario())
+
+
+# --- a static policy pin must hash the same in every worker process (2026-10-22) -------------
+
+_STATIC_PIN_DIGESTS = """
+import asyncio
+from clue_api.recipe_wiring import VersionedPinResource, _register_static_catalog
+from clue_config.ingestion import DEFAULT_INGESTION_POLICY
+from clue_config.proposals import DEFAULT_PROPOSAL_POLICY
+from clue_execution import CompatibilityContext, PinRequest, PinResolverRegistry
+
+registry = PinResolverRegistry()
+for kind, payload in (("proposal_policy", DEFAULT_PROPOSAL_POLICY),
+                      ("ingestion_policy", DEFAULT_INGESTION_POLICY)):
+    _register_static_catalog(
+        registry,
+        kind=kind,
+        resources=(VersionedPinResource(key="default", version="1", payload=payload),),
+    )
+    resolver = registry.get(kind)
+    observation = asyncio.run(resolver.observe(
+        PinRequest(kind=kind, key="default", version="1"),
+        CompatibilityContext(workspace_id="ws-1", project_id=None),
+    ))
+    print(observation.digest)
+"""
+
+
+def test_a_static_policy_pin_hashes_the_same_in_every_process() -> None:
+    """The path the fleet workers take: a set inside a policy must not make two workers pin it
+    under different digests (a turn taken over by another worker then fails to replay)."""
+    import os
+    import subprocess
+    import sys
+
+    seen = set()
+    for seed in (1, 2, 3, 4, 5, 6):
+        result = subprocess.run(
+            [sys.executable, "-c", _STATIC_PIN_DIGESTS],
+            env={**os.environ, "PYTHONHASHSEED": str(seed)},
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        seen.add(tuple(result.stdout.split()))
+    assert len(seen) == 1

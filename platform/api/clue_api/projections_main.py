@@ -6,8 +6,6 @@ import uvicorn
 from fastapi import FastAPI
 from sqlalchemy import text
 
-from clue_api.agent_turn_wiring import DurableAgentArtifactStore
-from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.arv2.account_research_launch import DbArv2LaunchService
 from clue_api.arv2.discovery_launch import DbArv2DiscoveryService
 from clue_api.arv2.icp_authoring import DbIcpAuthoringService
@@ -166,28 +164,11 @@ def build_application(
     arv2_discovery_launch = (
         DbArv2DiscoveryService(resolved, storage) if resolved.arv2_discovery_enabled else None
     )
-    # The project library's refresher (2026-09-14). This process serves the surfaces that write a
-    # project's settled state — the agent's plan tool, ICP authoring, the human's document PUT and
-    # the ICP-confirmation pin — and the library is the rendering the frontend then reads, so it is
-    # rebuilt here once each of those has committed rather than at the next turn. It needs a
-    # workspace factory, which until now only the workers built; this one is opened for the
-    # refresher alone and closed with the app's other closers. A deployment with no configured
-    # workspace root composes none, and every hook is then a no-op.
-    workspace_factory = (
-        build_agent_workspace_factory(storage=storage, settings=resolved)
-        if resolved.agent_workspace_root is not None
-        else None
-    )
-    project_library = (
-        ProjectLibraryRefresher(
-            storage=storage,
-            artifacts=DurableAgentArtifactStore(storage=storage),
-            workspaces=workspace_factory,
-            conn_factory=transaction,
-        )
-        if workspace_factory is not None
-        else None
-    )
+    # The project library's refresher. Since F3 (AW-20) each chat syncs its own library copy at
+    # the start of its turn, so this process writes nothing to disk and needs no workspace
+    # factory: a forced refresh (a DSAR erasure) bumps the project's library epoch, which every
+    # chat's next turn sees in the library digest.
+    project_library = ProjectLibraryRefresher(conn_factory=transaction)
     # ICP authoring needs no flag of its own: writing a proposal spends nothing and confirms
     # nothing. What it needs is the storage the knowledge documents live in, so it composes where
     # the composed backend is. Without a service the tool registers and refuses by name.
@@ -395,7 +376,6 @@ def build_application(
         settings=resolved,
         ingestion_storage=storage,
         project_library=project_library,
-        project_library_closer=(None if workspace_factory is None else workspace_factory.close),
         research_view_composer=(research_views.composer if research_views is not None else None),
         research_view_snapshots=(research_views.snapshots if research_views is not None else None),
         research_view_evidence_access=(

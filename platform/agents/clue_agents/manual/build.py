@@ -72,11 +72,11 @@ __all__ = [
 #: package, never to the working directory.
 DEFAULT_CATALOG_ROOT = Path(__file__).resolve().parents[2] / "catalog"
 
-MANUAL_VERSION = "v22"
+MANUAL_VERSION = "v32"
 
 #: The profile the generated chapters describe. A chapter is true of one exact grant.
 PROFILE_NAME = "head-of-abm"
-PROFILE_VERSION = "v76"
+PROFILE_VERSION = "v86"
 
 #: The chapters the builder writes.
 GENERATED_CHAPTERS: tuple[str, ...] = ("tools", "fields", "errors", "limits")
@@ -529,8 +529,9 @@ def _gate_line(gate: str | None) -> str:
         return "- Opens a human gate: no."
     kind = f", of kind `{gate}`" if gate else ", whose kind the output names"
     return (
-        f"- Opens a human gate: yes{kind}. Put the gate id it returns into `open_gate_refs` "
-        "when you finalize, or the human never sees the card."
+        f"- Opens a human gate: yes{kind}. Put it into `open_gate_refs` as "
+        '`{object_type: "agent_gate", object_id: <the gate id it returns>}` when you finalize, '
+        "or the human never sees the card."
     )
 
 
@@ -897,11 +898,9 @@ def build_limits_chapter(
             f"- Readable: {_join_code(workspace.readable_prefixes)}.",
             f"- Writable: {_join_code(workspace.writable_prefixes)}.",
             f"- Allowed file types: {_join_code(workspace.allowed_extensions)}.",
-            f"- Retention class: `{workspace.retention_class}`. The directory belongs to the chat "
-            "thread, not to one turn. It is purged when the human archives the thread, or "
-            f"{settings.agent_workspace_retention_s:,.0f} seconds "
-            "(`CLUE_AGENT_WORKSPACE_RETENTION_S`) after the thread's newest turn reached a "
-            "terminal status. A turn still running, or awaiting input, keeps it.",
+            "- Your folders belong to this chat, not to one turn, and they are not tied to one "
+            "machine — any worker can continue this chat and finds them as you left them. Files "
+            "are deleted by age, not the folder: see the workspace chapter for what goes when.",
             "",
             "Everything a path means is manual:workspace; the errors these bounds produce are",
             "manual:errors.",

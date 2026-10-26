@@ -86,6 +86,12 @@ import {
 } from "../model/chat-thread";
 import { useProjectCatalogInvalidation } from "../model/project-catalog-invalidation";
 import { useNamingCatchUp } from "./use-naming-catch-up";
+import { usePageVisible } from "./use-page-visible";
+import {
+  CRM_WRITE_GATE_KIND,
+  crmWriteRefusal,
+} from "@/features/integrations/model/crm-write";
+import { TERMINAL_TURN_EVENTS } from "../model/chat-events";
 import type { ChatAttachmentRef } from "../model/chat-attachments";
 import {
   applyTurnStateOverrides,
@@ -113,17 +119,29 @@ import {
  * orchestrator.
  */
 
+/** The newest frame cursor among the turns of the last thread read, or `null` if none has one. */
+function newestTurnCursor(turns: readonly ChatTurn[]): number | null {
+  let newest: number | null = null;
+  for (const turn of turns) {
+    if (turn.lastEventId !== null && (newest === null || turn.lastEventId > newest)) {
+      newest = turn.lastEventId;
+    }
+  }
+  return newest;
+}
+
 /** How many recent turns are re-projected on cold load. */
 const REHYDRATED_TURNS = 3;
 
+/** The derivation of the wake-up turn Clue queues when a CRM write card's changes finish. */
+const CRM_WRITES_FINISHED = "crm_writes_finished";
+
 /**
- * How often a thread held by a discovery re-reads itself.
- *
- * The turn stream is per turn, so nothing streams while the run searches. The
- * run ends by queueing a wake turn this controller has never seen; only a read
- * finds it, and once it is attached its own frames take over.
+ * How often a thread held by a discovery re-reads its thread list. The thread
+ * stream announces the wake turn that normally ends a hold; this only catches
+ * a run released without one.
  */
-const DISCOVERY_HOLD_REREAD_MS = 5000;
+const DISCOVERY_HOLD_SAFETY_REREAD_MS = 30_000;
 
 export interface ChatAccessState {
   code: string;
@@ -246,6 +264,11 @@ export interface ProjectChatController {
   loadOlderMessages(): Promise<void>;
   gateFor(part: ChatGatePart): GateCardModel | null;
   gateAnswerForTurn(turnId: string): GateAnswerDisplay | null;
+  /**
+   * How many "changes finished" wake-up turns (derivation `crm_writes_finished`) this thread has
+   * (R-12.18). When it moves, a CRM write card still being written to re-reads at once.
+   */
+  crmWritesFinished: number;
   submitMessage(
     text: string,
     options?: {
@@ -1114,21 +1137,31 @@ export function useProjectChatController({
         });
         // The answer is durable the moment the turn was accepted; the reload
         // below reads it back rather than the client asserting it locally.
-        attach(activeThreadId, accepted.turnId);
+        // An answer the agent does not reply to (a CRM write card, R-11.6) runs
+        // no turn: there is no stream to follow and nothing in flight — the
+        // card follows its proposal instead.
+        if (accepted.agentReply !== "none") attach(activeThreadId, accepted.turnId);
         await loadConversation(activeThreadId);
       } catch (failure) {
+        const crmWrite = card.kind === CRM_WRITE_GATE_KIND;
         if (
           failure instanceof ClueChatApiError &&
-          failure.code.startsWith("GATE_")
+          (failure.code.startsWith("GATE_") ||
+            (crmWrite && failure.code.startsWith("CRM_")))
         ) {
           setGateFailures((current) => {
             const next = new Map(current);
             next.set(
               card.gateId,
-              gateAuthorityFailure(failure.code, failure.message),
+              crmWrite
+                ? { reason: crmWriteRefusal(failure.code), recovery: null }
+                : gateAuthorityFailure(failure.code, failure.message),
             );
             return next;
           });
+          // A write card stays put and says why; its gate is read again so a card another
+          // member answered, or a newer card replaced, shows what really happened.
+          if (crmWrite) void loadGates(activeThreadId).catch(report);
         } else {
           report(failure);
         }
@@ -1137,8 +1170,8 @@ export function useProjectChatController({
       }
     },
     [
-      activeThreadId, attach, invalidateProjectCatalog, loadConversation, projectId,
-      repositories, report,
+      activeThreadId, attach, invalidateProjectCatalog, loadConversation, loadGates,
+      projectId, repositories, report,
     ],
   );
 
@@ -1313,6 +1346,11 @@ export function useProjectChatController({
     return map;
   }, [gateRead]);
 
+  const crmWritesFinished = useMemo(
+    () => turns.filter((turn) => turn.derivation === CRM_WRITES_FINISHED).length,
+    [turns],
+  );
+
   const gateFor = useCallback(
     (part: ChatGatePart) => {
       const gateId = agentGateIdFromPart(part);
@@ -1369,16 +1407,90 @@ export function useProjectChatController({
     discoveryHeldRef.current = discoveryRunId !== null;
   }, [discoveryRunId]);
 
+  // A run released with nobody to wake (or whose wake could not be queued)
+  // writes no turn frame, so the thread stream cannot announce the end of the
+  // hold. While a discovery holds the thread, re-read the thread list slowly as
+  // the safety net (final review of F2, finding #2).
   useEffect(() => {
     if (!activeThreadId || discoveryRunId === null) return;
-    const timer = window.setInterval(() => {
-      void Promise.all([
-        loadThreads(),
-        loadConversation(activeThreadId),
-      ]).catch(report);
-    }, DISCOVERY_HOLD_REREAD_MS);
-    return () => window.clearInterval(timer);
-  }, [activeThreadId, discoveryRunId, loadConversation, loadThreads, report]);
+    const timer = globalThis.setInterval(() => {
+      void loadThreads().catch(() => undefined);
+    }, DISCOVERY_HOLD_SAFETY_REREAD_MS);
+    return () => globalThis.clearInterval(timer);
+  }, [activeThreadId, discoveryRunId, loadThreads]);
+
+  // --- the thread stream (CRM trial 1, F2) -------------------------------
+  //
+  // Each turn has its own stream, but only a turn this chat knows about gets
+  // attached. The thread stream tells it about the others — a wake turn the
+  // server queued (a discovery that finished, a CRM that connected), a message
+  // sent from another tab, a teammate — by sending every turn's lifecycle
+  // frames. A frame for a turn the chat has not seen re-reads the thread once,
+  // and the turns effect above attaches it. Held only while the tab is
+  // visible; a hidden tab closes it and reopens it from its cursor.
+
+  const pageVisible = usePageVisible();
+  const threadCursor = useRef(new Map<string, number>());
+  const rereadForTurn = useRef(new Set<string>());
+  const threadReaders = useRef({ loadThreads, loadConversation, report });
+  useEffect(() => {
+    threadReaders.current = { loadThreads, loadConversation, report };
+  }, [loadConversation, loadThreads, report]);
+
+  useEffect(() => {
+    if (!activeThreadId || !pageVisible) return;
+    const threadId = activeThreadId;
+    let open = true;
+    const reread = () => {
+      const readers = threadReaders.current;
+      void Promise.all([readers.loadThreads(), readers.loadConversation(threadId)]).catch(
+        readers.report,
+      );
+    };
+    const handle = repositories.threadStream.open({
+      projectId,
+      threadId,
+      // A first open starts from the page's last read of the thread, not from the thread's
+      // tail: a tab loaded hidden (or in the background) opens only when shown, and a turn that
+      // began in between would otherwise be skipped.
+      lastEventId: threadCursor.current.get(threadId) ?? newestTurnCursor(turnsRef.current),
+      onCursor(eventId) {
+        if (open) threadCursor.current.set(threadId, eventId);
+      },
+      onTurnEvent(event) {
+        if (!open || !mounted.current) return;
+        const known =
+          attachments.current.has(event.turnId) ||
+          attached.current.has(event.turnId) ||
+          rereadForTurn.current.has(event.turnId);
+        if (!known) {
+          rereadForTurn.current.add(event.turnId);
+          reread();
+          return;
+        }
+        if (TERMINAL_TURN_EVENTS.has(event.type) && discoveryHeldRef.current) {
+          // The hold may have ended with this turn; only the thread list says so.
+          void threadReaders.current.loadThreads().catch(() => undefined);
+        }
+      },
+      onReset() {
+        if (!open || !mounted.current) return;
+        reread();
+      },
+      onError(failure) {
+        if (!open || !mounted.current) return;
+        if (isAccessError(failure)) {
+          threadReaders.current.report(failure);
+          return;
+        }
+        globalThis.console.warn("The thread stream stopped", { projectId, threadId, failure });
+      },
+    });
+    return () => {
+      open = false;
+      handle.close();
+    };
+  }, [activeThreadId, pageVisible, projectId, repositories]);
 
   const stopDiscovery = useCallback(async () => {
     if (
@@ -1459,6 +1571,7 @@ export function useProjectChatController({
     loadOlderMessages,
     gateFor,
     gateAnswerForTurn,
+    crmWritesFinished,
     submitMessage,
     answerGate,
     recoverGate,

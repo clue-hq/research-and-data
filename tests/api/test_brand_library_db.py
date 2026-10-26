@@ -29,6 +29,7 @@ from uuid import uuid4
 import pytest
 
 from clue_agents import MountRequest
+from clue_agents.worker_area import ChatScope
 from clue_agents.workspace_policy import WorkspaceSecurityError
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.brand_knowledge_context import (
@@ -119,11 +120,14 @@ def test_the_brand_library_is_written_once_per_pinned_version_and_mounts_read_on
 
             root, factory, _sink = make_factory(tmp_path)
             try:
-                version = await ensure_brand_library(factory, pin=pin, documents=documents)
+                chat = ChatScope(workspace_id, project.project_id, "thread-1")
+                version = await ensure_brand_library(
+                    factory, chat=chat, pin=pin, documents=documents
+                )
                 assert version == brand_library_version(pin) == pin.documents_sha256[:16]
 
-                brand_root = root / workspace_id / "library" / "brand" / project.brand_id
-                tree = brand_root / version
+                # The chat's own copy, beside its agent root (F3, WS-37).
+                tree = factory.chat_host_path(chat) / "brand"
                 overview = tree / "knowledge" / "company" / "overview.md"
                 assert overview.read_text() == OVERVIEW
                 assert (tree / "knowledge" / "product" / "catalog.md").read_text() == CATALOG
@@ -145,12 +149,14 @@ def test_the_brand_library_is_written_once_per_pinned_version_and_mounts_read_on
                 assert index["confirmed_icp"] is None
                 assert index["product_set"] is None
 
-                # A second turn on the same knowledge version finds the tree and writes nothing.
-                before = tree.stat()
-                assert await ensure_brand_library(factory, pin=pin, documents=documents) == version
-                after = tree.stat()
+                # A second turn on the same knowledge version writes nothing (WS-36).
+                before = overview.stat()
+                assert (
+                    await ensure_brand_library(factory, chat=chat, pin=pin, documents=documents)
+                    == version
+                )
+                after = overview.stat()
                 assert (after.st_ino, after.st_mtime_ns) == (before.st_ino, before.st_mtime_ns)
-                assert [child.name for child in brand_root.iterdir()] == [version]
 
                 lease = factory.acquire(
                     workspace_id=workspace_id,
@@ -168,16 +174,8 @@ def test_the_brand_library_is_written_once_per_pinned_version_and_mounts_read_on
                     lease.backend.write_text_sync(
                         f"{BRAND_LIBRARY_PREFIX}company/overview.md", "nope"
                     )
-                # The mount is read beside the thread root, never copied into it.
-                assert not (
-                    root
-                    / workspace_id
-                    / "projects"
-                    / project.project_id
-                    / "threads"
-                    / "thread-1"
-                    / "brand"
-                ).exists()
+                # The mount is read beside the agent root, never copied into it.
+                assert not (factory.chat_host_path(chat) / "agent" / "brand").exists()
             finally:
                 factory.close()
 
@@ -235,7 +233,12 @@ def test_the_mounted_brand_library_serves_its_manifest_at_brand_index_json(
 
             _root, factory, _sink = make_factory(tmp_path)
             try:
-                version = await ensure_brand_library(factory, pin=pin, documents=documents)
+                version = await ensure_brand_library(
+                    factory,
+                    chat=ChatScope(workspace_id, project.project_id, "thread-idx"),
+                    pin=pin,
+                    documents=documents,
+                )
                 lease = factory.acquire(
                     workspace_id=workspace_id,
                     project_id=project.project_id,
@@ -350,16 +353,9 @@ def test_the_shared_brand_library_gives_the_plain_name_to_the_newest_version(
 
             root, factory, _sink = make_factory(tmp_path)
             try:
-                version = await ensure_brand_library(factory, pin=pin, documents=documents)
-                knowledge = (
-                    root
-                    / workspace_id
-                    / "library"
-                    / "brand"
-                    / project.brand_id
-                    / version
-                    / "knowledge"
-                )
+                chat = ChatScope(workspace_id, project.project_id, "thread-1")
+                await ensure_brand_library(factory, chat=chat, pin=pin, documents=documents)
+                knowledge = factory.chat_host_path(chat) / "brand" / "knowledge"
                 # …and the shared library is not: the newest version owns the plain name.
                 assert (knowledge / "audience" / "icp-gi.md").read_text() == newer_body
                 assert (knowledge / "audience" / "icp-gi.v2.md").read_text() == confirmed_body
@@ -453,8 +449,9 @@ def test_the_library_index_lists_every_file_it_serves(tmp_path: Path) -> None:
 
             root, factory, _sink = make_factory(tmp_path)
             try:
-                version = await ensure_brand_library(factory, pin=pin, documents=documents)
-                tree = root / workspace_id / "library" / "brand" / project.brand_id / version
+                chat = ChatScope(workspace_id, project.project_id, "thread-1")
+                await ensure_brand_library(factory, chat=chat, pin=pin, documents=documents)
+                tree = factory.chat_host_path(chat) / "brand"
                 index = json.loads((tree / "index.json").read_text())
                 assert index["omitted_count"] == 0
                 assert {entry["path"] for entry in index["documents"]} == {

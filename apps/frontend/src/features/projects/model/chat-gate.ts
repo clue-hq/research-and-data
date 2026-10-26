@@ -7,6 +7,13 @@ import {
 } from "./chat-parts";
 import type { GateResponse } from "./chat-turn";
 import { profileDisplayName } from "./chat-tool-presentation";
+import {
+  CRM_WRITE_GATE_KIND,
+  crmProposalIdOf,
+  crmWriteCard,
+  type CrmWriteAnswer,
+  type CrmWriteCardModel,
+} from "@/features/integrations/model/crm-write";
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const DURABLE_GATE_ID_PATTERN =
@@ -76,6 +83,9 @@ const GateWireSchema = z.object({
   snapshot_erasure_reason: z.string().nullable().default(null),
   answer: GateAnswerWireSchema.nullable().default(null),
   launches: z.array(GateLaunchWireSchema).default([]),
+  // Nobody answered it and it can no longer be answered: a newer CRM write card replaced it, or a
+  // reconnect closed it (`GATE_WITHDRAWN_SQL`). Never shown as waiting.
+  withdrawn: z.boolean().default(false),
 });
 
 export interface ChatGateAnswer {
@@ -118,6 +128,7 @@ export interface ChatGate {
   snapshotErasureReason: string | null;
   answer: ChatGateAnswer | null;
   launches: readonly ChatGateLaunch[];
+  withdrawn: boolean;
 }
 
 export interface GateAnswerDisplay {
@@ -151,6 +162,11 @@ export type GateDecisionInput =
       kind: "product_set_selection";
       decision: "approved";
       selectedProductIds: readonly string[];
+    }
+  | {
+      kind: "crm_write";
+      decision: "approved";
+      answer: CrmWriteAnswer;
     };
 
 function toGate(wire: z.infer<typeof GateWireSchema>): ChatGate {
@@ -192,6 +208,7 @@ function toGate(wire: z.infer<typeof GateWireSchema>): ChatGate {
       sourceActionRef: launch.source_action_ref,
       approvalRefs: launch.approval_refs,
     })),
+    withdrawn: wire.withdrawn,
   };
 }
 
@@ -203,7 +220,7 @@ export const ChatGateListResponseSchema = z
 
 /** "Open" is the absence of an answer record (ratified §6-D3), never a column. */
 export function isGateOpen(gate: ChatGate): boolean {
-  return gate.answer === null && gate.snapshotErasedAt === null;
+  return gate.answer === null && gate.snapshotErasedAt === null && !gate.withdrawn;
 }
 
 // --- the card state machine ---------------------------------------------
@@ -220,7 +237,12 @@ export function isGateOpen(gate: ChatGate): boolean {
  * withheld *amount* is not that case: it is the pilot's normal posture and
  * leaves an otherwise verified card fully answerable.
  */
-export type GateCardState = "requested" | "responded" | "denied" | "unavailable";
+export type GateCardState =
+  | "requested"
+  | "responded"
+  | "denied"
+  | "withdrawn"
+  | "unavailable";
 
 export type GateRecoveryKind = "retry_gate_read" | "request_new_gate";
 
@@ -269,6 +291,15 @@ export interface GateCardModel {
    * subject the decision was recorded against.
    */
   productSet: GateProductSet | null;
+  /** Non-null only for a CRM write permission card: what it asks to change. */
+  crmWrite: CrmWriteCardModel | null;
+  /** The CRM write proposal the card stands for; its progress is read by this id. */
+  crmProposalId: string | null;
+  /**
+   * A refused answer on a CRM write card, in plain words. The card stays as it was (card spec
+   * §4) rather than turning into a notice.
+   */
+  problem: string | null;
 }
 
 export interface GateProductSet {
@@ -309,6 +340,7 @@ const GATE_TITLES: Record<string, string> = {
   product_set_selection: "Choose this project's products",
   plan_approval: "Review the plan",
   budget_approval: "Review the budget",
+  [CRM_WRITE_GATE_KIND]: "Allow changes to your CRM",
 };
 
 const SUPPORTED_GATE_KINDS: ReadonlySet<string> = new Set([
@@ -316,6 +348,7 @@ const SUPPORTED_GATE_KINDS: ReadonlySet<string> = new Set([
   "icp_confirmation",
   "product_selection",
   "product_set_selection",
+  CRM_WRITE_GATE_KIND,
 ]);
 
 const RETRY_GATE_READ: GateRecoveryAction = {
@@ -436,6 +469,9 @@ function notice({
     selectedProductId: null,
     selectedProductName: null,
     productSet: null,
+    crmWrite: null,
+    crmProposalId: null,
+    problem: null,
   };
 }
 
@@ -527,7 +563,9 @@ export function gateCardModel({
       recovery: REQUEST_NEW_GATE,
     });
   }
-  if (gate.subjectRevision === null || gate.subjectRevision < 1) {
+  const crm = gate.kind === CRM_WRITE_GATE_KIND;
+  // A CRM write card has no revision: its subject is the proposal, fixed by the snapshot digest.
+  if (!crm && (gate.subjectRevision === null || gate.subjectRevision < 1)) {
     return notice({
       gate,
       part,
@@ -551,6 +589,18 @@ export function gateCardModel({
       recovery: REQUEST_NEW_GATE,
     });
   }
+
+  const crmWrite = crm ? crmWriteCard(gate.subjectSnapshot) : null;
+  const crmProposalId = crm ? crmProposalIdOf(gate.subjectRef) : null;
+  if (crm && (crmWrite === null || crmProposalId === null)) {
+    return notice({
+      gate,
+      part,
+      reason: "This proposal is incomplete. Ask Clue to propose the changes again.",
+      recovery: REQUEST_NEW_GATE,
+    });
+  }
+  const crmParts = { crmWrite, crmProposalId, problem: null };
 
   const decision = decisionOf(gate.answer?.decision ?? null);
   const productOptions = productSelectionOptions(gate.subjectSnapshot);
@@ -579,7 +629,8 @@ export function gateCardModel({
     if (
       gate.answer?.expectedSubjectSha256 !== gate.expectedSubjectSha256 ||
       !gate.permittedDecisions.includes(decision) ||
-      gate.answer.answeredByUserId !== gate.addresseeUserId
+      // Any member of the workspace may answer a CRM write card (R-6.8).
+      (!crm && gate.answer.answeredByUserId !== gate.addresseeUserId)
     ) {
       return notice({
         gate,
@@ -659,9 +710,19 @@ export function gateCardModel({
       selectedProductId: gate.answer?.selectedOptionRef ?? null,
       selectedProductName: selectedProduct?.name ?? null,
       productSet,
+      ...crmParts,
     };
   }
-  if (authorityFailure !== null) {
+  if (gate.withdrawn) {
+    return {
+      ...notice({ gate, part, reason: "", recovery: null }),
+      state: "withdrawn",
+      title: gateTitle(gate.kind),
+      unavailableReason: null,
+      ...crmParts,
+    };
+  }
+  if (authorityFailure !== null && !crm) {
     return notice({
       gate,
       part,
@@ -669,7 +730,7 @@ export function gateCardModel({
       recovery: authorityFailure.recovery,
     });
   }
-  if (currentUserId === null || gate.addresseeUserId !== currentUserId) {
+  if (currentUserId === null || (!crm && gate.addresseeUserId !== currentUserId)) {
     return notice({
       gate,
       part,
@@ -719,6 +780,8 @@ export function gateCardModel({
     selectedProductId: null,
     selectedProductName: null,
     productSet,
+    ...crmParts,
+    problem: authorityFailure?.reason ?? null,
   };
 }
 
@@ -815,11 +878,26 @@ const PRODUCT_SET_DECISION_RECORDED: Readonly<Record<GateDecision, string>> = {
   revised: "Changes requested",
 };
 
+const CRM_WRITE_DECISION_COPY: Readonly<Record<GateDecision, string>> = {
+  approved: "Allow",
+  rejected: "Don't allow",
+  revised: "Request changes",
+};
+
+const CRM_WRITE_DECISION_RECORDED: Readonly<Record<GateDecision, string>> = {
+  approved: "Changes allowed",
+  rejected: "Changes not allowed",
+  revised: "Changes requested",
+};
+
 export function gateDecisionCopy(
   kind: string,
   decision: GateDecision,
   recorded = false,
 ): string {
+  if (kind === CRM_WRITE_GATE_KIND) {
+    return recorded ? CRM_WRITE_DECISION_RECORDED[decision] : CRM_WRITE_DECISION_COPY[decision];
+  }
   if (kind === "icp_confirmation") {
     return recorded ? ICP_DECISION_RECORDED[decision] : ICP_DECISION_COPY[decision];
   }
@@ -866,7 +944,9 @@ export function gateAnswerDisplay(gate: ChatGate): GateAnswerDisplay | null {
           ? selectedProduct?.name ?? null
           : decision === "approved" && gate.kind === "product_set_selection"
             ? selectedNames || null
-            : null,
+            : decision === "approved" && gate.kind === CRM_WRITE_GATE_KIND
+              ? crmAllowedDetail(gate.answer.decisionPayload)
+              : null,
     label: gateDecisionCopy(gate.kind, decision, true),
   };
 }
@@ -938,6 +1018,13 @@ export function gateAnswerResponse(
   } else if (input.kind === "product_set_selection") {
     throw new Error("Products can only be chosen when approving this proposal.");
   }
+  if (card.kind === CRM_WRITE_GATE_KIND && input.decision === "approved") {
+    if (input.kind !== "crm_write" || input.answer.selected_write_ids.length === 0) {
+      throw new Error("Tick at least one change to allow.");
+    }
+  } else if (input.kind === "crm_write") {
+    throw new Error("Changes can only be chosen when allowing them.");
+  }
   return {
     gateId: card.gateId,
     decision: input.decision,
@@ -951,7 +1038,22 @@ export function gateAnswerResponse(
     ...(input.kind === "product_set_selection"
       ? { selectedProductIds: [...input.selectedProductIds] }
       : {}),
+    ...(input.kind === "crm_write"
+      ? {
+          crmWrite: {
+            selected_write_ids: [...input.answer.selected_write_ids],
+            always_allow: [...input.answer.always_allow],
+          },
+        }
+      : {}),
   };
+}
+
+/** "3 changes" — the receipt of an allowed CRM write card. */
+function crmAllowedDetail(payload: Record<string, unknown>): string | null {
+  const count = stringList(payload.selected_write_ids).length;
+  if (count === 0) return null;
+  return `${count} ${count === 1 ? "change" : "changes"}`;
 }
 
 function productSelectionOptions(

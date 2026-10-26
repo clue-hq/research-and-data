@@ -826,13 +826,34 @@ class Settings(BaseSettings):
     # clamps this to the account's durable research budget when one exists.
     # Env: ``CLUE_AGENT_ACCOUNT_PLAN_BUDGET_LIMIT_MILLICENTS``.
     agent_account_plan_budget_limit_millicents: int = Field(default=1_000_000, ge=0)
-    # Terminal isolated workspaces are retained briefly for operator inspection, then purged by
-    # the C6.8 cleanup job. Zero is allowed for tests/immediate cleanup.
-    # Env: ``CLUE_AGENT_WORKSPACE_RETENTION_S``.
-    agent_workspace_retention_s: float = Field(default=86400.0, ge=0)
-    # Periodic worker cadence. Non-positive disables scheduling without weakening the job itself.
-    # Env: ``CLUE_AGENT_CLEANUP_INTERVAL_S``.
-    agent_cleanup_interval_s: float = 3600.0
+    # F3 (spec docs/superpowers/specs/agent-workspace/, WS-21): a chat's agent folders are saved as
+    # a versioned snapshot in the artifact store and a worker's disk is only a cache. Off is the
+    # emergency switch only: local folders, no snapshots, a 24-hour idle window.
+    # Env: ``CLUE_AGENT_WORKSPACE_SNAPSHOTS_ENABLED``.
+    agent_workspace_snapshots_enabled: bool = True
+    # A chat's folder on a worker is deleted after this long unused (AW-11); the next turn
+    # restores it from its snapshot. Env: ``CLUE_AGENT_WORKSPACE_CACHE_IDLE_S``.
+    agent_workspace_cache_idle_s: float = Field(default=1800.0, gt=0)
+    # Each worker's area is capped at this many bytes; over it, idle chat folders go oldest first
+    # (AW-17). Env: ``CLUE_AGENT_WORKSPACE_CACHE_MAX_BYTES``.
+    agent_workspace_cache_max_bytes: int = Field(default=10737418240, gt=0)
+    # Parallel uploads and downloads for one restore or save (WS-19).
+    # Env: ``CLUE_AGENT_WORKSPACE_TRANSFER_CONCURRENCY``.
+    agent_workspace_transfer_concurrency: int = Field(default=16, ge=1)
+    # How often a worker checks its area for idle chat folders.
+    # Env: ``CLUE_AGENT_WORKSPACE_CACHE_SWEEP_INTERVAL_S``.
+    agent_workspace_cache_sweep_interval_s: float = Field(default=300.0, gt=0)
+    # F3 Phase 2 retention (AW-24). A raw read — the untouched bytes a tool pulled down — expires
+    # this long after it was written; the agent can always fetch it again.
+    # Env: ``CLUE_AGENT_WORKSPACE_RAW_RETENTION_S``.
+    agent_workspace_raw_retention_s: float = Field(default=172800.0, gt=0)
+    # What the agent itself made (notes, drafts) is kept longer than a raw read, because
+    # re-making it costs a turn. Env: ``CLUE_AGENT_WORKSPACE_WORKING_RETENTION_S``.
+    agent_workspace_working_retention_s: float = Field(default=604800.0, gt=0)
+    # How often the expiry job runs. Daily: nothing here is urgent, and a sweep that wakes more
+    # often only costs reads (AW-24 as amended 2026-10-23 — it was hourly).
+    # Env: ``CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S``.
+    agent_workspace_retention_sweep_interval_s: float = Field(default=86400.0, gt=0)
 
     # --- C7 structured research-view activation -------------------------------------------
     # Each externally reachable capability is independently default-off. Deployments can canary
@@ -975,6 +996,13 @@ class Settings(BaseSettings):
     # SSE poll cadence of the turn stream's live tail. The outbox is the buffer (§3.3(7)); a slow
     # or absent consumer never touches model execution. Env: ``CLUE_CHAT_STREAM_POLL_INTERVAL_S``.
     chat_stream_poll_interval_s: float = 0.25
+    # The thread stream (CRM trial 1, F2): one per open, visible chat, sending only the turn
+    # lifecycle frames of any turn in the thread, so a chat follows turns it did not start. It
+    # polls more slowly than a turn stream (it only has to notice that a turn began), and sends an
+    # SSE comment when it has been quiet this long so no proxy cuts an idle connection.
+    # Env: ``CLUE_CHAT_THREAD_STREAM_POLL_INTERVAL_S`` / ``CLUE_CHAT_THREAD_STREAM_KEEPALIVE_S``.
+    chat_thread_stream_poll_interval_s: float = 1.0
+    chat_thread_stream_keepalive_s: float = 15.0
 
     # --- FI Lane D "dev-lens" mini-slice (prompt/skill tuning; DEV-ONLY BY CONSTRUCTION) ------
     # Two developer lenses onto a turn. Both are refused at process start outside a dev/local
@@ -1025,8 +1053,36 @@ class Settings(BaseSettings):
     auth_clerk_jwks_url: str | None = None
     auth_clerk_issuer: str | None = None
     auth_clerk_authorized_parties: Annotated[tuple[str, ...], NoDecode] = ()
-    # Public frontend origin used for settings invitation links. Env: CLUE_APP_ORIGIN.
+    # Public frontend origin used for settings invitation links and the CRM connect callback page.
+    # Env: CLUE_APP_ORIGIN.
     app_origin: str = "http://localhost:3020"
+    # CRM integration (HubSpot / Salesforce through Composio; spec
+    # docs/superpowers/specs/crm-integration/). The CRM tools and routes refuse until this is on
+    # AND ``CLUE_COMPOSIO_API_KEY`` is set. Env: ``CLUE_CRM_INTEGRATION_ENABLED``.
+    crm_integration_enabled: bool = True
+    # Composio REST API base (v3.1). Env: ``CLUE_COMPOSIO_BASE_URL``.
+    composio_base_url: str = "https://backend.composio.dev/api/v3.1"
+    # The Composio auth config per CRM; a CRM without one is not offered on the connect card.
+    # Env: ``CLUE_COMPOSIO_HUBSPOT_AUTH_CONFIG_ID`` / ``CLUE_COMPOSIO_SALESFORCE_AUTH_CONFIG_ID``.
+    composio_hubspot_auth_config_id: str = ""
+    composio_salesforce_auth_config_id: str = ""
+    # Pinned Composio toolkit versions, sent on every tool execution so actions never change
+    # under the agent. Env: ``CLUE_COMPOSIO_HUBSPOT_TOOLKIT_VERSION`` /
+    # ``CLUE_COMPOSIO_SALESFORCE_TOOLKIT_VERSION``.
+    composio_hubspot_toolkit_version: str = "20261020_01"
+    composio_salesforce_toolkit_version: str = "20261018_00"
+    # Clue's cap on a Salesforce org's daily API allowance, in percent (R-7.5).
+    # Env: ``CLUE_CRM_SALESFORCE_API_SHARE_PCT``.
+    crm_salesforce_api_share_pct: int = Field(default=10, ge=1, le=100)
+    # The CRM write executor (Phase 2): a change that meets a rate limit or an unreachable CRM is
+    # retried this many sends in all, waiting RETRY_BASE_S * 2**(attempt-1) seconds between them,
+    # then failed (retryable); MIN_INTERVAL_S is the pause between two calls to the CRM (the
+    # reads before a permission card included).
+    # Env: ``CLUE_CRM_WRITE_MAX_ATTEMPTS`` / ``CLUE_CRM_WRITE_RETRY_BASE_S`` /
+    # ``CLUE_CRM_WRITE_MIN_INTERVAL_S``.
+    crm_write_max_attempts: int = Field(default=4, ge=1)
+    crm_write_retry_base_s: float = Field(default=30, ge=0)
+    crm_write_min_interval_s: float = Field(default=0.1, ge=0)
     # FI-4 slice 1: gates POST /auth/v1/provision (self-serve workspace creation). Default-off
     # like every neighbouring write surface — an unconfigured deployment serves session reads
     # only; enabling requires an explicit operator decision because each valid provider session

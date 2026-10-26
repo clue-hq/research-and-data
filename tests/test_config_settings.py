@@ -346,3 +346,35 @@ def test_the_retired_discovery_settings_are_gone() -> None:
     fields = Settings.model_fields
     assert "arv2_discovery_criteria_gate_keys" not in fields
     assert "arv2_discovery_relaxed_auto" not in fields
+
+
+def test_phase_2_retention_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """F3 Phase 2 (AW-24, amended 2026-10-23: the sweep is daily, not hourly)."""
+
+    for name in (
+        "CLUE_AGENT_WORKSPACE_RAW_RETENTION_S",
+        "CLUE_AGENT_WORKSPACE_WORKING_RETENTION_S",
+        "CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    settings = load_settings(_env_file=None)  # type: ignore[call-arg]
+    assert (
+        settings.agent_workspace_raw_retention_s,
+        settings.agent_workspace_working_retention_s,
+        settings.agent_workspace_retention_sweep_interval_s,
+    ) == (172800.0, 604800.0, 86400.0)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "agent_workspace_raw_retention_s",
+        "agent_workspace_working_retention_s",
+        "agent_workspace_retention_sweep_interval_s",
+    ],
+)
+def test_phase_2_retention_settings_refuse_zero(field: str) -> None:
+    """A zero retention would expire every file the moment it is written."""
+
+    with pytest.raises(ValidationError):
+        load_settings(_env_file=None, **{field: 0.0})  # type: ignore[call-arg]

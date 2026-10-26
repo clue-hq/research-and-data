@@ -25,12 +25,13 @@ from clue_api.run_python_tool import (
     build_run_python_tools,
 )
 from clue_api.sandbox.docker_runner import SandboxRun
-from clue_api.sandbox.workspaces import SandboxMounts, SandboxWorkspaces
+from clue_api.sandbox.workspaces import SandboxMounts, SandboxWorkspaces, sandbox_mounts_for_lease
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Settings
 from clue_core import ExecutionId, OperationId
 from clue_db import transaction
 from clue_toolbelt import PreconditionFailed, ToolContext, ToolEffectClass, ToolResult
+from tests.agents.workspace_helpers import make_workspace, policy
 from tests.api.sandbox.test_workspaces import _mounts
 
 _EXECUTION = ExecutionId(UUID("00000000-0000-0000-0000-0000000010a1"))
@@ -65,6 +66,28 @@ def _registry(tmp_path: Path, *, max_runs_per_turn: int = 3) -> SandboxWorkspace
     return registry
 
 
+def _lease_registry(tmp_path: Path, *, max_total_bytes: int) -> tuple[SandboxWorkspaces, Path]:
+    """A registry bound from a real workspace lease, so its spill goes through the workspace.
+
+    Returns the registry and the lease's agent root (F3 §12: spills count against the quota).
+    """
+
+    harness = make_workspace(
+        tmp_path,
+        active_policy=policy(
+            max_total_bytes=max_total_bytes, max_file_bytes=max_total_bytes, max_file_count=50
+        ),
+    )
+    registry = SandboxWorkspaces(max_runs_per_turn=3)
+    registry.register(
+        _EXECUTION,
+        sandbox_mounts_for_lease(
+            harness.lease, harness.factory, brand=None, project_library=False, attachments=False
+        ),
+    )
+    return registry, harness.thread_path
+
+
 def _available(monkeypatch: pytest.MonkeyPatch, *, ok: bool = True, reason: str = "") -> None:
     monkeypatch.setattr("clue_api.run_python_tool.docker_available", lambda image: (ok, reason))
 
@@ -88,9 +111,12 @@ def _stub_run(
         limits: Any,
         timeout_s: float,
         label: str | None = None,
+        area: str | None = None,
     ) -> SandboxRun:
         if seen is not None:
-            seen.update(code=code, limits=limits, timeout_s=timeout_s, label=label, mounts=mounts)
+            seen.update(
+                code=code, limits=limits, timeout_s=timeout_s, label=label, mounts=mounts, area=area
+            )
         for relative, body in (writes or {}).items():
             mount, _, rest = relative.partition("/")
             path = mounts.read_write[mount] / rest
@@ -321,7 +347,7 @@ def test_output_past_the_inline_budget_spills_to_a_file_the_agent_can_open(
     _available(monkeypatch)
     body = b"x" * (INLINE_OUTPUT_BUDGET_BYTES + 500)
     _stub_run(monkeypatch, stdout=body, stderr=b"y" * (INLINE_OUTPUT_BUDGET_BYTES + 1))
-    workspaces = _registry(tmp_path)
+    workspaces, agent_root = _lease_registry(tmp_path, max_total_bytes=1_000_000)
     tool = RunPythonTool(settings=_settings(), workspaces=workspaces)
 
     result = _invoke(tool, RunPythonInput(code="pass"), _context())
@@ -330,7 +356,7 @@ def test_output_past_the_inline_budget_spills_to_a_file_the_agent_can_open(
     assert references["stdout_spilled_to"] == f"reads/{_OPERATION}.stdout.txt"
     assert references["stderr_spilled_to"] == f"reads/{_OPERATION}.stderr.txt"
     assert len(references["stdout"].encode()) == INLINE_OUTPUT_BUDGET_BYTES
-    spilled = tmp_path / "reads" / f"{_OPERATION}.stdout.txt"
+    spilled = agent_root / "reads" / f"{_OPERATION}.stdout.txt"
     assert spilled.read_bytes() == body
     # 0o600: the spill is the turn's, and nothing on the host but this process reads it.
     assert spilled.stat().st_mode & 0o777 == 0o600
@@ -389,3 +415,19 @@ def test_the_tool_is_registered_at_run_python_1_and_granted_to_the_head_of_abm()
     assert c6_roles_for_tool("run_python@1") == (AgentRole.HEAD_OF_ABM,)
     # Exactly one role holds it: the sandbox is the project conversation's, not a specialist's.
     assert len(C6_AGENT_TOOL_AUTHORITY["run_python"]) == 1
+
+
+def test_an_output_spill_counts_against_the_workspace_quota(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F3 §12: a spill is an ordinary file of the workspace, so a full workspace refuses it."""
+
+    from clue_agents import WorkspaceQuotaExceeded
+
+    _available(monkeypatch)
+    _stub_run(monkeypatch, stdout=b"x" * (INLINE_OUTPUT_BUDGET_BYTES + 500))
+    workspaces, agent_root = _lease_registry(tmp_path, max_total_bytes=INLINE_OUTPUT_BUDGET_BYTES)
+    tool = RunPythonTool(settings=_settings(), workspaces=workspaces)
+    with pytest.raises(WorkspaceQuotaExceeded):
+        _invoke(tool, RunPythonInput(code="pass"), _context())
+    assert not (agent_root / "reads" / f"{_OPERATION}.stdout.txt").exists()

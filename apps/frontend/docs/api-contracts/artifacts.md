@@ -1,7 +1,7 @@
 # Artifacts API contract
 
 Status: as-built contract for the cross-project artifacts library, ratified 2026-09-15.
-Spec: `docs/superpowers/specs/2026-09-15-artifacts-page-integration-design.md` (repo root).
+Spec: `docs/superpowers/specs/archive/2026-09-15-artifacts-page-integration-design.md` (repo root).
 
 The dummy's `/artifacts` read `workspace.artifacts` per project. In this repo `workspace.artifacts`
 is the schema-hard empty tuple; the library reads ONE workspace-wide endpoint instead.

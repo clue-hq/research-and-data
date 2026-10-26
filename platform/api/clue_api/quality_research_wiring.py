@@ -543,7 +543,7 @@ class _Workspaces:
         self.workspaces = workspaces
         self.artifacts = artifacts
 
-    def acquire(
+    async def acquire_restored(
         self,
         *,
         workspace_id: str,
@@ -552,7 +552,7 @@ class _Workspaces:
         execution_id: ExecutionId,
         resolved_profile: ResolvedAgentProfile,
     ) -> AgentWorkspaceLease:
-        return self.workspaces.acquire(
+        return await self.workspaces.acquire_restored(
             workspace_id=workspace_id,
             project_id=project_id,
             thread_id=thread_id,
@@ -560,6 +560,9 @@ class _Workspaces:
             policy=resolved_profile.profile.workspace,
             artifact_sink=self.artifacts,
         )
+
+    async def release_saved(self, lease: AgentWorkspaceLease) -> None:
+        await self.workspaces.release_saved(lease)
 
 
 class _InlineChild:
@@ -584,6 +587,80 @@ class _InlineChild:
             if result.status == "completed":
                 await self.runtime.complete(child_execution_id)
             return result
+
+
+async def copy_source_run_files(
+    *,
+    lease: AgentWorkspaceLease,
+    source_lease: AgentWorkspaceLease,
+    readable_prefixes: Sequence[str],
+    source_thread_id: str,
+) -> dict[str, JsonValue]:
+    """Copy a source run's notes and raw reads into a reconciling turn's own folders.
+
+    A file the reconciling turn already has is left alone; ``reads/`` goes in through the spill
+    path, everything else as text. Returns what was found of the source — its thread, the snapshot
+    version restored (``None`` when it never saved one) and how many files were copied — so the
+    reconciling agent is told rather than left to think there was nothing to reconcile (WS-33). A
+    source with no snapshot is not an error.
+    """
+
+    copied = 0
+    existing = {e.path for e in await lease.backend.list_entries()}
+    for prefix in ("work", "scratch", "reads"):
+        if prefix not in readable_prefixes:
+            continue
+        for entry in await source_lease.backend.list_entries(prefix):
+            if entry.path not in existing:
+                content = await source_lease.backend.read_text(entry.path)
+                if prefix == "reads":
+                    await asyncio.to_thread(
+                        lease.backend.write_spill, Path(entry.path).stem, content.encode()
+                    )
+                else:
+                    await lease.backend.write_text(entry.path, content)
+                copied += 1
+    base = source_lease.snapshot_base
+    version = None if base is None or base.pointer is None else base.pointer.version
+    log.info(
+        "research.reconciliation.source_snapshot",
+        thread_id=source_thread_id,
+        version=version,
+        files_copied=copied,
+    )
+    return {"thread_id": source_thread_id, "version": version, "files_copied": copied}
+
+
+async def write_reconciliation_files(
+    *,
+    lease: AgentWorkspaceLease,
+    reconciliation: dict[str, Any],
+    source_snapshot: dict[str, JsonValue],
+) -> None:
+    """Write the reconciliation input, its reply schema and its instructions under ``work/``.
+
+    Each is written only when the turn does not already have it (a resumed turn keeps its own).
+    """
+
+    from clue_api.arv2.quality_reconciliation import ReconciliationReply
+
+    for path, value in (
+        (
+            "work/reconciliation/input.json",
+            {
+                **{k: v for k, v in reconciliation.items() if not k.startswith("_")},
+                "source_snapshot": source_snapshot,
+            },
+        ),
+        ("work/reconciliation/schema.json", ReconciliationReply.model_json_schema()),
+    ):
+        content = json.dumps(value, ensure_ascii=False)
+        entries = {e.path for e in await lease.backend.list_entries("work")}
+        if path not in entries:
+            await lease.backend.write_text(path, content)
+    instructions_path = "work/reconciliation/instructions.md"
+    if instructions_path not in {e.path for e in await lease.backend.list_entries("work")}:
+        await lease.backend.write_text(instructions_path, reconciliation["_editorial_system"])
 
 
 class ResearchUnitRuntime:
@@ -991,7 +1068,8 @@ class ResearchUnitRuntime:
                 }
             }
         thread = f"research-quality-{execution}"
-        lease = self.workspaces.acquire(
+        # F3 (WS-8): restored from the run's snapshot on any worker, saved at finalize.
+        lease = await self.workspaces.acquire_restored(
             workspace_id=self.scope.workspace_id,
             project_id=self.scope.project_id,
             thread_id=thread,
@@ -1079,11 +1157,10 @@ class ResearchUnitRuntime:
                     await self.complete(execution)
                 return prior
             if self.reconciliation is not None:
-                from clue_api.arv2.quality_reconciliation import ReconciliationReply
-
                 # Preserve the original workspace notes and native compaction archive.
-                # Current evidence remains a live, authorized research_backend view.
-                source_lease = self.workspaces.acquire(
+                # Current evidence remains a live, authorized research_backend view. The source
+                # run's folders are restored from its snapshot, so this works on any worker (F3).
+                source_lease = await self.workspaces.acquire_restored(
                     workspace_id=self.scope.workspace_id,
                     project_id=self.scope.project_id,
                     thread_id=f"research-quality-{source_execution}",
@@ -1092,41 +1169,19 @@ class ResearchUnitRuntime:
                     artifact_sink=self.artifacts,
                 )
                 try:
-                    existing = {e.path for e in await lease.backend.list_entries()}
-                    for prefix in ("work", "scratch", "reads"):
-                        if prefix not in resolved.profile.workspace.readable_prefixes:
-                            continue
-                        for entry in await source_lease.backend.list_entries(prefix):
-                            if entry.path not in existing:
-                                content = await source_lease.backend.read_text(entry.path)
-                                if prefix == "reads":
-                                    await asyncio.to_thread(
-                                        lease.backend.write_spill,
-                                        Path(entry.path).stem,
-                                        content.encode(),
-                                    )
-                                else:
-                                    await lease.backend.write_text(entry.path, content)
-                finally:
-                    source_lease.release()
-                for path, value in (
-                    (
-                        "work/reconciliation/input.json",
-                        {k: v for k, v in self.reconciliation.items() if not k.startswith("_")},
-                    ),
-                    ("work/reconciliation/schema.json", ReconciliationReply.model_json_schema()),
-                ):
-                    content = json.dumps(value, ensure_ascii=False)
-                    entries = {e.path for e in await lease.backend.list_entries("work")}
-                    if path not in entries:
-                        await lease.backend.write_text(path, content)
-                instructions_path = "work/reconciliation/instructions.md"
-                if instructions_path not in {
-                    e.path for e in await lease.backend.list_entries("work")
-                }:
-                    await lease.backend.write_text(
-                        instructions_path, self.reconciliation["_editorial_system"]
+                    source_snapshot = await copy_source_run_files(
+                        lease=lease,
+                        source_lease=source_lease,
+                        readable_prefixes=resolved.profile.workspace.readable_prefixes,
+                        source_thread_id=f"research-quality-{source_execution}",
                     )
+                finally:
+                    await self.workspaces.release_saved(source_lease)
+                await write_reconciliation_files(
+                    lease=lease,
+                    reconciliation=self.reconciliation,
+                    source_snapshot=source_snapshot,
+                )
             owner = uuid4()
             async with self.connections() as conn:
                 remaining_runtime = await begin_runtime(conn, self.operation_scope, owner=owner)
@@ -1315,7 +1370,7 @@ class ResearchUnitRuntime:
 
                 await asyncio.shield(settle_runtime())
                 self.runtime_owner = None
-            lease.release()
+            await self.workspaces.release_saved(lease)
 
     async def reconciliation_output(self, outcome: AgentTurnOutcome) -> dict[str, Any]:
         if outcome.status is not AgentExecutionStatus.COMPLETED or outcome.finalization_ref is None:

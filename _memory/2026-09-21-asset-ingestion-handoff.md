@@ -15,7 +15,7 @@
   `ab31814a2`, matching the implementation-base snapshot in the spec. The current
   workspace instruction names `origin/integration/design-improvement` as the
   comparison/publication target; do not silently change it to the spec's older target.
-- Copied `docs/superpowers/specs/2026-09-21-asset-context-and-bulk-upload-design.md`
+- Copied `docs/superpowers/specs/archive/2026-09-21-asset-context-and-bulk-upload-design.md`
   unchanged from Fredericton and committed it locally as `8147c2335`. `cmp` and
   SHA-256 both verify identical contents. No experiment files or ancestry imported.
 - Required attachment `.context/attachments/wuuRNd/Transcript of ICP-definition

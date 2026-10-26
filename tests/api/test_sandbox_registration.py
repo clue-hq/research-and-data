@@ -27,8 +27,13 @@ from clue_agents import (
     AgentTurnRequest,
     MountRequest,
 )
+from clue_agents.ports import TurnBinding
+from clue_agents.worker_area import ChatScope
+from clue_agents.workspace import AgentWorkspaceFactory
+from clue_agents.workspace_policy import PreparedWorkspaceRoot
 from clue_api import conversation_turns as engine_module
 from clue_api.conversation_turns import ConversationTurnEngine
+from clue_api.crm.read_sinks import CrmReadSinks
 from clue_api.sandbox.workspaces import SandboxWorkspaces
 from clue_core import ExecutionId
 from tests.agents.conftest import artifact, constitution
@@ -64,9 +69,16 @@ class _Contexts:
 class _Components:
     """Only the attributes ``execute`` touches on this path."""
 
-    def __init__(self, *, workspaces: Any, sandbox_workspaces: SandboxWorkspaces | None) -> None:
+    def __init__(
+        self,
+        *,
+        workspaces: Any,
+        sandbox_workspaces: SandboxWorkspaces | None,
+        crm_read_sinks: CrmReadSinks | None = None,
+    ) -> None:
         self.workspaces = workspaces
         self.sandbox_workspaces = sandbox_workspaces
+        self.crm_read_sinks = crm_read_sinks
         self.turns = _Turns()
         self.history = _History()
         self.artifacts: Any = None
@@ -142,21 +154,40 @@ def _make_private(root: Path, path: Path) -> None:
             current.mkdir(mode=0o700)
 
 
-def _lease(tmp_path: Path, mounts: MountRequest) -> tuple[Any, Any]:
-    _root, factory, _sink = make_factory(tmp_path)
-    project_root = factory.project_host_path(WORKSPACE_ID, PROJECT_ID)
-    if mounts.project_library:
-        _make_private(factory.root_path, project_root / mounts.project_library_name)
-    if mounts.attachments:
-        _make_private(factory.root_path, project_root / "attachments")
-    lease = factory.acquire(
-        workspace_id=WORKSPACE_ID,
-        project_id=PROJECT_ID,
-        thread_id=THREAD_ID,
-        execution_id=EXECUTION_ID,
-        policy=policy(),
-        mounts=mounts,
+def _lease(
+    tmp_path: Path,
+    mounts: MountRequest,
+    sandbox: TurnBinding | None = None,
+    *,
+    hooked: bool = True,
+) -> tuple[Any, Any]:
+    """A factory that binds ``sandbox`` itself (F3, WS-14), and this turn's lease from it."""
+
+    _root, plain, _sink = make_factory(tmp_path)
+    factory = AgentWorkspaceFactory(
+        prepared_root=PreparedWorkspaceRoot(path=plain.root_path),
+        artifact_sink=_sink,
+        turn_bindings=() if sandbox is None else (sandbox,),
     )
+    plain.close()
+    # The chat's own copies sit in its own folder, beside its agent root (F3, WS-37).
+    chat_dir = factory.chat_host_path(ChatScope(WORKSPACE_ID, PROJECT_ID, THREAD_ID))
+    if mounts.project_library:
+        _make_private(factory.root_path, chat_dir / "project")
+    if mounts.attachments:
+        _make_private(factory.root_path, chat_dir / "attachments")
+    arguments: dict[str, Any] = {
+        "workspace_id": WORKSPACE_ID,
+        "project_id": PROJECT_ID,
+        "thread_id": THREAD_ID,
+        "execution_id": EXECUTION_ID,
+        "policy": policy(),
+        "mounts": mounts,
+    }
+    if hooked:
+        lease = asyncio.run(factory.acquire_restored(**arguments))
+    else:
+        lease = factory.acquire(**arguments)
     return factory, lease
 
 
@@ -165,8 +196,8 @@ def test_the_turns_sandbox_workspace_is_bound_for_the_turn_and_released_after(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     mounts = MountRequest(project_library=True, attachments=True)
-    factory, lease = _lease(tmp_path, mounts)
     sandbox = SandboxWorkspaces(max_runs_per_turn=4)
+    factory, lease = _lease(tmp_path, mounts, sandbox)
     components = _Components(workspaces=factory, sandbox_workspaces=sandbox)
     seen: dict[str, Any] = {}
 
@@ -197,7 +228,7 @@ def test_the_turns_sandbox_workspace_is_bound_for_the_turn_and_released_after(
             )
         )
     finally:
-        lease.backend.close()
+        asyncio.run(factory.release_saved(lease))
         factory.close()
 
     assert result.outcome.status is AgentExecutionStatus.FAILED
@@ -219,8 +250,8 @@ def test_a_runtime_that_raises_still_releases_the_binding(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     mounts = MountRequest()
-    factory, lease = _lease(tmp_path, mounts)
     sandbox = SandboxWorkspaces(max_runs_per_turn=2)
+    factory, lease = _lease(tmp_path, mounts, sandbox)
     components = _Components(workspaces=factory, sandbox_workspaces=sandbox)
 
     class _Runtime:
@@ -239,7 +270,7 @@ def test_a_runtime_that_raises_still_releases_the_binding(
                 )
             )
     finally:
-        lease.backend.close()
+        asyncio.run(factory.release_saved(lease))
         factory.close()
 
     assert sandbox.mounts_for(EXECUTION_ID) is None
@@ -258,18 +289,18 @@ def _unused_mounts(factory: Any) -> Any:
     )
 
 
-def test_a_surface_that_names_no_mounts_registers_nothing(
+def test_a_lease_taken_without_the_hook_registers_nothing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The trial and the test builders acquire their lease themselves and pass no MountRequest.
+    """Only ``acquire_restored`` binds (F3, WS-14), and always from the lease's own mount table.
 
-    Registering a guessed mount table for them would hand a script paths the turn never asked
-    for, so the honest answer is no registration — and ``run_python@1`` then refuses by name.
+    A lease taken with the plain ``acquire`` (a test builder) is bound to nothing, so a script
+    is never handed paths the turn did not take — ``run_python@1`` then refuses by name.
     """
 
-    factory, lease = _lease(tmp_path, MountRequest())
     sandbox = SandboxWorkspaces(max_runs_per_turn=2)
+    factory, lease = _lease(tmp_path, MountRequest(), sandbox, hooked=False)
     components = _Components(workspaces=factory, sandbox_workspaces=sandbox)
     seen: dict[str, Any] = {}
 
@@ -319,3 +350,31 @@ def test_a_process_with_no_sandbox_registry_runs_the_turn_unchanged(
         factory.close()
 
     assert result.outcome.status is AgentExecutionStatus.FAILED
+
+
+def test_the_turns_crm_read_sink_is_bound_for_the_turn_and_released_after(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``run_crm_action@1`` writes into the turn's own ``reads/``, found by execution id."""
+
+    sinks = CrmReadSinks()
+    factory, lease = _lease(tmp_path, MountRequest(), sinks)
+    components = _Components(workspaces=factory, sandbox_workspaces=None, crm_read_sinks=sinks)
+    seen: dict[str, Any] = {}
+
+    class _Runtime:
+        async def run(self, **_: Any) -> AgentTurnOutcome:
+            seen["sink"] = sinks.sink_for(EXECUTION_ID)
+            raise RuntimeError("turn exploded")
+
+    engine = _engine(components=components, runtime=_Runtime(), monkeypatch=monkeypatch)
+    try:
+        with pytest.raises(RuntimeError, match="turn exploded"):
+            asyncio.run(engine.execute(request=_request(), lease=lease, budget_limit_millicents=1))
+    finally:
+        asyncio.run(factory.release_saved(lease))
+        factory.close()
+
+    assert seen["sink"] is lease.backend
+    assert sinks.sink_for(EXECUTION_ID) is None

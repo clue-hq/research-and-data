@@ -151,7 +151,12 @@ class StorageParameterArtifactStore(ParameterArtifactStore):
                 return False
             await mark_erased(conn, artifact_key)
         async with self._conn_factory() as conn:
-            result = await purge_erased_artifacts(conn, self._storage, keys=(artifact_key,))
+            # ``sweep_expired=False``: this purges the one key it just erased. The pass's
+            # opening table-wide expiry tombstone is the keyless fleet sweep's work, and a
+            # per-key caller has no business doing it on other owners' rows (review I7).
+            result = await purge_erased_artifacts(
+                conn, self._storage, keys=(artifact_key,), sweep_expired=False
+            )
         return artifact_key in result.purged_keys
 
 

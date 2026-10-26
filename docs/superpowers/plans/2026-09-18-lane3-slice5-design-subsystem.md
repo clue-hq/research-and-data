@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, SQLAlchemy text SQL + asyncpg, LangChain callbacks, `clue_obs` (OTel, Sentry, Langfuse SDK v4), httpx, pytest on the lane database.
 
-**Spec:** `docs/superpowers/specs/2026-09-18-lane3-slice5-design-subsystem-design.md` (rulings §6; this plan follows the recommendations). Parent: `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md` §5.4.
+**Spec:** `docs/superpowers/specs/archive/2026-09-18-lane3-slice5-design-subsystem-design.md` (rulings §6; this plan follows the recommendations). Parent: `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md` §5.4.
 
 ## Global Constraints
 

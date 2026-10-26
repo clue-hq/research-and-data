@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, SQLAlchemy async + Alembic (hash revision ids), pydantic v2, pytest against the lane DB `clue_san-salvador` (`--ignore-glob='*_live.py' -p no:cacheprovider`).
 
-**Spec:** `docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.1 (rulings R1, R2, R8).
+**Spec:** `docs/superpowers/specs/archive/2026-09-12-project-context-and-icp-authoring-design.md` §4.1 (rulings R1, R2, R8).
 
 ## Global Constraints
 
@@ -296,7 +296,7 @@ Expected: FAIL with `ModuleNotFoundError: clue_api.project_status`.
 ```python
 """The project's ``status.md`` and ``decisions.md`` — compiled from rows, never from a model.
 
-Spec: docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md §4.1.
+Spec: docs/superpowers/specs/archive/2026-09-12-project-context-and-icp-authoring-design.md §4.1.
 The renderers are pure so the wording is tested without a database; the loaders read only ARV2
 rows and the ``project_state`` statements (ruling R8). Nothing here writes "now": every timestamp
 is a row's own, so two attempts of one turn compile identical bytes.

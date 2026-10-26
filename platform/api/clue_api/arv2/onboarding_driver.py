@@ -45,8 +45,10 @@ from clue_api.arv2.exa_client import (
     product_catalog_output_schema,
 )
 from clue_api.arv2.onboarding_documents import (
+    CustomerRow,
     KnowledgeDocument,
     company_overview_document,
+    crm_customer_rows,
     customer_reviews_document,
     existing_customers_document,
     product_catalog_document,
@@ -95,6 +97,7 @@ __all__ = [
     "SYNTHESIS_TURN_HARD_TIMEOUT_S",
     "ArtifactSink",
     "ClientEntityBinder",
+    "CurrentDocumentReader",
     "DrainProviderCalls",
     "ExaAgentSurface",
     "ExaClientFactory",
@@ -231,6 +234,16 @@ class CatalogRegenerator(Protocol):
     async def __call__(
         self, conn: AsyncConnection, *, workspace_id: str, brand_id: str
     ) -> object: ...
+
+
+class CurrentDocumentReader(Protocol):
+    """The body of the brand's current servable version of ``path``, or ``None`` when it has none.
+
+    The customers step reads ``proof/customers.md`` through this to keep its CRM rows (R-4.5)."""
+
+    async def __call__(
+        self, conn: AsyncConnection, *, workspace_id: str, brand_id: str, path: str
+    ) -> str | None: ...
 
 
 class ArtifactSink(Protocol):
@@ -411,6 +424,7 @@ class OnboardingRunWorkHandler:
         domain_checker: Callable[
             [ProviderCaller, Sequence[Mapping[str, Any]]], Mapping[str, DomainCheck]
         ] = check_domains,
+        current_document: CurrentDocumentReader | None = None,
     ) -> None:
         self._settings = settings
         self._conn_factory = conn_factory
@@ -443,6 +457,9 @@ class OnboardingRunWorkHandler:
         # Injected like the store, so the offline tests never reach the network.
         self._domain_caller = domain_caller or build_customer_domain_caller
         self._check_domains = domain_checker
+        # CRM integration (R-4.5): the customers step keeps the CRM rows of the version it
+        # replaces. ``None`` (the offline tests, a lane without storage) carries nothing.
+        self._current_document = current_document
         # The driver holds at most ONE connection at a time. Its row writes are small, ordered
         # facts about one run and the parallelism that matters is the provider calls (which run
         # off both the loop and this lock), so serializing them costs nothing — and it lets a
@@ -776,7 +793,11 @@ class OnboardingRunWorkHandler:
             finally:
                 await self._drain(scope, raw, ledger, step_label="customers")
             return existing_customers_document(
-                run, company_domain=scope.company_domain, as_of=self._clock(), checks=checks
+                run,
+                company_domain=scope.company_domain,
+                as_of=self._clock(),
+                checks=checks,
+                carried_rows=await self._carried_crm_rows(scope),
             )
 
         await self._agent_step(
@@ -792,6 +813,20 @@ class OnboardingRunWorkHandler:
             system_prompt=EXISTING_CUSTOMERS_SYSTEM_PROMPT,
             finish=finish,
         )
+
+    async def _carried_crm_rows(self, scope: _Scope) -> list[CustomerRow]:
+        """The CRM rows of the current ``proof/customers.md`` (R-4.5). A read that fails fails the
+        step, so a refresh never publishes a version that silently dropped them."""
+        if self._current_document is None:
+            return []
+        async with self._connection() as conn:
+            body = await self._current_document(
+                conn,
+                workspace_id=scope.workspace_id,
+                brand_id=scope.brand_id,
+                path="proof/customers.md",
+            )
+        return crm_customer_rows(body) if body else []
 
     async def _product_research(self, scope: _Scope, link: ProductLink) -> None:
         product_id = link.product_id or ""

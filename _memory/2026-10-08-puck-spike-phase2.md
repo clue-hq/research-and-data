@@ -78,7 +78,7 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
 - Next: decide reference fixes / E5c, then T8 findings doc + production roadmap.
 
 ## JavaScript-heavy capture (founder: note it, come back and test heavily)
-- Notes: docs/superpowers/specs/2026-10-08-capturing-javascript-heavy-sites-notes.md. Root cause:
+- Notes: docs/superpowers/specs/archive/2026-10-08-capturing-javascript-heavy-sites-notes.md. Root cause:
   capture saves one moment (scroll to bottom, back to top, serialize); altcarbon.com builds content
   client-side tied to scroll. Recommendation: record/replay their JS in a sandbox at capture time,
   save each section in view, ship our own (frozen clone / clone + vetted runtime / rebuilt
@@ -109,7 +109,7 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   the capture notes/roadmap (offered to founder).
 
 ## Integration plan (2026-10-09)
-- Readiness map `docs/superpowers/specs/2026-10-08-puck-production-readiness-map.md` (corrected twice:
+- Readiness map `docs/superpowers/specs/archive/2026-10-08-puck-production-readiness-map.md` (corrected twice:
   inline editing is native in Puck 0.23 and proven in phase 1; inline text, asset library, versions
   and reorder handles are already designed; only the insert palette and delete/duplicate need designs).
 - Founder rulings 2026-10-09: option A for agent-written sections (no iframes; strict presentational
@@ -132,7 +132,7 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   Claude, Canva, Google usercontent.goog, MCP Apps). Per-section frames only where distrusting authors
   share a page. Ploy (ploy.ai, Bryant Chou): Astro/React repo in a cloud sandbox, sandboxed builds,
   static on Cloudflare, no CSP, preview origin not public. Report:
-  docs/superpowers/specs/2026-10-09-code-first-builder-isolation-research.md (its per-section
+  docs/superpowers/specs/archive/2026-10-09-code-first-builder-isolation-research.md (its per-section
   recommendation NOT adopted).
 - Founder decision: separate-domain editor — whole Puck editor on its own domain (no login), one frame
   in app.cluehq.ai, message bridge; locked render container; publish sanitizer + published-page CSP.

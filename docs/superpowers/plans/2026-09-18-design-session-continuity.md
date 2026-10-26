@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, LangGraph `PostgresSaver` (sync), deepagents 0.6.12 (`create_summarization_middleware`, `PatchToolCallsMiddleware`), FastAPI design API (`lumen_api`), platform leg wiring (`clue_api.design_leg_wiring`), pytest.
 
-**Spec:** `docs/superpowers/specs/2026-09-18-design-session-continuity-design.md`
+**Spec:** `docs/superpowers/specs/archive/2026-09-18-design-session-continuity-design.md`
 
 ## Global Constraints
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, opentelemetry-sdk 1.42 + instrumentation 0.63b1 (fastapi, httpx), sentry-sdk 2.x, structlog contextvars, pytest with the repo's rolled-back-connection DB harness, `uv`.
 
-**Spec:** `docs/superpowers/specs/2026-09-15-lane3-slice2-roots-design.md` (D1–D3 ruled 2026-09-15). Parent: `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md` §4, §5.1, §5.2, §7, §9 slice 2, §10 items 2, 6, 7, 8.
+**Spec:** `docs/superpowers/specs/archive/2026-09-15-lane3-slice2-roots-design.md` (D1–D3 ruled 2026-09-15). Parent: `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md` §4, §5.1, §5.2, §7, §9 slice 2, §10 items 2, 6, 7, 8.
 
 ## Global Constraints
 
@@ -54,7 +54,7 @@
 | `platform/api/clue_api/production_tracing.py` | **Create.** Root composition. |
 | `platform/api/clue_api/projections_main.py`, `projections_app.py`, `auth_wiring.py`, `agent_turn_submission.py`, `fleet_main.py` | **Modify.** Install at the roots; bind context; capture at sweeps. |
 | `tests/api/test_request_context_db.py` | **Create.** |
-| `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md`, `docs/superpowers/plans/2026-09-13-lane-plan-index.md` | **Modify.** §3 correction, §7 names, §9 slice 2; index row 2. |
+| `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md`, `docs/superpowers/plans/2026-09-13-lane-plan-index.md` | **Modify.** §3 correction, §7 names, §9 slice 2; index row 2. |
 | `_memory/2026-09-15-lane3-slice2-roots.md` | **Create.** Session note (controller). |
 
 ---
@@ -1405,7 +1405,7 @@ install_production_tracing / install_production_sentry / production_tracing_life
 ### Task 6: The design note and the lane index
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md` (§3 row "Structured logs with run context"; §7 block; §9 slice 2)
+- Modify: `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md` (§3 row "Structured logs with run context"; §7 block; §9 slice 2)
 - Modify: `docs/superpowers/plans/2026-09-13-lane-plan-index.md` (Lane 3 table row 2)
 
 - [ ] **Step 1: Edit the design note**
@@ -1423,7 +1423,7 @@ Row `| 2 | (to write) | OTel exporter + FastAPI/httpx instrumentors + Sentry at 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md docs/superpowers/plans/2026-09-13-lane-plan-index.md
+git add docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md docs/superpowers/plans/2026-09-13-lane-plan-index.md
 git commit -m "docs(lane3): the design note records slice 2 as done and corrects the run-context claim; lane index row 2"
 ```
 

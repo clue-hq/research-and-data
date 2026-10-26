@@ -111,3 +111,63 @@ def test_storage_sink_rejects_non_output_or_hostile_paths(path: str) -> None:
                 media_type="text/plain",
             )
         )
+
+
+# --- F3 Phase 1, plan Task 9 (WS-15, WS-21; AW-19) --------------------------------------------
+
+
+def test_the_factory_roots_in_this_process_area_when_snapshots_are_on(tmp_path: Path) -> None:
+    root, source, home = _isolated_roots(tmp_path)
+    factory = build_agent_workspace_factory(
+        storage=_Storage(),
+        settings=Settings(
+            _env_file=None, agent_workspace_root=str(root), agent_workspace_snapshots_enabled=True
+        ),
+        source_root=source,
+        home_root=home,
+    )
+    try:
+        assert factory.area is not None
+        assert factory.root_path == root / "workers" / factory.area.name
+        assert factory.root_path.is_dir()
+    finally:
+        factory.close()
+        if factory.area is not None:
+            factory.area.close()
+
+
+def test_the_factory_uses_a_local_root_when_snapshots_are_off(tmp_path: Path) -> None:
+    root, source, home = _isolated_roots(tmp_path)
+    factory = build_agent_workspace_factory(
+        storage=_Storage(),
+        settings=Settings(
+            _env_file=None, agent_workspace_root=str(root), agent_workspace_snapshots_enabled=False
+        ),
+        source_root=source,
+        home_root=home,
+    )
+    try:
+        # An area over the shared local folder, held by a shared lock, so the cache sweep can still
+        # tell which chats this process is using (snapshots off keeps folders a day, not 30 min).
+        assert factory.area is not None
+        assert factory.area.name == "local"
+        assert factory.area.path == root / "local"
+        assert factory.root_path == root / "local"
+    finally:
+        factory.close()
+        if factory.area is not None:
+            factory.area.close()
+
+
+def test_every_acquire_site_restores_and_saves() -> None:
+    """No caller in the platform takes a bare workspace lease: every one goes through the hook."""
+
+    import re
+
+    platform = Path(__file__).resolve().parents[2] / "platform" / "api" / "clue_api"
+    offenders = []
+    for path in platform.rglob("*.py"):
+        text = path.read_text()
+        for match in re.finditer(r"workspaces\.acquire\(|\.workspaces\.acquire\(", text):
+            offenders.append(f"{path.name}:{text[: match.start()].count(chr(10)) + 1}")
+    assert offenders == []

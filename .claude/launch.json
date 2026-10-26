@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "puck-spike",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "trials/puck-spike", "run", "dev"],
-      "port": 3047
+      "name": "t1-labelling",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8771", "--bind", "127.0.0.1", "--directory", "/private/tmp/claude-501/-Users-aryankeshri-conductor-workspaces-research-and-data-nashville/1b0c94e9-1b08-4123-8b76-8abcbe786008/scratchpad/t1/web"],
+      "port": 8771
     }
   ]
 }

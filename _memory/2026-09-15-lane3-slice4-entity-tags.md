@@ -1,7 +1,7 @@
 # Lane 3 slice 4 — entity tags on traces — 2026-09-15
 
 Branch `lane3/sice1b` (unpushed), after slice 3. Design
-`docs/superpowers/specs/2026-09-15-lane3-slice4-entity-tags-design.md`; plan
+`docs/superpowers/specs/archive/2026-09-15-lane3-slice4-entity-tags-design.md`; plan
 `docs/superpowers/plans/2026-09-15-lane3-slice4-entity-tags.md`. SDD (Opus implementers, controller
 reviews); the SDD workspace was deleted after the final review.
 

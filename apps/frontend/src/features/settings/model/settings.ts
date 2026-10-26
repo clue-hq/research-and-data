@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CrmProviderSchema, type CrmProvider } from "@/features/integrations/model/crm";
 import { ResearchEntitySchema } from "./research-fields";
 
 export const SettingsSectionSchema = z.enum([
@@ -41,6 +42,37 @@ export const StaticSettingsSchema = z.object({
 
 export type StaticSettings = z.infer<typeof StaticSettingsSchema>;
 
+export interface SettingsRoute {
+  section: SettingsSection;
+  /** Data model only: the entity and its view. */
+  entity?: DataModelEntity;
+  view?: DataModelView;
+  /** Integrations only: the connected CRM's own page. */
+  provider?: CrmProvider;
+}
+
+const NestedRouteSchema = z.union([
+  z.object({
+    section: z.literal("data-model"),
+    entity: DataModelEntitySchema.optional(),
+    view: DataModelViewSchema.optional(),
+  }),
+  z.object({
+    section: z.literal("integrations"),
+    entity: CrmProviderSchema.optional(),
+    view: z.undefined(),
+  }),
+  z.object({
+    section: SettingsSectionSchema.exclude(["data-model", "integrations"]),
+    entity: z.undefined(),
+    view: z.undefined(),
+  }),
+]);
+
+/**
+ * `/settings/[section]/[...]`: Data model nests `{entity}/{fields|display}`, Integrations nests
+ * the connected CRM (`/settings/integrations/{hubspot|salesforce}`); nothing else nests.
+ */
 export const SettingsRouteSchema = z
   .array(z.string())
   .max(3)
@@ -51,18 +83,15 @@ export const SettingsRouteSchema = z
       view?: string;
     } => ({ section, entity, view }),
   )
-  .pipe(
-    z
-      .object({
-        section: SettingsSectionSchema,
-        entity: DataModelEntitySchema.optional(),
-        view: DataModelViewSchema.optional(),
-      })
-      .refine(
-        ({ section, entity, view }) =>
-          section === "data-model" || (!entity && !view),
-        "Only Data model supports nested settings routes",
-      ),
-  );
-
-export type SettingsRoute = z.infer<typeof SettingsRouteSchema>;
+  .pipe(NestedRouteSchema)
+  .transform((route): SettingsRoute => {
+    if (route.section === "data-model") {
+      return { section: route.section, entity: route.entity, view: route.view };
+    }
+    if (route.section === "integrations") {
+      return route.entity
+        ? { section: route.section, provider: route.entity }
+        : { section: route.section };
+    }
+    return { section: route.section };
+  });

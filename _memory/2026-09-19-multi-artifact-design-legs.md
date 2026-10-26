@@ -40,7 +40,7 @@ agent, one thread per artifact.
 4. No confirmation at any batch size; Stop cancels every non-terminal run of the batch.
 
 ## Artifacts
-- Spec: `docs/superpowers/specs/2026-09-19-multi-artifact-design-legs-design.md` (for founder
+- Spec: `docs/superpowers/specs/archive/2026-09-19-multi-artifact-design-legs-design.md` (for founder
   review before any plan).
 - Transcript of the preceding research-branch session attached at
   `.context/attachments/5I4icP/` (untracked).

@@ -1,5 +1,5 @@
 # 2026-09-04 — web editor: annotations, human names, clone text edits (implementation log)
-Spec: docs/superpowers/specs/2026-09-04-web-editor-annotations-and-clone-text-edits-design.md
+Spec: docs/superpowers/specs/archive/2026-09-04-web-editor-annotations-and-clone-text-edits-design.md
 Plan: docs/superpowers/plans/2026-09-04-web-editor-annotations-and-clone-text-edits.md
 
 ## Slice 1 — names

@@ -75,12 +75,13 @@ from clue_api.agent_turn_wiring import (
 )
 from clue_api.chat import CHAT_PERMISSIONS, RequestPrincipal
 from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
+from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.conversation_turns import ConversationTurnEngine
 from clue_api.execution_wiring import build_tool_invoker
 from clue_api.projections_app import create_projections_app
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Settings, load_settings
-from clue_core import AccountStatus, ProjectRunId, operation_id_from_key
+from clue_core import AccountStatus, ProjectRunId, decode_jsonb, operation_id_from_key
 from clue_design import legs as design_legs
 from clue_design.documents import create_document
 from clue_fleet import (
@@ -993,7 +994,7 @@ class _RecordingRunner:
         self._fail = fail
         self._error = error
 
-    async def run(self, *, turn_id: UUID, workspace_id: str) -> Any:
+    async def run(self, *, turn_id: UUID, workspace_id: str, fence: Any = None) -> Any:
         del workspace_id
         self.calls.append(turn_id)
         if self._error is not None:
@@ -1051,11 +1052,12 @@ async def _handle_next(
     thread_id: str,
     runner: _RecordingRunner,
     worker_id: str = "worker-1",
+    queue: Any = None,
 ) -> None:
     """Claim this thread's offered task and run the real handler over it."""
 
     cf = conn_session_factory(conn)
-    queue = _ConnWorkQueue(conn)
+    queue = queue if queue is not None else _ConnWorkQueue(conn)
     work_id = thread_work_id(workspace_id=workspace_id, thread_id=thread_id)
     claimed = await claim_next_task(
         conn,
@@ -1662,5 +1664,138 @@ def test_a_committed_turn_is_replayed_never_re_executed(tmp_path: Path) -> None:
                 )
             ).scalars()
             assert list(messages) == ["user", "assistant"]
+
+    run_async(scenario())
+
+
+# --- a failed turn tells the person (2026-10-22): one ``turn.failed``, from the owner only ----
+
+
+async def _turn_endings(conn: Any, *, workspace_id: str, thread_id: str) -> list[dict[str, Any]]:
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT turn_id, event_type, payload FROM agent_turn_event_stream "
+                "WHERE workspace_id = :ws AND thread_id = :thread AND event_type IN "
+                "('turn.completed', 'turn.failed', 'turn.cancelled', 'turn.awaiting_input') "
+                "ORDER BY sequence"
+            ),
+            {"ws": workspace_id, "thread": thread_id},
+        )
+    ).mappings()
+    return [dict(row) for row in rows]
+
+
+async def _one_failing_turn(conn: Any, tmp_path: Path, label: str) -> tuple[Any, str]:
+    project = await _seed(conn, f"ws-d2-{label}", name=f"D2 {label}")
+    thread_id = await _thread(
+        conn, workspace_id=project.workspace_id, project_id=project.project_id, label=label
+    )
+    app = _app(conn, settings=_settings(), storage=FsStorage(tmp_path / "artifacts"))
+    async with _client(app) as client:
+        response = await _submit(
+            client,
+            workspace_id=project.workspace_id,
+            project_id=project.project_id,
+            thread_id=thread_id,
+            message="this turn fails",
+            key=f"{label}-1",
+        )
+        assert response.status_code == 202
+    return project, thread_id
+
+
+def test_a_failed_turn_ends_with_one_turn_failed_event(tmp_path: Path) -> None:
+    """Without it the person sees the reasoning stop and nothing else, even after a reload; the
+    chat already renders a code-less ``turn.failed`` as "Response failed"."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project, thread_id = await _one_failing_turn(conn, tmp_path, "ends-failed")
+            await _handle_next(
+                conn,
+                workspace_id=project.workspace_id,
+                thread_id=thread_id,
+                runner=_RecordingRunner(fail=True),
+            )
+            endings = await _turn_endings(
+                conn, workspace_id=project.workspace_id, thread_id=thread_id
+            )
+            assert [row["event_type"] for row in endings] == ["turn.failed"]
+            assert "failure_code" not in decode_jsonb(endings[0]["payload"])
+
+    run_async(scenario())
+
+
+class _FencedOutQueue(_ConnWorkQueue):
+    """Another worker took the task over while this attempt ran: its finish is refused."""
+
+    async def finish(self, **kwargs: Any) -> bool:
+        del kwargs
+        return False
+
+
+def test_a_fenced_out_failed_attempt_writes_no_ending(tmp_path: Path) -> None:
+    """A stale worker must never paint "failed" over a takeover that may still succeed."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project, thread_id = await _one_failing_turn(conn, tmp_path, "fenced-out")
+            await _handle_next(
+                conn,
+                workspace_id=project.workspace_id,
+                thread_id=thread_id,
+                runner=_RecordingRunner(fail=True),
+                queue=_FencedOutQueue(conn),
+            )
+            assert (
+                await _turn_endings(conn, workspace_id=project.workspace_id, thread_id=thread_id)
+                == []
+            )
+
+    run_async(scenario())
+
+
+class _EndsThenFails:
+    """A run that writes its own ending (as the missing-context path does) and then raises."""
+
+    def __init__(self, conn: Any, *, project_id: str, thread_id: str) -> None:
+        self._conn = conn
+        self._project_id = project_id
+        self._thread_id = thread_id
+
+    async def run(self, *, turn_id: UUID, workspace_id: str, fence: Any = None) -> Any:
+        del fence
+        await emit_turn_event(
+            self._conn,
+            workspace_id=workspace_id,
+            project_id=self._project_id,
+            thread_id=self._thread_id,
+            turn_id=turn_id,
+            event_type=TurnEventType.TURN_FAILED,
+            payload={"status": "failed", "failure_code": "required_context_artifact_missing"},
+        )
+        raise RuntimeError("required turn context is no longer available")
+
+
+def test_a_turn_that_already_ended_is_not_ended_twice(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project, thread_id = await _one_failing_turn(conn, tmp_path, "ended-once")
+            await _handle_next(
+                conn,
+                workspace_id=project.workspace_id,
+                thread_id=thread_id,
+                runner=_EndsThenFails(  # type: ignore[arg-type]
+                    conn, project_id=project.project_id, thread_id=thread_id
+                ),
+            )
+            endings = await _turn_endings(
+                conn, workspace_id=project.workspace_id, thread_id=thread_id
+            )
+            assert [row["event_type"] for row in endings] == ["turn.failed"]
+            assert decode_jsonb(endings[0]["payload"])["failure_code"] == (
+                "required_context_artifact_missing"
+            )
 
     run_async(scenario())

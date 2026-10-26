@@ -2,7 +2,7 @@
 
 Branch `research-streaming`, worktree `san-salvador`, lane DB `clue_san-salvador`. Plan
 `docs/superpowers/plans/2026-09-12-project-plan-document.md`; spec
-`docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.3 (rulings R3,
+`docs/superpowers/specs/archive/2026-09-12-project-context-and-icp-authoring-design.md` §4.3 (rulings R3,
 R7, R12). SDD ledger and per-task reports: `.superpowers/sdd/2026-09-12-project-plan-document/`
 (git-ignored). Base `71b8618ff` (plan 2's close-out). Commits `7256ee0d2`, `1a2c8264b`,
 `345bd0fe1`, `93af298c3`, and this close-out.
@@ -18,7 +18,7 @@ and the human can edit, each save an immutable new version guarded by the versio
 **Backend and grant only.** Founder ruling **R12** defers the Plan tab, the editor, the plan-card
 click-through, the auto-open and the gallery document cards to
 `docs/superpowers/plans/2026-09-12-plan-tab-frontend.md` (tasks 4–8, to run later with the
-markdown-toolbar slice `docs/superpowers/specs/2026-09-12-markdown-editor-toolbar-design.md`).
+markdown-toolbar slice `docs/superpowers/specs/archive/2026-09-12-markdown-editor-toolbar-design.md`).
 
 ## What shipped, per task
 

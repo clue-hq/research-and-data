@@ -57,7 +57,7 @@ the binary's build stamp against the crates' content hash across the FULL crate 
 loudly), or have dev_stack.sh run the release build before `up`.
 
 ## Next initiative (designed, not started): annotations + human names + clone text edits
-Spec `docs/superpowers/specs/2026-09-04-web-editor-annotations-and-clone-text-edits-design.md`
+Spec `docs/superpowers/specs/archive/2026-09-04-web-editor-annotations-and-clone-text-edits-design.md`
 (rulings R-A1..R-A6; D-F3 amended with a per-node text-override map). Plan
 `docs/superpowers/plans/2026-09-04-web-editor-annotations-and-clone-text-edits.md` — 4 slices,
 16 tasks (names → annotations end to end → engine overrides + inline clone editor → quick action).

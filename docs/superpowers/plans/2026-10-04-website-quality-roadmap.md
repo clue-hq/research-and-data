@@ -21,7 +21,7 @@ sections, built offline in our sandbox and served as static files from our page 
 ingestion), Rust (`lumen-web` theme), Postgres + Alembic, Docker sandbox, Astro 6 + React 19 +
 Tailwind v4 (new lane), Next.js frontend shell.
 
-**Spec:** `docs/superpowers/specs/2026-10-04-website-quality-and-code-first-lane-design.md`
+**Spec:** `docs/superpowers/specs/archive/2026-10-04-website-quality-and-code-first-lane-design.md`
 
 ## Global Constraints
 

@@ -286,3 +286,45 @@ def test_a_hard_linked_file_is_removed(tmp_path: Path) -> None:
     assert len(result.kept) == 1
     survivor = mounts.read_write["scratch"] / result.kept[0][0].split("/", 1)[1]
     assert os.stat(survivor).st_nlink == 1
+
+
+def test_a_folder_with_an_atomic_write_residue_name_is_removed_with_everything_in_it(
+    tmp_path: Path,
+) -> None:
+    """Review A2-I3: the sweep checked file names only, so ``outputs/.clue-tmp-a/r.md`` survived.
+    The backend refuses any name with the prefix, folders included, and a saved snapshot carried
+    it to every machine — so the folder goes, with each file in it reported."""
+
+    mounts = _workspace(tmp_path)
+    before = snapshot(mounts)
+    kept = _write(mounts, "scratch/keep/real.md", b"ok")
+    _write(mounts, "scratch/.clue-tmp-a/r.md", b"one")
+    _write(mounts, "scratch/keep/.clue-tmp-b/deeper/s.md", b"two")
+    (mounts.read_write["scratch"] / ".clue-tmp-empty").mkdir()
+
+    result = sweep(mounts, before=before)
+
+    assert result.removed == (
+        ("scratch/.clue-tmp-a/r.md", "atomic_write_residue"),
+        ("scratch/keep/.clue-tmp-b/deeper/s.md", "atomic_write_residue"),
+    )
+    assert result.kept == (("scratch/keep/real.md", 2),)
+    assert kept.exists()
+    root = mounts.read_write["scratch"]
+    assert sorted(path.name for path in root.rglob("*")) == ["keep", "real.md"]
+
+
+def test_a_link_inside_a_residue_folder_is_unlinked_never_followed(tmp_path: Path) -> None:
+    mounts = _workspace(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.md").write_bytes(b"not the sandbox's")
+    residue = mounts.read_write["scratch"] / ".clue-tmp-a"
+    residue.mkdir()
+    (residue / "escape").symlink_to(outside)
+
+    result = sweep(mounts, before=snapshot(mounts))
+
+    assert result.removed == (("scratch/.clue-tmp-a/escape", "atomic_write_residue"),)
+    assert not residue.exists()
+    assert (outside / "secret.md").read_bytes() == b"not the sandbox's"

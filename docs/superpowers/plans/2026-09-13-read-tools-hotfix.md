@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, pydantic 2, SQLAlchemy async, pytest with `rollback_conn` DB fixtures, the toolbelt runner, the agent catalog.
 
-**Spec:** `docs/superpowers/specs/2026-09-13-agent-workspace-reorganization-design.md` §1 (the observed failures) and W10; findings in `_memory/2026-09-13-live-walk-findings-and-workspace-reorg.md`.
+**Spec:** `docs/superpowers/specs/archive/2026-09-13-agent-workspace-reorganization-design.md` §1 (the observed failures) and W10; findings in `_memory/2026-09-13-live-walk-findings-and-workspace-reorg.md`.
 
 ## Global Constraints
 

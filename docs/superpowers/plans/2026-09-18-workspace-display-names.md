@@ -8,7 +8,7 @@
 
 **Tech Stack:** FastAPI + pydantic + SQLAlchemy text SQL (backend); Next.js App Router, Zod, Base UI menus, `node:test` via `tsx` (frontend).
 
-**Spec:** `docs/superpowers/specs/2026-09-18-workspace-display-names-design.md`.
+**Spec:** `docs/superpowers/specs/archive/2026-09-18-workspace-display-names-design.md`.
 
 ## Global Constraints
 

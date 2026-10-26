@@ -24,6 +24,7 @@ import type { ChatAttachmentRef } from "../model/chat-attachments";
 import type { TurnContextReference } from "../model/chat-turn";
 import { useProjectCatalogInvalidation } from "../model/project-catalog-invalidation";
 import { useChatAttachments } from "./use-chat-attachments";
+import { urlWithoutPrompt } from "../model/prefilled-prompt";
 
 /**
  * The projects directory and the project home, over the real seams.
@@ -108,7 +109,15 @@ export async function startChat(
 
 const NO_ENTITIES: readonly ProjectEntity[] = [];
 
-export function useProjectsScreenController(projectId?: string) {
+/**
+ * `initialPrompt` is the Home composer's starting draft from a `?prompt=` link
+ * (already cleaned by `prefilledPrompt`). It is only ever the initial value:
+ * nothing sends it until the person submits.
+ */
+export function useProjectsScreenController(
+  projectId?: string,
+  initialPrompt = "",
+) {
   const repositories = useChatRepositories();
   const router = useRouter();
   const catalog = useProjectCatalogInvalidation();
@@ -133,7 +142,7 @@ export function useProjectsScreenController(projectId?: string) {
   const [description, setDescription] = useState("");
   const [text, setText] = useState("");
   const [sourceChatId, setSourceChatId] = useState("");
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState(initialPrompt);
   const [modelId, setModelId] = useState("");
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [selectedEntityIds, setSelectedEntityIds] = useState<string[]>([]);
@@ -189,6 +198,16 @@ export function useProjectsScreenController(projectId?: string) {
       setLoaded(true);
     }
   }, [projectId, repositories]);
+
+  useEffect(() => {
+    // The `?prompt=` link has done its job once the composer holds the draft:
+    // drop it from the address so a reload or a copied link starts clean. The
+    // native history call (not `router.replace`) keeps this page mounted — a
+    // router navigation to new search params would remount the page and lose
+    // the draft it was born with.
+    const withoutPrompt = urlWithoutPrompt(window.location.href);
+    if (withoutPrompt) window.history.replaceState(null, "", withoutPrompt);
+  }, []);
 
   useEffect(() => {
     // Awaited inside the effect rather than called from its body: every write

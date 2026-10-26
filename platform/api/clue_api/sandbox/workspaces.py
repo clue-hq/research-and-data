@@ -16,7 +16,7 @@ else.
 from __future__ import annotations
 
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -25,7 +25,6 @@ from typing import Final
 from clue_agents.contracts import WorkspacePolicy
 from clue_agents.workspace import (
     ATTACHMENTS_DIR,
-    LIBRARY_DIR,
     AgentWorkspaceFactory,
     AgentWorkspaceLease,
 )
@@ -60,7 +59,7 @@ class RunBudgetExhausted(RuntimeError):
 class SandboxMounts:
     """One turn's host directories and the policy every sandbox-written file answers to."""
 
-    #: ``<root>/<ws>/projects/<project>/threads/<thread>`` — the lease's own directory.
+    #: ``<chat folder>/agent`` — the lease's own directory.
     thread_root: Path
     #: name → host directory, mounted read-only at ``/workspace/<name>``.
     read_only: Mapping[str, Path]
@@ -68,6 +67,12 @@ class SandboxMounts:
     read_write: Mapping[str, Path]
     #: The profile's workspace contract: the quotas and extensions the post-run sweep enforces.
     policy: WorkspacePolicy
+    #: Writes one output spill into ``reads/`` through the workspace, inside its quota (F3 §12);
+    #: ``None`` only for mounts built by hand, which then spill nothing.
+    spill: Callable[[str, bytes], str] | None = None
+    #: The worker area whose label the container carries, so a restarted worker can kill what a
+    #: dead run of its own left behind (AW-19).
+    area: str | None = None
 
     def __post_init__(self) -> None:
         # The maps are the container's authority. Freezing them here means a caller that holds
@@ -112,6 +117,30 @@ class SandboxWorkspaces:
         with self._lock:
             self._live.pop(execution_id, None)
 
+    # --- the workspace factory's turn binding (F3, WS-14) ---------------------------------------
+
+    def bind(self, execution_id: ExecutionId, lease: AgentWorkspaceLease) -> None:
+        """Register the lease's own mounts. A re-acquire of the same execution keeps its budget."""
+
+        mounts = sandbox_mounts_for_lease(
+            lease,
+            lease.factory,
+            brand=lease.mounts.brand,
+            project_library=lease.mounts.project_library,
+            attachments=lease.mounts.attachments,
+        )
+        with self._lock:
+            existing = self._live.get(execution_id)
+            if existing is not None:
+                existing.mounts = mounts
+                return
+            self._live[execution_id] = _Registration(
+                mounts=mounts, runs_remaining=self.max_runs_per_turn
+            )
+
+    def unbind(self, execution_id: ExecutionId) -> None:
+        self.release(execution_id)
+
     def mounts_for(self, execution_id: ExecutionId) -> SandboxMounts | None:
         """This execution's directories, or ``None`` when no turn registered them."""
 
@@ -147,43 +176,32 @@ def sandbox_mounts_for_lease(
     *,
     brand: tuple[str, str] | None,
     project_library: bool,
-    project_library_name: str = LIBRARY_DIR,
     attachments: bool,
 ) -> SandboxMounts:
     """Derive one turn's container mounts from the lease the turn already holds.
 
     The arguments mirror the :class:`~clue_agents.workspace.MountRequest` the lease was acquired
     with, so the script sees the same ``brand/``, ``project/`` and ``attachments/`` paths the
-    model's own file tools see — including ``project_library_name``, which is the tree the
-    ``project`` mount serves. A replayed turn is pinned to a superseded generation materialized
-    beside the library under its own name, and the sandbox must read *that* tree: mounting the
-    live ``library`` would show the script a project the model is not working on.
+    model's own file tools see: the chat's own copies, in the chat's own folder (F3, WS-37).
 
     ``attachments`` is the one optional directory — a project nobody has uploaded to has none,
     which is the ordinary state of a new project — so it is mounted only when it exists, exactly
     as the mount table treats it.
     """
 
+    chat_dir = workspaces.chat_host_path(lease.chat)
     thread_root = workspaces.thread_host_path(
         lease.workspace_segment, lease.project_segment, lease.thread_segment
     )
-    project_root = workspaces.project_host_path(lease.workspace_segment, lease.project_segment)
     read_only: dict[str, Path] = {name: thread_root / name for name in READ_ONLY_THREAD_DIRS}
     if brand is not None:
         brand_id, knowledge_version = brand
-        read_only["brand"] = (
-            workspaces.root_path
-            / lease.workspace_segment
-            / LIBRARY_DIR
-            / _BRAND_DIR
-            / validate_workspace_segment(brand_id, label="brand_id")
-            / validate_workspace_segment(knowledge_version, label="brand_version")
-        )
+        validate_workspace_segment(brand_id, label="brand_id")
+        validate_workspace_segment(knowledge_version, label="brand_version")
+        read_only["brand"] = chat_dir / _BRAND_DIR
     if project_library:
-        read_only["project"] = project_root / validate_workspace_segment(
-            project_library_name, label="project_library_name"
-        )
-    attachments_dir = project_root / ATTACHMENTS_DIR
+        read_only["project"] = chat_dir / "project"
+    attachments_dir = chat_dir / ATTACHMENTS_DIR
     # The factory opens every mount with O_NOFOLLOW; a bind mount must not follow a link out of
     # the root either, so a link where the directory should be is treated as no directory.
     if attachments and attachments_dir.is_dir() and not attachments_dir.is_symlink():
@@ -193,4 +211,6 @@ def sandbox_mounts_for_lease(
         read_only=read_only,
         read_write={name: thread_root / name for name in READ_WRITE_THREAD_DIRS},
         policy=lease.backend.policy,
+        spill=lease.backend.write_spill_file,
+        area=None if workspaces.area is None else workspaces.area.name,
     )

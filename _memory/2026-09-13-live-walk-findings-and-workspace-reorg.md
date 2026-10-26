@@ -45,7 +45,7 @@ artifacts at close; retention 24 h; quota 200 files / 10 MiB per turn. Isolation
 (tenant), enforced by fd-anchored `O_NOFOLLOW` walks, 0700 dirs, segment validation, ambient
 `workspace_id` from the membership-proved principal (`WORKSPACE_FORBIDDEN` on mismatch).
 
-## Rulings taken (founder, in discussion) → `docs/superpowers/specs/2026-09-13-agent-workspace-reorganization-design.md`
+## Rulings taken (founder, in discussion) → `docs/superpowers/specs/archive/2026-09-13-agent-workspace-reorganization-design.md`
 
 W1 four levels (workspace library / project library / thread scratchpad / turn); W2 the project
 library is a materialized view of rows, mounted as a versioned root (read-through, write-through);
@@ -77,7 +77,7 @@ v26 → v27 (plan 3 drops three tools) → v28 (plan 4 adds two reads). Ruling P
 personas keep the existing `audience/persona-<key>.md` path (the spec's `personas/` folder was
 illustrative). Not started; the hotfix is first.
 
-## Operating manual study (2026-09-13, evening) — `docs/superpowers/specs/2026-09-13-head-of-abm-operating-manual-design.md`
+## Operating manual study (2026-09-13, evening) — `docs/superpowers/specs/archive/2026-09-13-head-of-abm-operating-manual-design.md`
 
 Five parallel read-only inventories (7,266 lines, every claim `file:line`) now live under
 `docs/superpowers/research/2026-09-13-head-of-abm-manual/` (A tools, B context/workspace, C domain
@@ -400,7 +400,7 @@ Ten commits (SDD, Opus implementers, controller-reviewed, tasks in the ruled ord
 `584cae976`+`323dc0581` (Task 0), `e3fe8a495` (Task 1), `3d58651ee` (Task 2), `224285502` (Task 3),
 `d0cd5c160`+`446e8f1db` (Task 4), `f2b3667f0` (Task 7), `08e2bcca0`+`f8524ed64` (Task 5).
 Plan: `docs/superpowers/plans/2026-09-13-paged-and-spilled-reads.md`; spec
-`docs/superpowers/specs/2026-09-13-agent-workspace-reorganization-design.md` (W4 read side, W9, §4.5).
+`docs/superpowers/specs/archive/2026-09-13-agent-workspace-reorganization-design.md` (W4 read side, W9, §4.5).
 
 **Version ladder:** profile `head-of-abm@v56` / skill `stage0-interview@v33` /
 `recipe0-stage0-v28.json` (`CONVERSATION_RECIPE_VERSION = 28`) / manual `manual-*@v3` ×15

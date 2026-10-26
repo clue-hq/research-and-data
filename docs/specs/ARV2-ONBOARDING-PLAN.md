@@ -297,7 +297,7 @@ bounded list, possibly empty. Effect class SPEND; replay policy journaled; no wr
 
 **Addendum 2026-09-08 — the synthesis split (`onboarding-synthesis@v2`).** Everything below stays
 the contract for *what* the agent writes; what changed is that it no longer writes it in one turn.
-Design: `docs/superpowers/specs/2026-09-08-arv2-onboarding-o4-synthesis-split-design.md` (founder-
+Design: `docs/superpowers/specs/archive/2026-09-08-arv2-onboarding-o4-synthesis-split-design.md` (founder-
 approved 2026-09-08); measured on the two successful Insight Health runs, where the ICPs were
 finished about four minutes in but reached the Knowledge page eight to ten minutes later, behind
 three personas queued inside the same turn.
@@ -646,7 +646,7 @@ Every production turn also seeds `inputs/project/status.md` (compiled from the p
 pin, product set, accounts, discovery, research) and `inputs/project/decisions.md` (the project's
 current-effective `project_state` statements with their quotes), pinned once per turn in
 `agent_turn_project_files` and indexed by a second L3 card `ProjectFilesIndexCard@1`. Spec:
-`docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.1. Project-scoped
+`docs/superpowers/specs/archive/2026-09-12-project-context-and-icp-authoring-design.md` §4.1. Project-scoped
 documents (`inputs/project/audience/…`, `inputs/project/plan.md`) follow in the next slices.
 
 ---
@@ -656,7 +656,7 @@ documents (`inputs/project/audience/…`, `inputs/project/plan.md`) follow in th
 The next slices landed. A marketer who reads the onboarding walk's proposals and says *"none of
 these is who we sell to"* is no longer stuck: the Head of ABM can **write the profile down** in the
 conversation, and can ask for the **personas** of a profile the human has confirmed. Spec:
-`docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.2.
+`docs/superpowers/specs/archive/2026-09-12-project-context-and-icp-authoring-design.md` §4.2.
 
 - **Knowledge documents carry a scope and a lineage** (migration `b953bf11e2a9`).
   `brand_knowledge_document` gains `project_id` (NULL = the brand's own knowledge; a value scopes the
@@ -747,7 +747,7 @@ revision check the human PUT meets, the row stamped with the writing turn. The e
 the `version:` in the file the turn was mounted against, never a model argument, and the library is
 re-materialized after every accepted write so the agent reads back what it wrote. Plan:
 `docs/superpowers/plans/2026-09-13-versioned-project-root-and-document-skills.md`; spec
-`docs/superpowers/specs/2026-09-13-agent-workspace-reorganization-design.md` W6/W7/W8 §4.4/§4.6/§4.7.
+`docs/superpowers/specs/archive/2026-09-13-agent-workspace-reorganization-design.md` W6/W7/W8 §4.4/§4.6/§4.7.
 
 - **The document skills replace §5b / §5c / §6b of the Stage-0 skill** (§4.6) — the procedure moves
   out of those sections, which stay in `stage0-interview@v32` as one-line pointers. `icp-authoring@v1`,
@@ -820,7 +820,7 @@ The reads above could answer a small question and die on a big one: a 72-claim a
 the governed receipt's 16 KiB bound *after* the tool had already run, and the agent was told it could
 not read the account at all. This addendum is the fix, plus the founder's two rulings of the same day.
 Plan: `docs/superpowers/plans/2026-09-13-paged-and-spilled-reads.md`; spec
-`docs/superpowers/specs/2026-09-13-agent-workspace-reorganization-design.md` (W4 read side, W9, §4.5);
+`docs/superpowers/specs/archive/2026-09-13-agent-workspace-reorganization-design.md` (W4 read side, W9, §4.5);
 close-out `_memory/2026-09-13-live-walk-findings-and-workspace-reorg.md` § "Plan 4 landed (2026-09-14)"
 (live proof owed).
 
@@ -889,7 +889,7 @@ close-out `_memory/2026-09-13-live-walk-findings-and-workspace-reorg.md` § "Pla
 | O1 | Substrate | Migration: §3 tables, `project_product`, `product_set_selection` kind + per-element answer trigger; flags (§10) in `.env.example`; `ONBOARDING_SYNTHESIS_AGENT_MODEL` in the agent-model block | One alembic head; `make db-smoke` green; parity test green; checklist items 3, 7 | agent-built, Aryan merges |
 | O2 | Exa Agent surface (leaf) — **re-based on R1 (merged 2026-09-07, PR #45)** | R1 already ships `platform/api/clue_api/arv2/exa_client.py` (search, contents, `deep_reasoning_body` with a caller-supplied `outputSchema`, `product_catalog_output_schema()` = the catalog contract §3 verbatim) behind the `ProviderCaller` wrapper (estimate row → raw record → retry/halt → result row; `sinks.py` file/memory sinks; `provider_call_ledger` spec in master plan §4). O2 therefore adds only: the Exa **Agent** surface (`/agent/runs` create + poll + stream, `output.text`/`structured`/`grounding`, `costDollars`) through the same `ProviderCaller`; the four remaining request templates (overview §4.2, reviews §4.3, per-product §4.4, evidence §4.5) as builder functions next to `product_catalog_output_schema`; the artifact mappers (§4 of each contract). Tests follow R1's founder ruling: **live against Exa, skipping with the env-var name when the key is unset; no replay fixtures.** | Live test on Insight Health reproduces the overview run's shape (`schema_satisfied`, 8 grounding rows, facts non-null) and the catalog run's 12 entries; ledger rows carry `costDollars.total` | agent-built from a charter; Aryan reviews |
 | O3 | Research steps on the fleet | `arv2/onboarding_driver.py` (fleet job), `POST /onboarding` 202, step graph, catalog sync re-pointed at the artifact, background fan-out + cap, document rows with statuses | One unseeded Insight Health run: every document present or honestly failed; ledger complete; nothing on the web loop | agent-built, Aryan composes |
-| O4 | Synthesis agent | Profile/prompt/two skills (§5), `exa_search_evidence@1`, materialization of inputs, outputs→documents registration. **+ 2026-09-08 — the synthesis split** (§5 addendum; branch `onboarding/o4-synthesis-split`, spec `docs/superpowers/specs/2026-09-08-arv2-onboarding-o4-synthesis-split-design.md`): `onboarding-synthesis@v2`, one ICP turn + one persona turn per ICP, the `onboarding_icp` surface, per-turn input selection into the opening context, migration `ae4a5dfb3943` | 2–3 ICPs + personas for Insight Health; no fictional names; every specific fact cited; per-role evidence when found; matches Shashank's answer keys; checklist item 1. **Split gate (2026-09-08, owed — founder-triggered):** one unseeded Insight Health re-run where the three ICP documents are servable within ~6 minutes while `persona` steps still run, three `persona` steps run concurrently and the run settles `completed`, the ICP keys on file are reused, each persona's `icp_version` equals its ICP row's version, fifteen `exa_search_evidence@1` invocations, none of them attributed to the ICP turn | content Shashank, wiring agent-built, Aryan promotes |
+| O4 | Synthesis agent | Profile/prompt/two skills (§5), `exa_search_evidence@1`, materialization of inputs, outputs→documents registration. **+ 2026-09-08 — the synthesis split** (§5 addendum; branch `onboarding/o4-synthesis-split`, spec `docs/superpowers/specs/archive/2026-09-08-arv2-onboarding-o4-synthesis-split-design.md`): `onboarding-synthesis@v2`, one ICP turn + one persona turn per ICP, the `onboarding_icp` surface, per-turn input selection into the opening context, migration `ae4a5dfb3943` | 2–3 ICPs + personas for Insight Health; no fictional names; every specific fact cited; per-role evidence when found; matches Shashank's answer keys; checklist item 1. **Split gate (2026-09-08, owed — founder-triggered):** one unseeded Insight Health re-run where the three ICP documents are servable within ~6 minutes while `persona` steps still run, three `persona` steps run concurrently and the run settles `completed`, the ICP keys on file are reused, each persona's `icp_version` equals its ICP row's version, fifteen `exa_search_evidence@1` invocations, none of them attributed to the ICP turn | content Shashank, wiring agent-built, Aryan promotes |
 | O5 | Brand-context read surface | §7 endpoints; frontend Knowledge section re-lifted from the dummy on the real endpoints; status chips; progressive fill | With `CLUE_API_BASE_URL` set the page renders the real tree and fills as steps land; frontend gates green | agent-built from Shashank's charter; Aryan merges |
 | O6 | Head-of-ABM integration | §8: profile, index card source, materialization, Stage-0 skill v21, product-set gate tool, ICP gate on artifact refs, launch fields | New project on Insight Health: interview → ICP pick → product set → ICP confirmation → launch; old lane off; checklist 7/7. **Built 2026-09-09 on `onboarding/o6-head-of-abm`; live exit gate owed (founder-triggered)** — see the §8 addendum | Aryan (integration point) |
 | O7 | Acceptance | Unseeded onboarding on Clue (cluehq.ai) and one more seller; cost/latency table per step; defect list; evidence under `.context/` | Founders sign; old Stage-0 recon stays flag-off until Phase 6 | both |

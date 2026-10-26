@@ -1,0 +1,33 @@
+.page {
+  display: flex;
+  box-sizing: border-box;
+  min-height: 100dvh;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--clue-ds-color-bg-page);
+}
+
+.card {
+  max-width: 420px;
+  padding: 24px;
+  border: 1px solid var(--clue-ds-color-border-neutral);
+  border-radius: 12px;
+  background: var(--clue-ds-color-bg-neutral);
+  box-shadow: var(--clue-ds-shadow-card-subtle);
+  text-align: center;
+}
+
+.title {
+  margin: 0 0 8px;
+  color: var(--clue-ds-color-content-neutral);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.body {
+  margin: 0;
+  color: var(--clue-ds-color-content-subtle);
+  font-size: var(--clue-ds-typography-text-sm-font-size);
+  line-height: var(--clue-ds-typography-text-sm-line-height);
+}

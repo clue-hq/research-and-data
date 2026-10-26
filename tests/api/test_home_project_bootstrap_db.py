@@ -16,7 +16,8 @@ from clue_api.arv2.logo_resolution import brandfetch_logo_url
 from clue_api.chat import RequestPrincipal
 from clue_api.chat.composer_context import (
     PROJECT_CONVERSATION_AGENT_PROFILE_ID,
-    PROJECT_CONVERSATION_MODEL_ID,
+    model_display_name,
+    project_conversation_model_id,
 )
 from clue_api.thread_store import set_thread_title
 from clue_api.thread_wiring import register_thread_tools
@@ -199,11 +200,13 @@ def test_home_read_is_real_scoped_and_capability_honest(require_chat_db: None) -
                     "agent_profiles": [
                         {
                             "id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,
-                            "label": "Grok 4.6",
-                            "short_label": "Grok 4.6",
-                            "description": "Clue's governed Grok 4.6 conversation profile",
-                            # The wire echoes the constant; which model it names is not asserted.
-                            "model_id": PROJECT_CONVERSATION_MODEL_ID,
+                            # The wire names the configured model; which one is not asserted.
+                            "label": model_display_name(project_conversation_model_id()),
+                            "short_label": model_display_name(project_conversation_model_id()),
+                            "description": "Clue's governed "
+                            f"{model_display_name(project_conversation_model_id())}"
+                            " conversation profile",
+                            "model_id": project_conversation_model_id(),
                         }
                     ],
                     "default_agent_profile_id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,

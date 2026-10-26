@@ -9,6 +9,7 @@ set the contacts table lists), and versions come from the identity store.
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -50,6 +51,8 @@ from clue_storage import StorageBackend
 __all__ = [
     "PROJECT_CONVERSATION_AGENT_PROFILE_ID",
     "PROJECT_CONVERSATION_MODEL_ID",
+    "model_display_name",
+    "project_conversation_model_id",
     "MAX_DESIGN_REFERENCE_ASSETS",
     "ComposerContextEntity",
     "ContextReferenceError",
@@ -68,8 +71,39 @@ __all__ = [
 # `open_design_leg` to @5, so one ask can open one leg that births many artifacts, and v60 is the
 # prompt that stops telling the user to speak before generation begins: the leg's first design
 # turn is queued from the message that opened it.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v76"
+# v76 grants the CRM reads (`connect_crm`, `find_crm_actions`, `run_crm_action`) and
+# `write_brand_document`, with the `crm-sales-analysis` skill.
+# v77 grants the CRM writes (`propose_crm_changes`, `crm_write_log`, `manage_crm_grants`), with
+# the `crm-writing` skill.
+# v78 grants the project's first CRM writes (`read_crm_targets`, `find_crm_list`,
+# `link_crm_list`), with `crm-writing` v2.
+# v79 re-pins `crm-writing` at v3 (one card can use the records it creates).
+# v80 re-pins `stage0-interview` at v53 (a message Clue wrote is never the person's words).
+# v81 re-pins `crm-writing` at v4 (never show Clue's write or proposal ids).
+# v82 grants `propose_clue_fields_setup` and re-pins `crm-writing` at v5 (Clue's own fields).
+# v83 re-pins `crm-writing` at v6 (possible duplicates marked with the CRM's own actions).
+# v84 adds no tool: it carries F3's workspace text re-minted above CRM (`manual-*@v30`), which
+# tells the agent what each folder keeps and for how long now that a chat's rough work expires.
+# v85 re-pins `crm-writing` at v7 and `read_crm_targets` at its new output: "Clue tier" is now
+# "Clue fit level" (R-14.6).
+# v86 carries main's prompt v19 (the design brief carries no copy; a menu of angles for variants).
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v86"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
+"""The catalog's model for the conversation profile; ``HEAD_OF_ABM_AGENT_MODEL`` overrides it."""
+
+
+def project_conversation_model_id() -> str:
+    """The model the conversation agent runs on: ``HEAD_OF_ABM_AGENT_MODEL`` (the same env the
+    agent registry applies) or, unset or blank, the catalog's."""
+    return os.environ.get("HEAD_OF_ABM_AGENT_MODEL", "").strip() or PROJECT_CONVERSATION_MODEL_ID
+
+
+def model_display_name(model_id: str) -> str:
+    """A model id as people read it: ``x-ai/grok-4.6`` -> "Grok 4.6",
+    ``openai/gpt-6.1-sol`` -> "Gpt 6.1 Sol" (provider and any ``:variant`` dropped)."""
+    name = model_id.rsplit("/", 1)[-1].split(":", 1)[0]
+    return " ".join(part[:1].upper() + part[1:] for part in name.split("-") if part)
+
 
 _MAX_CONTEXT_ACCOUNTS = 50
 MAX_DESIGN_REFERENCE_ASSETS = 4

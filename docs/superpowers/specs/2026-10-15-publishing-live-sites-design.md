@@ -10,7 +10,7 @@ written spec awaits the founder's review. **Branch:** `puck/integration-wave1` (
 `script` … `form` … every `on*` attribute", the site CSP `script-src 'none'`, and review-focus item 7
 "agent script in published HTML publishes without it"); the section checker's rule "a section renders
 its props and nothing else"; and the custom-domain spec's deferral of head/body snippets
-(`docs/superpowers/specs/2026-09-17-custom-domain-publishing-design.md` §1 and its follow-ups).
+(`docs/superpowers/specs/archive/2026-09-17-custom-domain-publishing-design.md` §1 and its follow-ups).
 **Does not change:** D2 (agent code runs only on the editor domain in the browser, and only in the
 hardened headless Chromium on the server), the separate pages domain, the brand rules.
 
@@ -26,7 +26,7 @@ run in the editor and are flattened to inert HTML on publish.
 
 That was never the founder's intent. It traces to one line of the 2026-10-09 isolation research,
 "AI sections should default to static HTML with no hydration unless the section needs interactivity"
-(`docs/superpowers/specs/2026-10-09-code-first-builder-isolation-research.md:235`), which the
+(`docs/superpowers/specs/archive/2026-10-09-code-first-builder-isolation-research.md:235`), which the
 integration plan turned into a hard rule without the "unless". The roadmap listed "the publish format"
 as a founder decision; none was recorded.
 

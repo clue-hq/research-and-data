@@ -287,9 +287,53 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # its number (with `manual-*@v18` and `stage0-interview@v45`); the website line re-mints on top
     # of it — v74's surface plus `launch_arv2_discovery@3`, recipe 35, `manual-*@v21` (both lines'
     # chapters) and `stage0-interview@v48` (v47 merged with v45's section 7b). Prompt v18 stays.
-    # v76 (2026-10-20, design/harness-alignment, under trial): v75 plus prompt v19 (the design brief
-    # carries no copy; a menu of angles for variants); `manual-*@v22`, `stage0-interview@v49`.
-    AgentRole.HEAD_OF_ABM: "v76",
+    # v76 (2026-10-20, CRM integration Phase 1 - reads): v75's surface plus `connect_crm@1`,
+    # `find_crm_actions@1`, `run_crm_action@1` and `write_brand_document@1`, the new skill
+    # `crm-sales-analysis` v1, `stage0-interview@v49` (section 2b: the CRM step), `manual-*@v22`
+    # and recipe 36. Prompt v18 stays.
+    # v77 (2026-10-22, CRM integration Phase 2 - writes): v76's surface plus
+    # `propose_crm_changes@1`, `crm_write_log@1` and `manage_crm_grants@1`, the new skill
+    # `crm-writing` v1, `stage0-interview@v50` (v49 with its manual paths repointed),
+    # `manual-*@v23` and recipe 37. Prompt v18 stays.
+    # v78 (2026-10-23, CRM integration Phase 3 - first writes): v77's surface plus
+    # `read_crm_targets@1`, `find_crm_list@1` and `link_crm_list@1`, `crm-writing` v2 (section 3b:
+    # writing a project's research into the CRM), `propose_crm_changes@1` at its new input digest,
+    # `stage0-interview@v51` (v50 with its manual paths repointed), `manual-*@v24` and recipe 38.
+    # Prompt v18 stays.
+    # v79 (2026-10-24, CRM integration Phase 3, Task 10 / R-12.11): v78's surface unchanged;
+    # `crm-writing` v3 (one card can use the records it creates: `new:company:<domain>` /
+    # `new:contact:<email>`), `stage0-interview@v52` (v51 with its manual paths repointed),
+    # `manual-*@v25` and recipe 39. Prompt v18 stays.
+    # v80 (2026-10-24, Phase 3 Task 11 / R-12.14): v79's surface unchanged; `stage0-interview@v53`
+    # (v52 plus one passage: a message Clue wrote is never recorded as the person's words, and its
+    # manual paths repointed), `manual-*@v26` and recipe 40. Prompt v18 stays.
+    # v81 (2026-10-24, Phase 3 Task 12 / R-12.17): v80's surface, `crm_write_log@1` at its new
+    # output digest (write_id / proposal_id are Clue's internal ids, for undo only), `crm-writing`
+    # v4 (never show the person Clue's write or proposal ids), `stage0-interview@v54` (v53 with its
+    # manual paths repointed), `manual-*@v27` and recipe 41. Prompt v18 stays.
+    # v82 (2026-10-25, CRM integration Phase 4 Task 6): v81's surface plus
+    # `propose_clue_fields_setup@1` (set up Clue's own fields; only an owner or admin can allow
+    # the card), `read_crm_targets@1` at its new output digest (Clue's own values and the
+    # not-set-up note), `crm-writing` v5 (section 3c, Clue's own fields; founder-approved
+    # 2026-10-25), `stage0-interview@v55` (v54 with its manual paths repointed), `manual-*@v28`
+    # and recipe 42. Prompt v18 stays.
+    # v83 (2026-10-25, Phase 4 live-check finding L4-3): v82's surface, no address added or
+    # removed; `crm-writing` v6 (section 3c items 2 and 3: a created record carries its Clue id;
+    # possible duplicates are marked with the CRM's own actions), `stage0-interview@v56` (v55 with
+    # its manual paths repointed), `manual-*@v29` and recipe 43. Prompt v18 stays.
+    # v84 (2026-10-25, F3 merged onto CRM Phase 4): v83's surface exactly, no address added or
+    # removed; F3's founder-approved workspace text (the folder table, the `workspace_files.json`
+    # card, the staleness instruction, the limits chapter's retention bullet) re-minted above
+    # CRM: `manual-*@v30` (CRM's v29 plus F3's v23 -> v24 changes), `stage0-interview@v57` (v56
+    # with its manual paths repointed) and recipe 44. Prompt v18 stays.
+    # v85 (2026-10-25, founder ruling R-14.6): v84's surface, no address added or removed; Clue's
+    # own CRM field "Clue tier" becomes "Clue fit level", so `read_crm_targets@1` is re-pinned at
+    # its new output digest (clue_fit_level), `crm-writing` v7, `stage0-interview@v58` (v57 with
+    # its manual paths repointed), `manual-*@v31` and recipe 45. Prompt v18 stays.
+    # v86 (2026-10-27, main merged into the CRM line): v85's surface, no address added or removed,
+    # with main's prompt v19 (the design brief carries no copy; a menu of angles for variants),
+    # `stage0-interview@v59` (v58 with its manual paths repointed), `manual-*@v32` and recipe 46.
+    AgentRole.HEAD_OF_ABM: "v86",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -524,6 +568,35 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
         AgentRole.REVIEWER,
     ),
     "import_accounts": (),
+    # CRM integration Phase 1 (reads): granted to the Head of ABM at `head-of-abm@v76`
+    # (docs/superpowers/plans/2026-10-20-crm-integration-phase-1-reads.md, Task 11). The three CRM
+    # tools read the workspace's CRM through Composio and never change it; `write_brand_document`
+    # publishes `company/` and `proof/` brand documents only.
+    "connect_crm": (AgentRole.HEAD_OF_ABM,),
+    "find_crm_actions": (AgentRole.HEAD_OF_ABM,),
+    "run_crm_action": (AgentRole.HEAD_OF_ABM,),
+    "write_brand_document": (AgentRole.HEAD_OF_ABM,),
+    # CRM integration Phase 2 (writes): granted to the Head of ABM at `head-of-abm@v77`
+    # (docs/superpowers/plans/2026-10-22-crm-integration-phase-2-write-foundation.md, Task 10).
+    # `propose_crm_changes` proposes CRM writes that the person approves on a permission card (or
+    # that a standing permission covers); `crm_write_log` reads what Clue changed;
+    # `manage_crm_grants` lists and revokes the standing permissions, and never grants one.
+    "propose_crm_changes": (AgentRole.HEAD_OF_ABM,),
+    "crm_write_log": (AgentRole.HEAD_OF_ABM,),
+    "manage_crm_grants": (AgentRole.HEAD_OF_ABM,),
+    # CRM integration Phase 3 (first writes): granted to the Head of ABM at `head-of-abm@v78`
+    # (docs/superpowers/plans/2026-10-23-crm-integration-phase-3-first-writes.md, Task 8).
+    # `read_crm_targets` reads a project's accounts and committee reduced to what R-8.7 allows;
+    # `find_crm_list` / `link_crm_list` find a project's CRM list and keep one the person names
+    # (R-11.11).
+    "read_crm_targets": (AgentRole.HEAD_OF_ABM,),
+    "find_crm_list": (AgentRole.HEAD_OF_ABM,),
+    "link_crm_list": (AgentRole.HEAD_OF_ABM,),
+    # CRM integration Phase 4: granted to the Head of ABM at `head-of-abm@v82`
+    # (docs/superpowers/plans/2026-10-24-crm-integration-phase-4-clue-fields.md, Task 6).
+    # `propose_clue_fields_setup` proposes setting up Clue's own fields (R-13.3, R-13.4) on a card
+    # only a workspace owner or admin can allow.
+    "propose_clue_fields_setup": (AgentRole.HEAD_OF_ABM,),
     # PC-C8 §7 (task 1.5's deferred grant, landed against profile v10) granted six read-only
     # cursor-resolution tools here. ARV2 onboarding O6 drops five of them at `head-of-abm@v44`:
     # they all read the Client-KB / Product-KB claim surfaces, and the new lane's Stage-0 knowledge
@@ -742,6 +815,27 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 # `manage_products` (head-of-abm@v71) changes the brand's real product list,
                 # pages and every project's product set — a durable write no trial may make.
                 "manage_products",
+                # The CRM tools (head-of-abm@v76) reach the workspace's real CRM through Composio,
+                # and `write_brand_document` durably publishes brand documents; a dev-harness turn
+                # also carries no project, so installed they could only refuse.
+                "connect_crm",
+                "find_crm_actions",
+                "run_crm_action",
+                "write_brand_document",
+                # The CRM write tools (head-of-abm@v77) open real permission cards and send real
+                # changes to the workspace's CRM, or revoke a person's standing permission.
+                "propose_crm_changes",
+                "crm_write_log",
+                "manage_crm_grants",
+                # The Phase 3 CRM tools (head-of-abm@v78) read a project's accounts for the CRM,
+                # or read and keep the workspace's real CRM lists; a dev-harness turn carries no
+                # project, so installed they could only refuse.
+                "read_crm_targets",
+                "find_crm_list",
+                "link_crm_list",
+                # The Phase 4 setup card (head-of-abm@v82) proposes creating fields in the
+                # workspace's real CRM; a dev-harness turn carries no project either.
+                "propose_clue_fields_setup",
                 # `author_icp_document`, `request_persona_synthesis` and `write_project_document`
                 # used to stand here. `head-of-abm@v55` does not grant any of them on any surface,
                 # and a policy may only narrow tools the profile pins, so there is nothing left to

@@ -410,6 +410,21 @@ def test_durable_turn_history_replay_and_dsar_are_body_free_and_fail_closed(
                 subject_entity_id=UUID("00000000-0000-0000-0000-000000000699"),
                 binding_kind="direct",
             )
+            # Review of F3 Phase 2: the DSAR purge is about the keys this erasure marked.
+            # ``purge_erased_artifacts`` opens with an unfiltered
+            # ``UPDATE artifact … WHERE expires_at <= now()`` and a sequential scan — the
+            # keyless maintenance sweep's job, not a subject erasure's to do on rows belonging
+            # to other owners (research quality artifacts and ARV2 media both set ``expires_at``).
+            expiring = f"{project.workspace_id}/{'e' * 64}"
+            await storage.put(expiring, b"another owner's bytes", media_type="text/plain")
+            await conn.execute(
+                text(
+                    "INSERT INTO artifact (storage_key, workspace_id, content_sha256, "
+                    "media_type, size_bytes, expires_at) VALUES (:key, :ws, :sha, "
+                    "'text/plain', 21, now() - interval '1 second')"
+                ),
+                {"key": expiring, "ws": project.workspace_id, "sha": "e" * 64},
+            )
             erased = await AgentPrivacyService(
                 storage=storage,
                 workspaces=harness.factory,
@@ -420,6 +435,17 @@ def test_durable_turn_history_replay_and_dsar_are_body_free_and_fail_closed(
             )
             assert erased.affected_turn_ids == (turn_request.turn_id,)
             assert not harness.thread_path.exists()
+            untouched = (
+                await conn.execute(
+                    text(
+                        "SELECT erased_at, purged_at, privacy_erased FROM artifact "
+                        "WHERE storage_key = :key"
+                    ),
+                    {"key": expiring},
+                )
+            ).one()
+            assert tuple(untouched) == (None, None, False)
+            assert await storage.exists(expiring)
             with pytest.raises(ArtifactNotFound):
                 await artifacts.read(user_message)
             blocked = await replay.inspect(

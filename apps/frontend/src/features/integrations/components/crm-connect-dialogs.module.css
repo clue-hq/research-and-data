@@ -1,0 +1,122 @@
+/* Board 06 dialogs (Figma 2310:2264): 560 wide, 20px padding, 16px gaps, 8px radius. */
+
+.dialogLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.dialogBackdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgb(20 22 26 / 28%);
+  backdrop-filter: blur(1px);
+}
+
+.dialog {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: min(560px, 100%);
+  flex-direction: column;
+  gap: 16px;
+  border: 1px solid var(--clue-ds-color-border-subtle);
+  border-radius: 8px;
+  background: var(--clue-ds-color-bg-neutral);
+  box-shadow: 0 8px 12px rgb(0 0 0 / 10%);
+  padding: 20px;
+}
+
+.title {
+  margin: 0;
+  color: var(--clue-ds-color-content-neutral);
+  font-family: var(--clue-ds-typography-text-default-medium-font-family);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.subtle,
+.neutral,
+.warning {
+  margin: 0;
+  font-family: var(--clue-ds-typography-text-sm-font-family);
+  font-size: var(--clue-ds-typography-text-sm-font-size);
+  font-weight: var(--clue-ds-typography-text-sm-font-weight);
+  line-height: var(--clue-ds-typography-text-sm-line-height);
+}
+
+.subtle {
+  color: var(--clue-ds-color-content-subtle);
+}
+
+.neutral {
+  color: var(--clue-ds-color-content-neutral);
+}
+
+.warning {
+  color: var(--clue-ds-color-content-utility-warning);
+}
+
+.providerRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  border: 1px solid var(--clue-ds-color-border-subtle);
+  border-radius: 8px;
+  background: var(--clue-ds-color-bg-neutral);
+  padding: 16px;
+}
+
+.providerText {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.providerName {
+  margin: 0;
+  color: var(--clue-ds-color-content-neutral);
+  font-family: var(--clue-ds-typography-text-default-medium-font-family);
+  font-size: var(--clue-ds-typography-text-default-medium-font-size);
+  font-weight: var(--clue-ds-typography-text-default-medium-font-weight);
+  line-height: var(--clue-ds-typography-text-default-medium-line-height);
+}
+
+.brandMark {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.badge {
+  display: inline-flex;
+  align-self: flex-start;
+  flex: 0 0 auto;
+  border-radius: 4px;
+  background: var(--clue-ds-color-bg-page);
+  padding: 2px 8px;
+  color: var(--clue-ds-color-content-subtle);
+  font-family: var(--clue-ds-typography-text-sm-font-family);
+  font-size: var(--clue-ds-typography-text-sm-font-size);
+  font-weight: var(--clue-ds-typography-text-sm-font-weight);
+  line-height: var(--clue-ds-typography-text-sm-line-height);
+  white-space: nowrap;
+}
+
+.badgeWarning {
+  background: var(--clue-ds-color-primitives-warning-50);
+  color: var(--clue-ds-color-content-utility-warning);
+}

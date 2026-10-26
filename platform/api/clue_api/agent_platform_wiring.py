@@ -42,6 +42,7 @@ from clue_api.agent_turn_wiring import (
     DurableAgentArtifactStore,
 )
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
+from clue_api.crm.read_sinks import CrmReadSinks
 from clue_api.deep import ProfileAccountFn
 from clue_api.project_library_refresh import ProjectLibraryRefresher
 from clue_api.sandbox.workspaces import SandboxWorkspaces
@@ -451,6 +452,9 @@ class AgentPlatformComponents:
     #: composed none — every HTTP root, and every deployment with the sandbox off — leaves it
     #: ``None``, the conversation engine registers nothing, and the tool refuses by name.
     sandbox_workspaces: SandboxWorkspaces | None = None
+    #: Where ``run_crm_action@1`` finds a turn's ``reads/`` folder: the same object the toolbelt
+    #: was built with, for the same reason as ``sandbox_workspaces``. ``None`` = no CRM reads.
+    crm_read_sinks: CrmReadSinks | None = None
 
 
 def build_agent_platform_components(
@@ -462,16 +466,25 @@ def build_agent_platform_components(
     tools: ToolRegistry,
     conn_factory: ConnFactory = transaction,
     sandbox_workspaces: SandboxWorkspaces | None = None,
+    crm_read_sinks: CrmReadSinks | None = None,
 ) -> AgentPlatformComponents:
     """Build every common C6 production adapter at the API root; fail before model spend.
 
     ``sandbox_workspaces`` is *passed in*, never built here, and that is deliberate: the toolbelt
-    handed to ``run_python@1`` and the conversation engine that registers the turn must share one
+    handed to ``run_python@1`` and the workspace factory that binds the turn must share one
     registry instance, so the composition root that builds both owns it (the fleet worker does).
     """
 
     artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory)
-    workspaces = build_agent_workspace_factory(storage=storage, settings=settings)
+    # The two per-turn registries are bound by the factory itself (F3, WS-14; AW-8.2): every
+    # lease from ``acquire_restored`` binds them, and its release unbinds them.
+    workspaces = build_agent_workspace_factory(
+        storage=storage,
+        settings=settings,
+        turn_bindings=tuple(
+            binding for binding in (sandbox_workspaces, crm_read_sinks) if binding is not None
+        ),
+    )
     profiles = build_agent_profile_registry(tools)
     design_run_purger = None
     if settings.design_runtime_enabled:
@@ -479,14 +492,10 @@ def build_agent_platform_components(
 
         design_run_purger = build_runtime_workspace_purger()
     # A DSAR erasure takes an interview quote out of the project library's ``decisions.md`` — a
-    # compiled rendering beside the threads, which no tombstone reaches — so the privacy service
-    # rewrites the library of every project it touched once the erasure has committed.
-    library = ProjectLibraryRefresher(
-        storage=storage,
-        artifacts=artifacts,
-        workspaces=workspaces,
-        conn_factory=conn_factory,
-    )
+    # compiled rendering in each chat's own folder, which no tombstone reaches — so the privacy
+    # service bumps the library epoch of every project it touched once the erasure has committed,
+    # and every chat's copy resyncs on its next turn (F3, AW-20).
+    library = ProjectLibraryRefresher(conn_factory=conn_factory)
     return AgentPlatformComponents(
         profiles=profiles,
         models=build_agent_model_provider(config=gateway_config, secrets=secrets),
@@ -509,6 +518,7 @@ def build_agent_platform_components(
         head_of_abm_turn_timeout_s=settings.head_of_abm_turn_timeout_s or None,
         agent_long_turn_alert_s=settings.agent_long_turn_alert_s or None,
         sandbox_workspaces=sandbox_workspaces,
+        crm_read_sinks=crm_read_sinks,
     )
 
 

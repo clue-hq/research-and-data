@@ -48,7 +48,7 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
 def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
     """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 35
+    assert CONVERSATION_RECIPE_VERSION == 46
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -998,6 +998,9 @@ def test_operation_id_requirements_are_explicit() -> None:
         # operation; AT_LEAST_ONCE like `exa_search_evidence@1`, since a retried search cannot
         # converge on one provider call.
         "web_search@1",
+        # run_crm_action@1 (2026-10-20): operation-bound because its reads/ file is named by the
+        # operation; AT_LEAST_ONCE, since a retried CRM read cannot converge on one provider call.
+        "run_crm_action@1",
         "start_recon@1",
         "submit_onboarding_input@1",
         "synthesize_icps@3",
@@ -1010,6 +1013,7 @@ def test_operation_id_requirements_are_explicit() -> None:
         "start_recon@1",
         "exa_search_evidence@1",
         "web_search@1",
+        "run_crm_action@1",
     }
 
 
@@ -1030,3 +1034,250 @@ def test_narrow_recipe_step_requires_an_exact_tool_version() -> None:
                 "input_refs": {},
             }
         )
+
+
+def test_crm_integration_mints_recipe_v36_without_rewriting_v35() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v35 = json.loads((root / "recipe0-stage0-v35.json").read_text())
+    v36 = json.loads((root / "recipe0-stage0-v36.json").read_text())
+    # Four addresses JOIN and none leaves: the CRM reads and the brand-document write, which
+    # `head-of-abm@v76` grants.
+    added = {
+        ("connect_crm", "1"),
+        ("find_crm_actions", "1"),
+        ("run_crm_action", "1"),
+        ("write_brand_document", "1"),
+    }
+    addresses = {f"{key}@{version}" for key, version in added}
+    v35_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v35.json")
+    assert SYSTEM_RECIPE_FILENAMES[v35_index : v35_index + 2] == (
+        "recipe0-stage0-v35.json",
+        "recipe0-stage0-v36.json",
+    )
+    assert set(v35["graph"]["tool_allowlist"]) | addresses == set(v36["graph"]["tool_allowlist"])
+    slot = next(node for node in v36["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    v35_slot = next(
+        node for node in v35["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
+    )
+    assert set(v35_slot["dynamic_tool_allowlist"]) | addresses == set(
+        slot["dynamic_tool_allowlist"]
+    )
+
+    def tools(items: list[dict[str, str]]) -> set[tuple[str, str]]:
+        return {(item["key"], item["version"]) for item in items if item["kind"] == "tool"}
+
+    assert tools(v35_slot["requirements"]) | added == tools(slot["requirements"])
+    assert tools(v35["compatibility"]["nodes"]["stage0_interactions"]) | added == tools(
+        v36["compatibility"]["nodes"]["stage0_interactions"]
+    )
+    assert addresses <= set(RECIPE_0_TOOL_ADDRESSES)
+    assert (v35["version"], v36["version"]) == (35, 36)
+    assert slot["dynamic_pin_kinds"] == v35_slot["dynamic_pin_kinds"]
+
+
+def test_crm_writes_mint_recipe_v37_without_rewriting_v36() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v36 = json.loads((root / "recipe0-stage0-v36.json").read_text())
+    v37 = json.loads((root / "recipe0-stage0-v37.json").read_text())
+    # Three addresses JOIN and none leaves: the CRM write tools, which `head-of-abm@v77` grants.
+    added = {
+        ("propose_crm_changes", "1"),
+        ("crm_write_log", "1"),
+        ("manage_crm_grants", "1"),
+    }
+    addresses = {f"{key}@{version}" for key, version in added}
+    v36_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v36.json")
+    assert SYSTEM_RECIPE_FILENAMES[v36_index : v36_index + 2] == (
+        "recipe0-stage0-v36.json",
+        "recipe0-stage0-v37.json",
+    )
+    assert set(v36["graph"]["tool_allowlist"]) | addresses == set(v37["graph"]["tool_allowlist"])
+    slot = next(node for node in v37["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    v36_slot = next(
+        node for node in v36["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
+    )
+    assert set(v36_slot["dynamic_tool_allowlist"]) | addresses == set(
+        slot["dynamic_tool_allowlist"]
+    )
+
+    def tools(items: list[dict[str, str]]) -> set[tuple[str, str]]:
+        return {(item["key"], item["version"]) for item in items if item["kind"] == "tool"}
+
+    assert tools(v36_slot["requirements"]) | added == tools(slot["requirements"])
+    assert tools(v36["compatibility"]["nodes"]["stage0_interactions"]) | added == tools(
+        v37["compatibility"]["nodes"]["stage0_interactions"]
+    )
+    assert addresses <= set(RECIPE_0_TOOL_ADDRESSES)
+    assert (v36["version"], v37["version"]) == (36, 37)
+    assert slot["dynamic_pin_kinds"] == v36_slot["dynamic_pin_kinds"]
+
+
+def test_crm_first_writes_mint_recipe_v38_without_rewriting_v37() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v37 = json.loads((root / "recipe0-stage0-v37.json").read_text())
+    v38 = json.loads((root / "recipe0-stage0-v38.json").read_text())
+    # Three addresses JOIN and none leaves: the Phase 3 CRM tools, which `head-of-abm@v78` grants.
+    added = {
+        ("read_crm_targets", "1"),
+        ("find_crm_list", "1"),
+        ("link_crm_list", "1"),
+    }
+    addresses = {f"{key}@{version}" for key, version in added}
+    v37_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v37.json")
+    assert SYSTEM_RECIPE_FILENAMES[v37_index : v37_index + 2] == (
+        "recipe0-stage0-v37.json",
+        "recipe0-stage0-v38.json",
+    )
+    assert set(v37["graph"]["tool_allowlist"]) | addresses == set(v38["graph"]["tool_allowlist"])
+    slot = next(node for node in v38["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    v37_slot = next(
+        node for node in v37["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
+    )
+    assert set(v37_slot["dynamic_tool_allowlist"]) | addresses == set(
+        slot["dynamic_tool_allowlist"]
+    )
+
+    def tools(items: list[dict[str, str]]) -> set[tuple[str, str]]:
+        return {(item["key"], item["version"]) for item in items if item["kind"] == "tool"}
+
+    assert tools(v37_slot["requirements"]) | added == tools(slot["requirements"])
+    assert tools(v37["compatibility"]["nodes"]["stage0_interactions"]) | added == tools(
+        v38["compatibility"]["nodes"]["stage0_interactions"]
+    )
+    assert addresses <= set(RECIPE_0_TOOL_ADDRESSES)
+    assert (v37["version"], v38["version"]) == (37, 38)
+    assert slot["dynamic_pin_kinds"] == v37_slot["dynamic_pin_kinds"]
+
+
+def test_records_a_card_creates_mint_recipe_v39_without_rewriting_v38() -> None:
+    """Phase 3 Task 10 (R-12.11): v39 moves with `head-of-abm@v79` and admits or removes nothing."""
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v38 = json.loads((root / "recipe0-stage0-v38.json").read_text())
+    v39 = json.loads((root / "recipe0-stage0-v39.json").read_text())
+    v38_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v38.json")
+    assert SYSTEM_RECIPE_FILENAMES[v38_index : v38_index + 2] == (
+        "recipe0-stage0-v38.json",
+        "recipe0-stage0-v39.json",
+    )
+    assert (v38["version"], v39["version"]) == (38, 39)
+    assert {**v39, "version": 38} == v38
+
+
+def test_task_11_mints_recipe_v40_without_rewriting_v39() -> None:
+    """Phase 3 Task 11 (R-12.14): v40 moves with `head-of-abm@v80` and admits or removes nothing."""
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v39 = json.loads((root / "recipe0-stage0-v39.json").read_text())
+    v40 = json.loads((root / "recipe0-stage0-v40.json").read_text())
+    v39_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v39.json")
+    assert SYSTEM_RECIPE_FILENAMES[v39_index : v39_index + 2] == (
+        "recipe0-stage0-v39.json",
+        "recipe0-stage0-v40.json",
+    )
+    assert (v39["version"], v40["version"]) == (39, 40)
+    assert {**v40, "version": 39} == v39
+
+
+def test_task_12_mints_recipe_v41_without_rewriting_v40() -> None:
+    """Phase 3 Task 12 (R-12.17): v41 moves with `head-of-abm@v81` and admits or removes nothing."""
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v40 = json.loads((root / "recipe0-stage0-v40.json").read_text())
+    v41 = json.loads((root / "recipe0-stage0-v41.json").read_text())
+    v40_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v40.json")
+    assert SYSTEM_RECIPE_FILENAMES[v40_index : v40_index + 2] == (
+        "recipe0-stage0-v40.json",
+        "recipe0-stage0-v41.json",
+    )
+    assert (v40["version"], v41["version"]) == (40, 41)
+    assert {**v41, "version": 40} == v40
+
+
+def test_phase_4_mints_recipe_v42_without_rewriting_v41() -> None:
+    """Phase 4 Task 6: v42 admits `propose_clue_fields_setup@1`, which `head-of-abm@v82` grants,
+    and removes nothing."""
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v41 = json.loads((root / "recipe0-stage0-v41.json").read_text())
+    v42 = json.loads((root / "recipe0-stage0-v42.json").read_text())
+    added = {("propose_clue_fields_setup", "1")}
+    addresses = {f"{key}@{version}" for key, version in added}
+    v41_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v41.json")
+    assert SYSTEM_RECIPE_FILENAMES[v41_index : v41_index + 2] == (
+        "recipe0-stage0-v41.json",
+        "recipe0-stage0-v42.json",
+    )
+    assert set(v41["graph"]["tool_allowlist"]) | addresses == set(v42["graph"]["tool_allowlist"])
+    slot = next(node for node in v42["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    v41_slot = next(
+        node for node in v41["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
+    )
+    assert set(v41_slot["dynamic_tool_allowlist"]) | addresses == set(
+        slot["dynamic_tool_allowlist"]
+    )
+
+    def tools(items: list[dict[str, str]]) -> set[tuple[str, str]]:
+        return {(item["key"], item["version"]) for item in items if item["kind"] == "tool"}
+
+    assert tools(v41_slot["requirements"]) | added == tools(slot["requirements"])
+    assert tools(v41["compatibility"]["nodes"]["stage0_interactions"]) | added == tools(
+        v42["compatibility"]["nodes"]["stage0_interactions"]
+    )
+    assert addresses <= set(RECIPE_0_TOOL_ADDRESSES)
+    assert (v41["version"], v42["version"]) == (41, 42)
+    assert slot["dynamic_pin_kinds"] == v41_slot["dynamic_pin_kinds"]
+
+
+def test_phase_4_follow_up_mints_recipe_v43_without_rewriting_v42() -> None:
+    """Phase 4 live check L4-3: v43 moves with `head-of-abm@v83` and admits or removes nothing."""
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v42 = json.loads((root / "recipe0-stage0-v42.json").read_text())
+    v43 = json.loads((root / "recipe0-stage0-v43.json").read_text())
+    v42_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v42.json")
+    assert SYSTEM_RECIPE_FILENAMES[v42_index : v42_index + 2] == (
+        "recipe0-stage0-v42.json",
+        "recipe0-stage0-v43.json",
+    )
+    assert (v42["version"], v43["version"]) == (42, 43)
+    assert {**v43, "version": 42} == v42
+
+
+def test_f3_onto_crm_mints_recipe_v44_without_rewriting_v43() -> None:
+    """F3 merged onto CRM Phase 4: v44 moves with `head-of-abm@v84` and admits or removes
+    nothing."""
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v43 = json.loads((root / "recipe0-stage0-v43.json").read_text())
+    v44 = json.loads((root / "recipe0-stage0-v44.json").read_text())
+    v43_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v43.json")
+    assert SYSTEM_RECIPE_FILENAMES[v43_index : v43_index + 2] == (
+        "recipe0-stage0-v43.json",
+        "recipe0-stage0-v44.json",
+    )
+    assert (v43["version"], v44["version"]) == (43, 44)
+    assert {**v44, "version": 43} == v43
+
+
+def test_clue_fit_level_mints_recipe_v45_without_rewriting_v44() -> None:
+    """Founder ruling R-14.6: v45 moves with `head-of-abm@v85` and admits or removes nothing."""
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v44 = json.loads((root / "recipe0-stage0-v44.json").read_text())
+    v45 = json.loads((root / "recipe0-stage0-v45.json").read_text())
+    v44_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v44.json")
+    assert SYSTEM_RECIPE_FILENAMES[v44_index : v44_index + 2] == (
+        "recipe0-stage0-v44.json",
+        "recipe0-stage0-v45.json",
+    )
+    assert (v44["version"], v45["version"]) == (44, 45)
+    assert {**v45, "version": 44} == v44
+
+
+def test_main_merge_mints_recipe_v46_without_rewriting_v45() -> None:
+    """main merged into the CRM line (2026-10-27): v46 moves with `head-of-abm@v86` and admits or
+    removes nothing."""
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v45 = json.loads((root / "recipe0-stage0-v45.json").read_text())
+    v46 = json.loads((root / "recipe0-stage0-v46.json").read_text())
+    v45_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v45.json")
+    assert SYSTEM_RECIPE_FILENAMES[v45_index : v45_index + 2] == (
+        "recipe0-stage0-v45.json",
+        "recipe0-stage0-v46.json",
+    )
+    assert (v45["version"], v46["version"]) == (45, 46)
+    assert {**v46, "version": 45} == v45

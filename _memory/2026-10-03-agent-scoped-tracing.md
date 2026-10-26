@@ -1,7 +1,7 @@
 # 2026-10-03 — agent-scoped tracing and one trace id across tools
 
 Branch `obs/agent-scoped-tracing` (off `origin/research-streaming` 347a48a9b). Local commits only,
-not pushed. Spec: `docs/superpowers/specs/2026-10-03-agent-scoped-tracing-and-one-trace-id-design.md`
+not pushed. Spec: `docs/superpowers/specs/archive/2026-10-03-agent-scoped-tracing-and-one-trace-id-design.md`
 (founder-approved in chat; R1–R8). This PR = R1–R7. R8 + Grafana Tempo/Loki = PR 2.
 
 ## Why (found in production, first day)

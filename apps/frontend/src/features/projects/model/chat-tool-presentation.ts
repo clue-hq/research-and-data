@@ -45,6 +45,17 @@ const TOOL_LABELS: Readonly<Record<string, string>> = {
   read_artifact: "Open an artifact",
   web_search: "Search the web",
   manage_products: "Update the product list",
+  connect_crm: "Connect your CRM",
+  find_crm_actions: "Look up CRM actions",
+  run_crm_action: "Read from your CRM",
+  write_brand_document: "Update brand context",
+  propose_crm_changes: "Propose CRM changes",
+  crm_write_log: "Review CRM changes",
+  manage_crm_grants: "Manage CRM permissions",
+  read_crm_targets: "Review what goes into your CRM",
+  find_crm_list: "Find the project's CRM list",
+  link_crm_list: "Use your CRM list",
+  propose_clue_fields_setup: "Set up Clue's fields in your CRM",
 };
 
 const FIELD_LABELS: Readonly<Record<string, string>> = {

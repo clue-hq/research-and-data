@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, SQLAlchemy async + asyncpg, Alembic, Pydantic v2, pytest; Next.js/TypeScript/Zod frontend (`tsx --test`).
 
-**Spec:** `docs/superpowers/specs/2026-09-30-agent-authored-account-discovery-design.md` (read it first; its §2 rulings and §6 texts are binding).
+**Spec:** `docs/superpowers/specs/archive/2026-09-30-agent-authored-account-discovery-design.md` (read it first; its §2 rulings and §6 texts are binding).
 
 ## Global Constraints
 

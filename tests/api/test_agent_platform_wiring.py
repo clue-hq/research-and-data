@@ -63,8 +63,6 @@ def test_agent_rollout_defaults_are_off_and_validated(
     with pytest.raises(ValueError):
         _settings(agent_canary_percent=101)
     with pytest.raises(ValueError):
-        _settings(agent_workspace_retention_s=-1)
-    with pytest.raises(ValueError):
         _settings(agent_account_plan_budget_limit_millicents=-1)
 
     monkeypatch.setenv("CLUE_AGENT_WORKSPACE_ALLOWLIST", '["ws-a","ws-b"]')

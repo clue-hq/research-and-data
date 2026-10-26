@@ -1,0 +1,482 @@
+"""The expiry job: a cold chat's raw inputs and working files lose their bytes (WS-24, WS-26).
+
+F3 Phase 2 (docs/superpowers/specs/agent-workspace/2026-10-21-agent-workspace-durability-design.md;
+rulings AW-2, AW-22, AW-24 as amended 2026-10-23). Once a day the fleet walks the chats nothing has
+touched for a while and, for each, publishes a new snapshot version whose due entries are marked
+expired and keep only their :class:`~clue_agents.workspace_snapshot.Receipt`. ``reads/`` and the
+other raw inputs go 48 hours after the chat's last activity, the agent's own rough work after 7
+days, and ``outputs/`` never.
+
+**The job deletes nothing itself.** Marking an entry expired drops it out of
+:meth:`~clue_agents.workspace_snapshot.SnapshotManifest.live`, so the next save does not hold its
+key, and :class:`~clue_api.agent_workspace_snapshots.DbWorkspaceSnapshotStore` erases and purges
+every own-area key the new version released that no other snapshot holds (ruling AW-26). One
+``save`` is therefore the whole of the job's write.
+
+**What counts as activity** (WS-24) is the newest of the snapshot row's ``last_activity_at`` and the
+chat's newest ``agent_turn_submission``. A folder id that is not a chat — a research run, a
+delegation — has no submissions and answers with its own column, which a turn stamps when it
+restores (WS-34a): starting a turn is activity, so a run in flight is never a candidate.
+
+**A busy chat is skipped, never raced.** A queued or claimed ``agent_turn`` task for the thread's
+work id, or a live ``work_lease`` on it, means a turn is about to save or is saving; the chat is
+counted as skipped and left for tomorrow. It only recognises *chat* turns — a research run and a
+delegation lease their work on their execution id, which this query cannot match — and it is only
+an extra guard: what keeps the job off any running turn, whoever it belongs to, is the activity a
+restore stamps. That check is a courtesy, not the guarantee: a turn can
+complete between the candidate scan and the expiry and leave nothing for it to see. The guarantee
+is that the decision and the write are anchored to one read — the chat's activity and version
+taken together, as late as possible, with the save compare-and-setting on that same version. The
+job never acts on a chat whose state has moved since it looked; it records a ``stale`` and leaves
+it for tomorrow, and it never retries inside the run.
+
+**The job's own save is not activity.** It passes ``activity=False``, so the version moves and the
+chat's ``last_activity_at`` stays exactly where the chat left it. Stamping it would restart the
+48-hour clock every pass and the 7-day window would never elapse.
+"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy import text
+
+from clue_agents.workspace_snapshot import (
+    UNKNOWN_RECEIPT,
+    SnapshotEntry,
+    SnapshotManifest,
+    SnapshotTier,
+)
+from clue_api.agent_turn_submission import thread_work_id
+from clue_api.agent_workspace_snapshots import DbWorkspaceSnapshotStore
+from clue_db import ConnFactory, transaction
+from clue_obs import get_logger
+
+__all__ = [
+    "RETENTION_CLAIM",
+    "RETENTION_CLAIM_TTL",
+    "RETENTION_SWEEP",
+    "AgentWorkspaceRetentionJob",
+    "RetentionReport",
+    "run_retention_if_due",
+]
+
+log = get_logger("clue_api.agent_workspace_retention")
+
+#: The ``maintenance_run`` row and advisory-lock key of the fleet-wide expiry job.
+RETENTION_SWEEP = "agent_workspace_retention"
+_RETENTION_LOCK = "agent-workspace-retention"
+#: The ``maintenance_run`` row a running pass claims; its time is when that pass started.
+RETENTION_CLAIM = f"{RETENTION_SWEEP}.claim"
+#: How long a claim keeps every other worker off the pass. Longer than any pass should take, so
+#: two never overlap; short enough that a worker killed mid-pass holds retention up for hours,
+#: not days.
+RETENTION_CLAIM_TTL = timedelta(hours=6)
+
+_TRY_LOCK = text("SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))")
+_LOCK = text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))")
+_LAST_RUN = text("SELECT last_run_at FROM maintenance_run WHERE name = :name")
+_RECORD = text(
+    "INSERT INTO maintenance_run (name, last_run_at) VALUES (:name, :at) "
+    "ON CONFLICT (name) DO UPDATE SET last_run_at = EXCLUDED.last_run_at"
+)
+# Takes the claim when there is none or the one there has expired; no row back means it is held.
+_CLAIM = text(
+    "INSERT INTO maintenance_run (name, last_run_at) VALUES (:name, :at) "
+    "ON CONFLICT (name) DO UPDATE SET last_run_at = EXCLUDED.last_run_at "
+    "WHERE maintenance_run.last_run_at <= :expired_before "
+    "RETURNING last_run_at"
+)
+# Only this pass's own claim: one that expired and was taken over belongs to the new runner.
+_RELEASE = text("DELETE FROM maintenance_run WHERE name = :name AND last_run_at = :at")
+
+# WS-24's definition of a chat's activity, written once and read by both the scan and the expiry:
+# ``GREATEST`` over the snapshot row's own stamp and the chat's newest submission. The correlated
+# max rides ``agent_turn_submission_thread_order (workspace_id, thread_id, requested_at, turn_id)``.
+_ACTIVITY_EXPR = """
+        GREATEST(
+            s.last_activity_at,
+            COALESCE(
+                (SELECT max(t.requested_at) FROM agent_turn_submission t
+                  WHERE t.workspace_id = s.workspace_id AND t.thread_id = s.thread_id),
+                s.last_activity_at
+            )
+        )
+"""
+
+# The chats whose newest activity is at or before the cutoff, coldest first, one page at a time.
+# ``:after_*`` is the previous page's last row — the keyset the walk resumes from, so a backlog of
+# any size is read in bounded bites and the pass is restartable rather than one huge result set.
+_CANDIDATES = text(
+    f"""
+    SELECT workspace_id, thread_id, project_id, last_activity
+    FROM (
+        SELECT s.workspace_id, s.thread_id, s.project_id,
+               {_ACTIVITY_EXPR} AS last_activity
+        FROM agent_workspace_snapshot s
+    ) AS chat
+    WHERE last_activity <= :cutoff
+      AND (
+          CAST(:after_activity AS timestamptz) IS NULL
+          OR (last_activity, workspace_id, thread_id)
+             > (CAST(:after_activity AS timestamptz), :after_ws, :after_thread)
+      )
+    ORDER BY last_activity, workspace_id, thread_id
+    LIMIT :limit
+    """
+)
+
+# The same chat's activity and version read together, as late as possible — the one read the
+# expiry decision is actually made on. The candidate scan's copy is minutes old by the time a chat
+# comes up (review I2): a turn can have completed since, leaving no queued task and no live lease
+# for ``_BUSY`` to see, and expiring on the stale value would destroy files written since.
+_ACTIVITY = text(
+    f"""
+    SELECT s.version, {_ACTIVITY_EXPR} AS last_activity
+    FROM agent_workspace_snapshot s
+    WHERE s.workspace_id = :ws AND s.thread_id = :thread
+    """
+)
+
+_BUSY = text(
+    """
+    SELECT EXISTS (
+            SELECT 1 FROM fleet_task
+             WHERE kind = CAST('agent_turn' AS fleet_task_kind)
+               AND work_id = :work_id
+               AND status IN ('queued', 'claimed')
+           )
+        OR EXISTS (
+            SELECT 1 FROM work_lease WHERE work_id = :work_id AND expires_at > :now
+           )
+    """
+)
+
+
+@dataclass(frozen=True, slots=True)
+class RetentionReport:
+    """What one pass of the job did, for the fleet's log line."""
+
+    chats_checked: int = 0
+    chats_expired: int = 0
+    files_expired: int = 0
+    skipped_busy: int = 0
+    stale: int = 0
+    #: Chats this pass could not read or save. Each one is logged and stepped over; a chat that
+    #: fails every day shows up here every day, which is what an operator watches (runbook).
+    failed: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class _Chat:
+    """Which chat the scan found — and deliberately nothing about its state.
+
+    The scan's version and activity are its ordering key and its cutoff test, and they are
+    minutes old by the time the chat is reached. Carrying them here is how the expiry came to be
+    decided on a stale reading of the world (review I2), so they are not carried: ``_expire``
+    reads the chat's state itself.
+    """
+
+    workspace_id: str
+    thread_id: str
+    project_id: str
+
+
+class AgentWorkspaceRetentionJob:
+    """Expire the due files of every cold chat, one snapshot save each."""
+
+    def __init__(
+        self,
+        *,
+        store: DbWorkspaceSnapshotStore,
+        conn_factory: ConnFactory = transaction,
+        raw_s: float,
+        working_s: float,
+        page_size: int = 500,
+    ) -> None:
+        self._store = store
+        self._conn_factory = conn_factory
+        self._page_size = max(1, page_size)
+        self._windows: dict[SnapshotTier, timedelta | None] = {
+            "raw_input": timedelta(seconds=raw_s),
+            "working_file": timedelta(seconds=working_s),
+            # AW-2: finished work is never expired, so this tier has no window at all.
+            "work_product": None,
+        }
+
+    async def run_once(self, *, now: datetime | None = None) -> RetentionReport:
+        """Sweep every cold chat, one page of candidates and one chat at a time.
+
+        **No single chat may end the pass** (review I1). A manifest blob the rows still name but
+        storage has lost raises :class:`SnapshotCorrupt`, and before this that raise left the
+        whole fleet's retention off: ``run_retention_if_due`` records nothing when ``run_once``
+        raises, so the next pass re-read the same deterministic ordering and died on the same
+        chat, for ever, behind one warning. A chat that cannot be read is counted in ``failed``,
+        logged with its ids, and stepped over.
+        """
+
+        now = now or datetime.now(UTC)
+        soonest = min(window for window in self._windows.values() if window is not None)
+        checked = expired_chats = expired_files = busy = stale = failed = 0
+        async for chat in self._candidates(cutoff=now - soonest):
+            checked += 1
+            try:
+                if await self._busy(chat, now=now):
+                    busy += 1
+                    continue
+                count, outcome = await self._expire(chat, now=now)
+            except Exception as exc:  # noqa: BLE001 — one bad chat may not stop the others
+                failed += 1
+                log.warning(
+                    "agent_workspace.retention.chat_failed",
+                    workspace_id=chat.workspace_id,
+                    thread_id=chat.thread_id,
+                    error=type(exc).__name__,
+                    detail=str(exc),
+                )
+                continue
+            if outcome == "stale":
+                stale += 1
+            elif count:
+                expired_chats += 1
+                expired_files += count
+        return RetentionReport(
+            chats_checked=checked,
+            chats_expired=expired_chats,
+            files_expired=expired_files,
+            skipped_busy=busy,
+            stale=stale,
+            failed=failed,
+        )
+
+    # --- internals ------------------------------------------------------------------------------
+
+    async def _candidates(self, *, cutoff: datetime) -> AsyncIterator[_Chat]:
+        """Every cold chat, read a page at a time and resumed by its ordering key.
+
+        The pass still reaches them all — paging bounds what one query costs and what is held in
+        memory, never the sweep's reach. An expiry does not move a chat's activity (WS-24), so a
+        swept chat stays in the candidate set and answers "nothing due" cheaply; a page is
+        therefore a window on the ordering, and the keyset is what walks it forward.
+        """
+
+        after: tuple[datetime, str, str] | None = None
+        while True:
+            async with self._conn_factory() as conn:
+                rows = (
+                    (
+                        await conn.execute(
+                            _CANDIDATES,
+                            {
+                                "cutoff": cutoff,
+                                "limit": self._page_size,
+                                "after_activity": None if after is None else after[0],
+                                "after_ws": None if after is None else after[1],
+                                "after_thread": None if after is None else after[2],
+                            },
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+            for row in rows:
+                after = (row["last_activity"], str(row["workspace_id"]), str(row["thread_id"]))
+                yield _Chat(
+                    workspace_id=str(row["workspace_id"]),
+                    thread_id=str(row["thread_id"]),
+                    project_id=str(row["project_id"]),
+                )
+            if len(rows) < self._page_size:
+                return
+
+    async def _busy(self, chat: _Chat, *, now: datetime) -> bool:
+        work_id = thread_work_id(workspace_id=chat.workspace_id, thread_id=chat.thread_id)
+        async with self._conn_factory() as conn:
+            return bool((await conn.execute(_BUSY, {"work_id": work_id, "now": now})).scalar_one())
+
+    async def _expire(self, chat: _Chat, *, now: datetime) -> tuple[int, str]:
+        """Mark this chat's due entries expired and publish the new version.
+
+        Returns how many entries were expired and the save's status (``"skipped"`` when there was
+        nothing due, so no version is burned on a chat that only has outputs left).
+
+        **Due-ness is judged on the activity read here, never on the candidate scan's** (review
+        I2). The scan's value is minutes old at scale, and a turn that completed since has left no
+        queued task and no live lease for :meth:`_busy` to find — expiring on the stale value
+        would mark the files that turn had just written and erase their bytes. The version read in
+        the same statement is what the save compare-and-sets on, so the decision and the write are
+        anchored to one and the same state of the chat: anything that moves it loses the race
+        loudly and is retried tomorrow.
+        """
+
+        pointer = await self._store.current(
+            workspace_id=chat.workspace_id, thread_id=chat.thread_id
+        )
+        if pointer is None:
+            return 0, "skipped"
+        fresh = await self._activity(chat)
+        if fresh is None:
+            return 0, "skipped"
+        version, last_activity = fresh
+        if version != pointer.version:
+            # A turn saved between the two reads: the file list just read is already superseded.
+            return 0, "stale"
+        manifest = await self._store.read_manifest(workspace_id=chat.workspace_id, pointer=pointer)
+        entries = tuple(
+            self._maybe_expire(entry, last_activity=last_activity, now=now)
+            for entry in manifest.entries
+        )
+        count = sum(
+            1
+            for before, after in zip(manifest.entries, entries, strict=True)
+            if before is not after
+        )
+        if not count:
+            return 0, "skipped"
+        await self._carry_into_area(chat, entries)
+        status, _ = await self._store.save(
+            workspace_id=chat.workspace_id,
+            project_id=chat.project_id,
+            thread_id=chat.thread_id,
+            expected_version=version,
+            manifest=SnapshotManifest(entries=entries),
+            fence=None,
+            # Housekeeping on a cold chat is not the chat being used: the version moves and the
+            # activity stamp stays exactly where the chat left it. Stamping it and putting the
+            # old value back afterwards would revert a ``touch()`` landing in between (I3), and
+            # not stamping at all would restart the 48-hour clock every pass.
+            activity=False,
+        )
+        if status != "saved":
+            # A turn beat us to the version record. Nothing was expired; tomorrow's pass retries.
+            log.info(
+                "agent_workspace.retention.not_saved",
+                workspace_id=chat.workspace_id,
+                thread_id=chat.thread_id,
+                status=status,
+            )
+            return 0, "stale"
+        log.info(
+            "agent_workspace.retention.expired",
+            workspace_id=chat.workspace_id,
+            thread_id=chat.thread_id,
+            files=count,
+        )
+        return count, status
+
+    async def _carry_into_area(self, chat: _Chat, entries: tuple[SnapshotEntry, ...]) -> None:
+        """Store in the chat's own area every file the new version keeps that is not there yet.
+
+        A chat Phase 1 saved keeps its bytes under the old bare keys, and the save holds every
+        live file in the chat's own area (review C1). A turn stores those again from its disk;
+        the job has no disk, so it reads each one back from where it is — the read falls back to
+        the old key — and stores it. Only a chat that has not moved costs anything beyond the one
+        query that says so.
+        """
+
+        live = {entry.sha256: entry for entry in entries if entry.expired_at is None}
+        missing = await self._store.unmoved_files(
+            workspace_id=chat.workspace_id, thread_id=chat.thread_id, sha256s=live
+        )
+        if not missing:
+            return
+        files = [
+            (
+                live[sha],
+                await self._store.read_file(workspace_id=chat.workspace_id, entry=live[sha]),
+            )
+            for sha in sorted(missing)
+        ]
+        await self._store.store_files(workspace_id=chat.workspace_id, files=files)
+
+    async def _activity(self, chat: _Chat) -> tuple[int, datetime] | None:
+        """This chat's version and newest activity, read together — ``None`` when it is gone."""
+
+        async with self._conn_factory() as conn:
+            row = (
+                await conn.execute(_ACTIVITY, {"ws": chat.workspace_id, "thread": chat.thread_id})
+            ).first()
+        return None if row is None else (int(row[0]), row[1])
+
+    def _maybe_expire(
+        self, entry: SnapshotEntry, *, last_activity: datetime, now: datetime
+    ) -> SnapshotEntry:
+        """``entry`` itself when it stays, else a copy stamped expired with a receipt.
+
+        An entry saved before Phase 2, or one whose source could not be named, carries no receipt —
+        it is expired with :data:`~clue_agents.workspace_snapshot.UNKNOWN_RECEIPT`, because a file
+        whose bytes are gone must never read as a blank.
+        """
+
+        window = self._windows[entry.tier]
+        if entry.expired_at is not None or window is None:
+            return entry
+        if last_activity + window > now:
+            return entry
+        return replace(entry, expired_at=now, receipt=entry.receipt or UNKNOWN_RECEIPT)
+
+
+async def run_retention_if_due(
+    *,
+    job: AgentWorkspaceRetentionJob,
+    every: timedelta,
+    conn_factory: ConnFactory = transaction,
+    claim_ttl: timedelta = RETENTION_CLAIM_TTL,
+    now: datetime | None = None,
+) -> RetentionReport | None:
+    """Run ``job`` for the whole fleet when the last run is ``every`` old, else ``None``.
+
+    Every fleet worker calls this on its check interval. The last run's time lives in
+    ``maintenance_run`` so a deploy never resets it. ``None`` means nothing ran — not due, or
+    another worker's pass holds the claim.
+
+    **No transaction stays open across the pass** (review A3-I1). The job works through its own
+    transactions, and production Postgres kills a session idle in a transaction after 10 minutes
+    (``deploy/railway-postgres-start-command.txt``). This used to hold a transaction-scoped
+    advisory lock for the whole pass, so a pass over 10 minutes lost its lock mid-run and could
+    never record itself, and every worker's check then started another full pass, without end.
+    Instead the pass is *claimed* in one short transaction before it starts — a
+    :data:`RETENTION_CLAIM` row stamped with the pass's start, which every other worker sees and
+    respects until it is ``claim_ttl`` old — and recorded in another short one when it ends.
+
+    One runner at a time: a live claim makes every other check return ``None``. A failed pass is
+    retried later: a pass that raises releases its claim, so the next check (minutes later) runs
+    it again, and nothing is recorded; a worker that dies mid-pass leaves its claim, which the
+    first check after ``claim_ttl`` takes over. Whatever a failed pass managed to expire stays
+    expired, which is the same answer the retry reaches.
+    """
+
+    now = now or datetime.now(UTC)
+    async with conn_factory() as conn:
+        # Serialises the due-check and the claim against another worker's claim or record, so a
+        # pass that has just recorded itself is never followed by a second one that read the old
+        # time. Held only for this short transaction.
+        won = (await conn.execute(_TRY_LOCK, {"key": _RETENTION_LOCK})).scalar_one()
+        if not won:
+            return None
+        last = (await conn.execute(_LAST_RUN, {"name": RETENTION_SWEEP})).scalar_one_or_none()
+        if last is not None and now - last < every:
+            return None
+        claimed = (
+            await conn.execute(
+                _CLAIM, {"name": RETENTION_CLAIM, "at": now, "expired_before": now - claim_ttl}
+            )
+        ).first()
+        if claimed is None:
+            return None
+    try:
+        report = await job.run_once(now=now)
+    except BaseException:
+        try:
+            async with conn_factory() as conn:
+                await conn.execute(_RELEASE, {"name": RETENTION_CLAIM, "at": now})
+        except Exception:  # noqa: BLE001 — the claim then simply expires after ``claim_ttl``
+            log.warning("agent_workspace.retention.claim_not_released", exc_info=True)
+        raise
+    async with conn_factory() as conn:
+        await conn.execute(_LOCK, {"key": _RETENTION_LOCK})
+        await conn.execute(_RECORD, {"name": RETENTION_SWEEP, "at": now})
+        await conn.execute(_RELEASE, {"name": RETENTION_CLAIM, "at": now})
+    return report

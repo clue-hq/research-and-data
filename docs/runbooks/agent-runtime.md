@@ -97,17 +97,87 @@ Alert on:
 
 ## Cleanup and recovery
 
-`AgentWorkspaceCleanupJob` selects only durably terminal `completed`, `failed`, `abandoned`, or
-`privacy_tombstoned` turns whose latest event is older than
-`CLUE_AGENT_WORKSPACE_RETENTION_S`. `awaiting_input` is live resumable state and is never selected.
-The job purges by normalized
-`(workspace_id, project_id, execution_id)` identity, never by a model-visible path, and writes an
-append-only `agent_workspace_cleanup_event`. A missing root is recorded honestly as already
-absent. Durable artifact and context/history/finalization receipts remain for cold replay.
+Since F3 (`docs/superpowers/specs/agent-workspace/`) a chat's agent folders live durably as a
+versioned snapshot and a worker's disk is only a cache, so there are two cleanups and they do
+different jobs. The old turn-keyed `AgentWorkspaceCleanupJob` and its
+`CLUE_AGENT_CLEANUP_INTERVAL_S` cadence are gone; folders left by the layout that preceded it are
+removed once with `scripts/remove_legacy_agent_workspaces.py` (dry run by default).
 
-The fleet process runs cleanup every `CLUE_AGENT_CLEANUP_INTERVAL_S`. A cleanup error is logged
-and does not terminate run execution. Set the cadence to zero to disable scheduling during an
-incident; do not delete roots with broad shell globs.
+**The per-worker cache sweep (Phase 1) deletes nothing durable.** Each fleet worker owns one area
+under `CLUE_AGENT_WORKSPACE_ROOT` and checks it every
+`CLUE_AGENT_WORKSPACE_CACHE_SWEEP_INTERVAL_S` (300 s). A chat folder unused for
+`CLUE_AGENT_WORKSPACE_CACHE_IDLE_S` (30 min) is removed, and once the area passes
+`CLUE_AGENT_WORKSPACE_CACHE_MAX_BYTES` (10 GiB) idle folders go oldest first; the chats this
+worker is running are never swept, and a worker wipes its whole area at start-up. The next turn
+restores the chat from its snapshot, so a sweep costs a download, never a file.
+
+**The retention job (Phase 2) is what actually expires files**, fleet-wide, once per
+`CLUE_AGENT_WORKSPACE_RETENTION_SWEEP_INTERVAL_S` (86400 s) with one runner at a time behind an
+advisory lock and a `maintenance_run` row (`agent_workspace_retention`). For a chat nothing has
+touched for a while — the newest of its snapshot stamp and its newest submission — it publishes one
+new snapshot version with the due entries marked expired: raw inputs (`reads/`,
+`work/conversation_history/`, `work/large_tool_results/`) after
+`CLUE_AGENT_WORKSPACE_RAW_RETENTION_S` (48 h), the agent's own working files (`scratch/` and the
+rest of `work/`) after `CLUE_AGENT_WORKSPACE_WORKING_RETENTION_S` (7 days), and `outputs/` never —
+it is kept for the chat's life. An expired entry keeps a receipt saying what the file was and how
+to get it again, and the save releases its key, so the bytes are erased and purged from storage
+when no other snapshot holds them. A chat with a queued, claimed or leased turn is skipped and
+left for the next pass. Set either window or the interval only with the founder's agreement: they
+are what the agent manual promises the agent in words.
+
+**What to watch when retention stops.** Each pass logs `fleet.workspace_retention.ran` with
+`chats_checked`, `chats_expired`, `files_expired`, `skipped_busy`, `stale` and `failed`. A chat
+the pass cannot read or save — most often a manifest blob the rows still name but storage has
+lost — is logged as `agent_workspace.retention.chat_failed` with its workspace and thread, and
+counted in `failed`; the pass carries on. So a chat broken for good shows a non-zero `failed`
+every day: **alert on `failed > 0` persisting**, and on `fleet.workspace_retention.ran` not
+appearing for more than two intervals. The second case means the pass itself is raising
+(`fleet.workspace_retention.error`) — and a pass that raises deliberately does *not* record its
+`maintenance_run` row, so the fleet simply retries it on the next check rather than skipping a
+day. Nothing is lost by a failed pass; files that should have expired expire late.
+
+**Measured timings (final live check, dushanbe stack, 2026-10-24 UTC).** One chat with 4 files
+(69,194 bytes): the first save (version 1, 4 files uploaded) took 968 ms; after the whole
+`CLUE_AGENT_WORKSPACE_ROOT` was deleted and every worker restarted, the cold restore (4 files
+downloaded, 69,194 bytes) took 583 ms; an unchanged save took 5–10 ms; restoring a chat with no
+version yet took 4 ms. After expiry the chat held 1 file (19 bytes) and restored in 348 ms and
+370 ms. The expiry of 3 files (version 1 → 2, bytes erased and purged from R2) took 1.5 s. A warm
+restore (this worker already holds the current copy) downloads nothing: 2 ms in the Phase 1 live
+check. Read these as the order of magnitude for a small chat, not as a budget.
+
+**Snapshot log lines to alert on.** Each is a `warning` carrying the workspace and thread (or the
+keys) it concerns:
+
+- `agent_workspace.save_unavailable` — storage could not be reached after the save's retries; the
+  turn fails, the worker keeps its copy marked unsaved, and the chat's next turn saves it. **Alert
+  on a sustained rate**: it means R2 trouble.
+- `agent_workspace.save_refused` — a save was refused (`status` says why: `stale`, another writer
+  saved first and the rebase could not apply, or `fenced`, the turn lost its lease). An occasional
+  one is a zombie or a lost race doing what it should; **alert when one chat repeats it** or the
+  rate climbs.
+- `agent_workspace.release_save_failed` — a turn that stopped or failed could not save on its way
+  out, so what it wrote since the last save is not in the chat's snapshot and a turn on another
+  worker will not see it. **Alert on any.**
+- `agent_workspace.purge_failed` — deleting erased bytes after a committed save failed. The turn
+  is unaffected and the fleet's orphan sweep deletes them later; **alert only if it persists**.
+- `agent_workspace.retention.chat_failed` — see above; alert when `failed > 0` persists.
+- `agent_workspace.retention.claim_not_released` — a retention pass that raised could not release
+  its claim, so no other pass starts until the claim is 6 hours old. Nothing is lost; **alert if it
+  repeats**, and look for the `fleet.workspace_retention.error` beside it.
+
+**The emergency switch (`CLUE_AGENT_WORKSPACE_SNAPSHOTS_ENABLED=false`).** Use it only when
+snapshots themselves are the problem (storage down for a long time, a snapshot bug). Set it and
+restart the workers. Each snapshots-off worker then runs every chat from one shared folder,
+`<root>/local`, holding a shared lock on `<root>/workers/local.lock` for its whole life; turns
+neither restore nor save, so a chat starts there **without** its saved files (its `outputs/`
+included) and whatever it writes stays on that machine's disk only. The saved versions are left
+exactly as they were. To turn it back on, set `true` and restart the workers: every chat restores
+its last saved version on its next turn, and **everything written while the switch was off is
+lost** — by design, it was never saved. Nothing needs cleaning by hand: a snapshots-on worker
+removes `<root>/local` as soon as it can take that lock exclusively, i.e. once no snapshots-off
+worker is alive — at its area claim and again on each cache sweep. During a rolling restart the
+folder can outlive the restart for a moment while the old workers exit (seen in the live check);
+it goes at the next claim or sweep.
 
 DSAR is separate and stronger: it tombstones and erases subject-bound durable bodies, blocks
 resurrection, marks affected turns unreplayable, and removes matching live workspaces immediately.

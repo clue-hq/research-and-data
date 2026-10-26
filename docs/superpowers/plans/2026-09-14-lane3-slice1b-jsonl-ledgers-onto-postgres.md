@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, SQLAlchemy async `text()`, dataclasses, pytest with the rolled-back-connection DB harness, `uv`.
 
-**Spec:** `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md` §2 (R2, R8, R10, R11, R12), §3 "Onboarding / display / evidence spend" row, §5.5, §9 slice 1b. Mechanics recorded in `_memory/2026-09-14-lane3-slice1-cost-read.md` "Discovered, recorded, not done here". Rulings ledger: `_memory/2026-09-14-lane3-telemetry-rulings.md`.
+**Spec:** `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md` §2 (R2, R8, R10, R11, R12), §3 "Onboarding / display / evidence spend" row, §5.5, §9 slice 1b. Mechanics recorded in `_memory/2026-09-14-lane3-slice1-cost-read.md` "Discovered, recorded, not done here". Rulings ledger: `_memory/2026-09-14-lane3-telemetry-rulings.md`.
 
 ## Global Constraints
 
@@ -53,7 +53,7 @@
 | `tests/arv2/display/test_page_db.py` | **Modify.** A page write lands its section rows. |
 | `tests/api/test_onboarding_evidence_tools.py` | **Modify.** Doubles wrapped; one DB test for the drained row. |
 | `tests/projections/test_cost_db.py` | **Modify.** `not_covered` assertion follows the constant. |
-| `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md` §3, §5.5, §9 | **Modify.** Slice 1b done; what remains. |
+| `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md` §3, §5.5, §9 | **Modify.** Slice 1b done; what remains. |
 | `docs/superpowers/plans/2026-09-13-lane-plan-index.md` | **Modify.** Lane 3 row 1b → this plan. |
 | `_memory/2026-09-14-lane3-slice1b-jsonl-ledgers.md` | **Create.** Session note with the proof. |
 
@@ -1194,7 +1194,7 @@ git commit -m "docs(memory): lane 3 slice 1b proven on the lane stack (onboardin
 ### Task 9: Design note and lane index
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md` (§3 row, §5.5, §9)
+- Modify: `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md` (§3 row, §5.5, §9)
 - Modify: `docs/superpowers/plans/2026-09-13-lane-plan-index.md` (Lane 3 table row 1b)
 
 - [ ] **Step 1: Design note**
@@ -1212,7 +1212,7 @@ Row `1b` → `| 1b | \`2026-09-14-lane3-slice1b-jsonl-ledgers-onto-postgres.md\`
 - [ ] **Step 3: Commit**
 
 ```bash
-git add docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md docs/superpowers/plans/2026-09-13-lane-plan-index.md
+git add docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md docs/superpowers/plans/2026-09-13-lane-plan-index.md
 git commit -m "docs(lane3): design note and lane index record slice 1b"
 ```
 

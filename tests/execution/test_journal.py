@@ -285,12 +285,38 @@ def test_success_replay_parameter_erasure_views_and_sse_replay() -> None:
                 )
                 is None
             )
+            # Review of F3 Phase 2: erasing one parameter body purges that one key and does no
+            # fleet work. ``purge_erased_artifacts`` opens with an unfiltered
+            # ``UPDATE artifact … WHERE expires_at <= now()`` and a sequential scan — the
+            # keyless maintenance sweep's job, not this seam's to do on another owner's rows.
+            expiring = f"{workspace_id}/{'e' * 64}"
+            await storage.put(expiring, b"another owner's bytes", media_type="text/plain")
+            await conn.execute(
+                text(
+                    "INSERT INTO artifact (storage_key, workspace_id, content_sha256, "
+                    "media_type, size_bytes, expires_at) VALUES (:key, :ws, :sha, "
+                    "'text/plain', 21, now() - interval '1 second')"
+                ),
+                {"key": expiring, "ws": workspace_id, "sha": "e" * 64},
+            )
+
             erased = await artifact_store.erase_parameter(
                 workspace_id=workspace_id,
                 execution_id=execution_id,
                 artifact_key=parameter_ref.artifact_key,
             )
             assert erased is True
+            untouched = (
+                await conn.execute(
+                    text(
+                        "SELECT erased_at, purged_at, privacy_erased FROM artifact "
+                        "WHERE storage_key = :key"
+                    ),
+                    {"key": expiring},
+                )
+            ).one()
+            assert tuple(untouched) == (None, None, False)
+            assert await storage.exists(expiring)
             tombstone = await resolve_parameter_body(
                 store=artifact_store,
                 workspace_id=workspace_id,

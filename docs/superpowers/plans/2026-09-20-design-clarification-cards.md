@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12 (FastAPI, SQLAlchemy async, Alembic, pydantic), Postgres, TypeScript (Next.js, node:test via tsx, CSS modules over `@clue/design-system` tokens).
 
-**Spec:** `docs/superpowers/specs/2026-09-20-design-clarification-cards-design.md`
+**Spec:** `docs/superpowers/specs/archive/2026-09-20-design-clarification-cards-design.md`
 
 ## Global Constraints
 

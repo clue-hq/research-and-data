@@ -1,6 +1,6 @@
 # First deployment runbook
 
-Spec: `docs/superpowers/specs/2026-10-01-first-deployment-design.md` · Plan:
+Spec: `docs/superpowers/specs/archive/2026-10-01-first-deployment-design.md` · Plan:
 `docs/superpowers/plans/2026-10-01-first-deployment.md`. Work through the sections **in order**.
 Every **[FOUNDER]** step needs the founder's own account. Secrets never go in the repo, a chat, or
 `_memory/` — only into Railway variables and the VM's `/srv/clue/*.env` files (mode 0600).
@@ -271,7 +271,7 @@ OVHcloud's Ubuntu image logs in as **`ubuntu`** (with sudo); root SSH login is d
      to the `pgbouncer` database on port 6432 as `clue_worker` and run `SHOW POOLS;` — `cl_waiting`
      staying above 0 means the pool is too small.
    - `DEFAULT_POOL_SIZE` goes from 20 to 40 **only after** the research slowness fixes
-     (`docs/superpowers/specs/2026-10-03-research-slowness-fixes-design.md`) are deployed and
+     (`docs/superpowers/specs/archive/2026-10-03-research-slowness-fixes-design.md`) are deployed and
      measured: raising it before them only lets more transactions wait on the same locks. Postgres
      allows 200 connections and the Railway services use about 10. Edit `/srv/clue/pgbouncer.env`,
      then run `docker compose up -d pgbouncer` from `/srv/clue/app/deploy/vm` as `clue`.

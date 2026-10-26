@@ -11,7 +11,7 @@ documents, using the library's controls and formatting behavior.
 and verifies the complete flow. Existing hooks/repositories retain Save/Discard, permissions and
 version-conflict ownership. No `commands.ts`, custom `markdown-keymap.ts` or marker arithmetic.
 
-**Spec:** `docs/superpowers/specs/2026-09-12-markdown-editor-toolbar-design.md`, revised 2026-09-13.
+**Spec:** `docs/superpowers/specs/archive/2026-09-12-markdown-editor-toolbar-design.md`, revised 2026-09-13.
 **Dependency:** Lane 2 plan 1 Task 5; the remaining plan-1 surfaces precede final acceptance.
 
 ## Constraints

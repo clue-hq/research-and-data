@@ -8,7 +8,7 @@
 
 **Tech Stack:** as slice 3 (langfuse 4.15, opentelemetry-sdk 1.42, pytest).
 
-**Spec:** `docs/superpowers/specs/2026-09-15-lane3-slice4-entity-tags-design.md` (D1, D2 ruled 2026-09-15). Parent: `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md` §5.3, §6, §9 slice 4.
+**Spec:** `docs/superpowers/specs/archive/2026-09-15-lane3-slice4-entity-tags-design.md` (D1, D2 ruled 2026-09-15). Parent: `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md` §5.3, §6, §9 slice 4.
 
 ## Global Constraints
 
@@ -411,9 +411,9 @@ git commit -m "feat(arv2): read_account_research and read_claims tag the turn's 
 ### Task 4: Docs and the memory note
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md` (§6 "What lane 3 does" paragraph; §8 table; §9 item 4)
+- Modify: `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md` (§6 "What lane 3 does" paragraph; §8 table; §9 item 4)
 - Modify: `docs/superpowers/plans/2026-09-13-lane-plan-index.md` (row 4)
-- Modify: `docs/superpowers/specs/2026-09-15-lane3-slice4-entity-tags-design.md` (status line)
+- Modify: `docs/superpowers/specs/archive/2026-09-15-lane3-slice4-entity-tags-design.md` (status line)
 - Create: `_memory/2026-09-15-lane3-slice4-entity-tags.md`; Modify: `_memory/README.md`
 
 - [ ] **Step 1: §6** — after the sentence ending `one Langfuse query by metadata.` add: `Shipped 2026-09-15 (slice 4): the query is *traces with tag `entity:<id>`* (or metadata `entities` contains `<id>`); the job's trace carries its subject, every entity it wrote about and each committee member; a turn's trace carries every entity `read_account_research` / `read_claims` served.`
@@ -425,7 +425,7 @@ git commit -m "feat(arv2): read_account_research and read_claims tag the turn's 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md docs/superpowers/plans/2026-09-13-lane-plan-index.md docs/superpowers/specs/2026-09-15-lane3-slice4-entity-tags-design.md _memory/2026-09-15-lane3-slice4-entity-tags.md _memory/README.md
+git add docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md docs/superpowers/plans/2026-09-13-lane-plan-index.md docs/superpowers/specs/archive/2026-09-15-lane3-slice4-entity-tags-design.md _memory/2026-09-15-lane3-slice4-entity-tags.md _memory/README.md
 git commit -m "docs(memory): lane 3 slice 4 — entity tags on traces; the erasure query; the coverage audit and the leave-as-is ruling"
 ```
 

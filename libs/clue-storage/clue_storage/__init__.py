@@ -22,17 +22,21 @@ from clue_storage.context import bind_snapshots, current_snapshot_sink, current_
 from clue_storage.factory import storage_from_settings
 from clue_storage.fs import FsStorage
 from clue_storage.protocol import (
+    AGENT_WORKSPACE_SEGMENT,
     PUBLIC_SCOPE,
     ArtifactNotFound,
     StorageBackend,
     StorageError,
+    agent_workspace_key,
     artifact_key,
     content_address,
+    is_agent_workspace_key,
 )
 from clue_storage.s3 import S3Storage, close_shared_s3_clients
 from clue_storage.snapshot import PendingSnapshot, SnapshotSink, flush_snapshots
 
 __all__ = [
+    "AGENT_WORKSPACE_SEGMENT",
     "PUBLIC_SCOPE",
     "ArtifactNotFound",
     "ArtifactIntegrityError",
@@ -45,6 +49,7 @@ __all__ = [
     "SnapshotSink",
     "StorageBackend",
     "StorageError",
+    "agent_workspace_key",
     "artifact_key",
     "bind_snapshots",
     "content_address",
@@ -53,6 +58,7 @@ __all__ = [
     "erase_if_unreferenced",
     "flush_snapshots",
     "get_artifact",
+    "is_agent_workspace_key",
     "live_claim_count",
     "live_reference_count",
     "mark_erased",

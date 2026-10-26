@@ -31,6 +31,11 @@ import {
   type ChatStreamRepository,
 } from "./chat-stream.repository";
 import {
+  createFixtureChatThreadStreamRepository,
+  createHttpChatThreadStreamRepository,
+  type ChatThreadStreamRepository,
+} from "./chat-thread-stream.repository";
+import {
   createFixtureChatThreadsRepository,
   createHttpChatThreadsRepository,
   type ChatThreadsRepository,
@@ -99,6 +104,8 @@ export interface ChatRepositories {
   turns: ChatTurnsRepository;
   gates: ChatGatesRepository;
   stream: ChatStreamRepository;
+  /** The thread's lifecycle frames, so an open chat follows turns it did not start. */
+  threadStream: ChatThreadStreamRepository;
   /** Stop for the account discovery a thread is holding busy. */
   discoveries: DiscoveryRunsRepository;
   /**
@@ -129,6 +136,7 @@ export function createChatRepositories(
       turns: createHttpChatTurnsRepository(transport),
       gates: createHttpChatGatesRepository(transport),
       stream: createHttpChatStreamRepository(transport),
+      threadStream: createHttpChatThreadStreamRepository(transport),
       discoveries: createHttpDiscoveryRunsRepository(transport),
       inspector: createHttpChatInspectorRepository(transport),
       composerContext: createHttpComposerContextRepository(transport),
@@ -151,6 +159,7 @@ export function createChatRepositories(
     turns: createFixtureChatTurnsRepository(state),
     gates: createFixtureChatGatesRepository(state),
     stream: createFixtureChatStreamRepository(state),
+    threadStream: createFixtureChatThreadStreamRepository(),
     discoveries: createFixtureDiscoveryRunsRepository(),
     inspector: createFixtureChatInspectorRepository(),
     composerContext: unavailableComposerContextRepository,

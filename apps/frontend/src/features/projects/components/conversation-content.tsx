@@ -5,6 +5,7 @@ import type { ProjectChatController } from "../hooks/use-project-chat-controller
 import type { ProjectEntity } from "../model/project-workspace";
 import { useProductNotices } from "../hooks/use-product-notices";
 import { useTranscriptAutoScroll } from "../hooks/use-transcript-auto-scroll";
+import { useCrmConnect } from "@/features/integrations/hooks/use-crm-connect";
 import { openClarification } from "../model/clarification";
 import { ChatTranscript } from "./chat-transcript";
 import { ProductNotices } from "./product-notices";
@@ -72,12 +73,14 @@ export function ConversationContent({
     [chat.transcript],
   );
 
+  const crmConnect = useCrmConnect();
   const partActions = useMemo(
     () => ({
       busy: chat.submitting,
       onOpenPlan,
       openClarificationTurnId,
       gateFor: chat.gateFor,
+      crmWritesFinished: chat.crmWritesFinished,
       onGateDecision: (
         card: Parameters<ProjectChatController["answerGate"]>[0],
         input: Parameters<ProjectChatController["answerGate"]>[1],
@@ -87,8 +90,12 @@ export function ConversationContent({
       onGateRecovery: (card: Parameters<ProjectChatController["recoverGate"]>[0]) => {
         void chat.recoverGate(card);
       },
+      onSendMessage: (message: string) => {
+        void chat.submitMessage(message);
+      },
+      onCrmConnect: crmConnect,
     }),
-    [chat, onOpenPlan, openClarificationTurnId],
+    [chat, crmConnect, onOpenPlan, openClarificationTurnId],
   );
 
   return (

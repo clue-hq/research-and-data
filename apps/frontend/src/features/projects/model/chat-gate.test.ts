@@ -806,3 +806,125 @@ test("an answered product-set gate keeps the chosen ids and names", () => {
     label: "Products selected",
   });
 });
+
+// --- the CRM write permission card (CRM integration Phase 2, Task 9) ------
+
+const CRM_PROPOSAL = "11111111-2222-4333-8444-555555555555";
+const CRM_WRITE = "00000000-0000-4000-8000-000000000001";
+
+function crmGate(overrides: Partial<ChatGate> = {}): ChatGate {
+  return {
+    ...openGate,
+    kind: "crm_write_permission",
+    subjectRef: `crm_write_proposal:${CRM_PROPOSAL}`,
+    // A write card has no revision and no amount.
+    subjectRevision: null,
+    maxSpendCents: null,
+    currency: null,
+    permittedDecisions: ["approved", "rejected"],
+    addresseeUserId: "usr_someone_else",
+    subjectSnapshot: {
+      crm: "hubspot",
+      project_name: "Q4",
+      title: "Clue wants to update HubSpot",
+      description: 'For "Q4". Nothing is sent until you allow it.',
+      groups: [
+        {
+          kind: "create_contact",
+          object: "contact",
+          field: null,
+          field_label: null,
+          list_ref: null,
+          title: "Create 1 contact",
+          count: 1,
+          value_summary: null,
+          reason: "New buyer.",
+          records: [{ write_id: CRM_WRITE, record_ref: null, name: "ana@acme.com" }],
+          scope_key: "hubspot:create_contact:contact",
+          always_allow: "creating contacts",
+          selected: true,
+        },
+      ],
+      overwrites_heading: null,
+      overwrites: [],
+      standing_permissions: [
+        { scope_key: "hubspot:create_contact:contact", phrase: "creating contacts", selected: false },
+      ],
+      allow_count: 1,
+      caption: "Any member of this workspace can answer.",
+    },
+    ...overrides,
+  };
+}
+
+test("any workspace member can answer a CRM write card, which has no revision", () => {
+  const card = model({ gate: crmGate() });
+  assert.ok(card);
+  assert.equal(card.state, "requested");
+  assert.equal(card.crmProposalId, CRM_PROPOSAL);
+  assert.equal(card.crmWrite?.title, "Clue wants to update HubSpot");
+  assert.deepEqual(
+    gateAnswerResponse(card, {
+      kind: "crm_write",
+      decision: "approved",
+      answer: { selected_write_ids: [CRM_WRITE], always_allow: ["hubspot:create_contact:contact"] },
+    }),
+    {
+      gateId: openGate.gateId,
+      decision: "approved",
+      expectedSubjectSha256: openGate.expectedSubjectSha256,
+      expectedEstimatedCostCents: null,
+      crmWrite: {
+        selected_write_ids: [CRM_WRITE],
+        always_allow: ["hubspot:create_contact:contact"],
+      },
+    },
+  );
+  // "Don't allow" sends nothing but the decision.
+  assert.deepEqual(gateAnswerResponse(card, { kind: "decision", decision: "rejected" }), {
+    gateId: openGate.gateId,
+    decision: "rejected",
+    expectedSubjectSha256: openGate.expectedSubjectSha256,
+    expectedEstimatedCostCents: null,
+  });
+  assert.throws(() =>
+    gateAnswerResponse(card, {
+      kind: "crm_write",
+      decision: "approved",
+      answer: { selected_write_ids: [], always_allow: [] },
+    }),
+  );
+});
+
+test("a CRM write card answered by another member is a receipt, not a notice", () => {
+  const card = model({
+    gate: crmGate({
+      answer: {
+        turnId: "turn-answer",
+        actionRef: "turn-action:x",
+        decision: "approved",
+        expectedSubjectSha256: openGate.expectedSubjectSha256,
+        decisionPayload: { selected_write_ids: [CRM_WRITE], always_allow: [] },
+        selectedOptionRef: null,
+        answeredByUserId: "usr_demo",
+        answeredAt: "2026-10-22T14:02:00Z",
+      },
+    }),
+  });
+  assert.equal(card?.state, "responded");
+});
+
+test("a replaced CRM write card reads as withdrawn, never as requested", () => {
+  const card = model({ gate: crmGate({ withdrawn: true }) });
+  assert.equal(card?.state, "withdrawn");
+  assert.ok(card?.crmWrite);
+});
+
+test("a refused CRM answer keeps the card and says why", () => {
+  const card = model({
+    gate: crmGate(),
+    authorityFailure: { reason: "Tick at least one change to allow.", recovery: null },
+  });
+  assert.equal(card?.state, "requested");
+  assert.equal(card?.problem, "Tick at least one change to allow.");
+});

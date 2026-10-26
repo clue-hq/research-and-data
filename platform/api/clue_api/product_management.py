@@ -38,6 +38,14 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
 from clue_api.arv2.onboarding_documents import KnowledgeDocument, render_markdown, slugify
 from clue_api.arv2.onboarding_lineage import normalize_identity
+from clue_api.brand_knowledge_writes import (
+    SERVABLE_STATUSES,
+    lock_brand,
+    next_brand_version,
+    retire_older_versions,
+    store_document_bytes,
+    write_brand_document_version,
+)
 from clue_api.knowledge_bytes import read_knowledge_bytes, read_one_knowledge_bytes
 from clue_core import decode_jsonb, serialize_value_json
 from clue_spine import (
@@ -56,9 +64,6 @@ from clue_spine import (
 )
 from clue_storage import (
     StorageBackend,
-    artifact_key,
-    content_address,
-    record_artifact,
 )
 
 __all__ = [
@@ -91,10 +96,7 @@ CATALOG_PATH = "product/catalog.md"
 _PRODUCT_FOLDER = "product"
 _PAGE_KIND = "product-research"
 _CATALOG_KIND = "product-catalog"
-_SERVABLE = ("ready", "proposed", "confirmed")
-#: Versions a write may retire. A ``confirmed`` version is a project's approved pin and is never
-#: touched (the ``save_knowledge_document`` rule).
-_RETIRABLE = ("ready", "proposed")
+_SERVABLE = SERVABLE_STATUSES
 _NAME_MAX = 240
 _CATALOG_CARRIED = (
     "short_description",
@@ -287,62 +289,17 @@ async def _pending_pages(conn: AsyncConnection, *, workspace_id: str, brand_id: 
     return {str(path) for path in rows.scalars().all()}
 
 
-async def _next_version(
-    conn: AsyncConnection, *, workspace_id: str, brand_id: str, path: str
-) -> int:
-    return int(
-        (
-            await conn.execute(
-                text(
-                    "SELECT COALESCE(MAX(version), 0) + 1 FROM brand_knowledge_document "
-                    "WHERE workspace_id = :ws AND brand_id = :brand AND path = :path "
-                    "AND project_id IS NULL"
-                ),
-                {"ws": workspace_id, "brand": brand_id, "path": path},
-            )
-        ).scalar_one()
-    )
+# The shared brand-document writer (``brand_knowledge_writes``), stamped with this module's source.
+_next_version = next_brand_version
+_retire_path = retire_older_versions
 
 
 async def _store(
     conn: AsyncConnection, storage: StorageBackend, *, workspace_id: str, data: bytes
 ) -> tuple[str, str]:
-    sha = content_address(data)
-    key = artifact_key(workspace_id, sha)
-    await record_artifact(
-        conn,
-        storage_key=key,
-        workspace_id=workspace_id,
-        content_sha256=sha,
-        media_type="text/markdown",
-        size_bytes=len(data),
-        source_key=_SOURCE_KEY,
+    return await store_document_bytes(
+        conn, storage, workspace_id=workspace_id, data=data, source_key=_SOURCE_KEY
     )
-    await storage.put(key, data, media_type="text/markdown")
-    return key, sha
-
-
-async def _retire_path(
-    conn: AsyncConnection, *, workspace_id: str, brand_id: str, path: str, below: int | None = None
-) -> list[UUID]:
-    """Supersede every retirable brand-level version of ``path`` (below ``below`` when given)."""
-    rows = await conn.execute(
-        text(
-            "UPDATE brand_knowledge_document SET status = 'superseded', updated_at = now() "
-            "WHERE workspace_id = :ws AND brand_id = :brand AND path = :path "
-            "AND project_id IS NULL AND status IN :retirable "
-            "AND (CAST(:below AS integer) IS NULL OR version < CAST(:below AS integer)) "
-            "RETURNING document_id"
-        ).bindparams(bindparam("retirable", expanding=True)),
-        {
-            "ws": workspace_id,
-            "brand": brand_id,
-            "path": path,
-            "retirable": list(_RETIRABLE),
-            "below": below,
-        },
-    )
-    return list(rows.scalars().all())
 
 
 async def _write_doc(
@@ -357,46 +314,17 @@ async def _write_doc(
     body: str,
 ) -> UUID:
     """Publish ``ready`` bytes as the next brand-level version of ``path``; retire older ones."""
-    data = render_markdown(
-        KnowledgeDocument(
-            kind=kind, folder=_PRODUCT_FOLDER, path=path, front_matter=front, body=body, cost=None
-        )
-    ).encode("utf-8")
-    key, sha = await _store(conn, storage, workspace_id=workspace_id, data=data)
-    version = await _next_version(conn, workspace_id=workspace_id, brand_id=brand_id, path=path)
-    previous = (
-        await conn.execute(
-            text(
-                "SELECT document_id FROM brand_knowledge_document WHERE workspace_id = :ws "
-                "AND brand_id = :brand AND path = :path AND project_id IS NULL "
-                "AND status IN :servable ORDER BY version DESC LIMIT 1"
-            ).bindparams(bindparam("servable", expanding=True)),
-            {"ws": workspace_id, "brand": brand_id, "path": path, "servable": list(_SERVABLE)},
-        )
-    ).scalar_one_or_none()
-    document_id = uuid4()
-    await conn.execute(
-        text(
-            "INSERT INTO brand_knowledge_document (document_id, workspace_id, brand_id, folder, "
-            " path, kind, version, status, artifact_key, artifact_sha256, supersedes_document_id) "
-            "VALUES (:id, :ws, :brand, :folder, :path, :kind, :version, 'ready', :key, :sha, "
-            " :previous)"
-        ),
-        {
-            "id": document_id,
-            "ws": workspace_id,
-            "brand": brand_id,
-            "folder": _PRODUCT_FOLDER,
-            "path": path,
-            "kind": kind,
-            "version": version,
-            "key": key,
-            "sha": sha,
-            "previous": previous,
-        },
+    return await write_brand_document_version(
+        conn,
+        storage,
+        workspace_id=workspace_id,
+        brand_id=brand_id,
+        path=path,
+        kind=kind,
+        front=front,
+        body=body,
+        source_key=_SOURCE_KEY,
     )
-    await _retire_path(conn, workspace_id=workspace_id, brand_id=brand_id, path=path, below=version)
-    return document_id
 
 
 async def _open_pending_page(
@@ -625,16 +553,7 @@ def describe_change(kind: str, details: Mapping[str, Any]) -> str:
 
 
 async def _lock_brand(conn: AsyncConnection, *, workspace_id: str, brand_id: str) -> None:
-    found = (
-        await conn.execute(
-            text(
-                "SELECT brand_id FROM brand WHERE workspace_id = :ws AND brand_id = :brand "
-                "FOR UPDATE"
-            ),
-            {"ws": workspace_id, "brand": brand_id},
-        )
-    ).scalar_one_or_none()
-    if found is None:
+    if not await lock_brand(conn, workspace_id=workspace_id, brand_id=brand_id):
         raise ProductChangeRefused("product_not_found", "this workspace has no such brand")
 
 

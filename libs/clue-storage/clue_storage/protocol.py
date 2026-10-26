@@ -59,6 +59,36 @@ def artifact_key(workspace_id: str | None, sha256: str) -> str:
     return f"{workspace_id or PUBLIC_SCOPE}/{sha256}"
 
 
+# The scope-relative segment that marks a blob as one chat's agent-workspace file.
+AGENT_WORKSPACE_SEGMENT = "agent-workspace"
+
+
+def agent_workspace_key(workspace_id: str | None, sha256: str) -> str:
+    """The storage key for an agent-workspace snapshot file:
+    ``{workspace_id or "public"}/agent-workspace/{sha256}``.
+
+    F3 Phase 2 gives a chat's own files their own area for the same reason design bytes got one
+    (``{workspace}/design/{sha}``, ruling R-D4-2): **the areas decide what a cleanup can reach.**
+    Retention expires a chat's files by age, and if they shared the bare ``{workspace}/{sha}``
+    namespace with evidence snapshots, uploads and Gallery artifacts, identical bytes would
+    dedup onto one key and expiring the chat's copy would delete somebody else's blob. Separate
+    areas make that unrepresentable rather than a refcount to get right.
+    """
+    return f"{workspace_id or PUBLIC_SCOPE}/{AGENT_WORKSPACE_SEGMENT}/{sha256}"
+
+
+def is_agent_workspace_key(storage_key: str) -> bool:
+    """Whether ``storage_key`` names a blob in the agent-workspace area.
+
+    The retention sweep asks this before it deletes anything: a key outside the area is some
+    other owner's (evidence, design, uploads) and is never the sweep's to touch. So the match is
+    the exact three-segment shape :func:`agent_workspace_key` writes, not a substring — a key
+    that merely *contains* the word somewhere is not in the area and must not be deleted.
+    """
+    parts = storage_key.split("/")
+    return len(parts) == 3 and parts[1] == AGENT_WORKSPACE_SEGMENT
+
+
 @runtime_checkable
 class StorageBackend(Protocol):
     """Durable blob storage over content-addressed keys (REQ-07).

@@ -222,6 +222,22 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # Product management (head-of-abm@v71): the matrix composes no storage, so the missing
     # document storage is the first fail-closed boundary after the input is complete.
     "manage_products": ("precondition", ("products_storage_unavailable",)),
+    # CRM integration: the default composition is handed no Composio key, so it refuses first.
+    "connect_crm": ("precondition", ("crm_not_configured",)),
+    "find_crm_actions": ("precondition", ("crm_not_configured",)),
+    "run_crm_action": ("precondition", ("crm_not_configured",)),
+    "propose_crm_changes": ("precondition", ("crm_not_configured",)),
+    "crm_write_log": ("precondition", ("crm_not_configured",)),
+    "manage_crm_grants": ("precondition", ("crm_not_configured",)),
+    # Phase 3: reads only Clue's records, so it needs no Composio key; the matrix's project id
+    # names no project of the workspace, its first fail-closed boundary.
+    "read_crm_targets": ("precondition", ("project_not_found",)),
+    # Phase 3 (Task 7): they read the CRM, so they refuse first without a Composio key.
+    "find_crm_list": ("precondition", ("crm_not_configured",)),
+    "link_crm_list": ("precondition", ("crm_not_configured",)),
+    # Phase 4 (Task 2): refuses first without a Composio key.
+    "propose_clue_fields_setup": ("precondition", ("crm_not_configured",)),
+    "write_brand_document": ("precondition", ("storage_unavailable",)),
     "open_discovery_configuration_gate": (
         "precondition",
         ("stage0_turn_scope_not_found",),
@@ -636,6 +652,34 @@ def _bodies() -> dict[str, dict[str, object]]:
         "manage_products": {
             "action": "remove",
             "product_id": "prd_matrix",
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
+        "connect_crm": {"source_turn_ref": f"turn-action:{_UUID()}"},
+        "find_crm_actions": {"query": "search deals"},
+        "run_crm_action": {"slug": "HUBSPOT_SEARCH_DEALS", "arguments": {}},
+        "propose_crm_changes": {
+            "changes": [
+                {
+                    "slug": "HUBSPOT_UPDATE_COMPANY",
+                    "arguments": {"companyId": "101", "properties": {"icp_tier": "Tier 1"}},
+                    "reason": "The ICP tiers Clue scored.",
+                }
+            ],
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
+        "crm_write_log": {},
+        "manage_crm_grants": {"action": "list", "source_turn_ref": f"turn-action:{_UUID()}"},
+        "read_crm_targets": {"project_id": "prj_matrix_missing"},
+        "find_crm_list": {"project_id": "prj_matrix_missing"},
+        "link_crm_list": {"project_id": "prj_matrix_missing", "crm_list_id": "17"},
+        "propose_clue_fields_setup": {
+            "project_id": "prj_matrix_missing",
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
+        "write_brand_document": {
+            "path": "company/sales-motion.md",
+            "kind": "sales-motion",
+            "markdown": "# Sales motion\n",
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
         "open_product_selection_gate": {
@@ -1504,7 +1548,15 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # until the design profile bump.
     # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
     # Product management (2026-10-15, main): manage_products (+1 name, +1 address).
-    assert len(registry.names()) == 151
+    # CRM integration Phase 1: connect_crm, find_crm_actions, run_crm_action and
+    # write_brand_document (+4 names, +4 addresses), ungranted until Task 11.
+    # CRM integration Phase 2: propose_crm_changes (+1 name, +1 address), ungranted until the
+    # Phase 2 catalog bump; crm_write_log and manage_crm_grants likewise (+2 names, +2 addresses).
+    # CRM integration Phase 3: read_crm_targets (+1 name, +1 address), ungranted until Task 8;
+    # find_crm_list and link_crm_list likewise (+2 names, +2 addresses).
+    # CRM integration Phase 4: propose_clue_fields_setup (+1 name, +1 address), granted at
+    # head-of-abm@v82 (Task 6).
+    assert len(registry.names()) == 162
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1556,7 +1608,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
     # Product management (2026-10-15, main): manage_products@1 (+1).
     # `launch_arv2_discovery@3` (2026-10-16, research-streaming: the brief's exclude list) (+1).
-    assert len(registry) == 177
+    # + the CRM-integration tools (Phase 1: 4; Phase 2: 3; Phase 3: 3; Phase 4: 1)
+    assert len(registry) == 188
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1606,7 +1659,15 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # until the design profile bump.
     # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
     # Product management (2026-10-15, main): manage_products (+1 name, +1 address).
-    assert len(registry.names()) == 151
+    # CRM integration Phase 1: connect_crm, find_crm_actions, run_crm_action and
+    # write_brand_document (+4 names, +4 addresses), ungranted until Task 11.
+    # CRM integration Phase 2: propose_crm_changes (+1 name, +1 address), ungranted until the
+    # Phase 2 catalog bump; crm_write_log and manage_crm_grants likewise (+2 names, +2 addresses).
+    # CRM integration Phase 3: read_crm_targets (+1 name, +1 address), ungranted until Task 8;
+    # find_crm_list and link_crm_list likewise (+2 names, +2 addresses).
+    # CRM integration Phase 4: propose_clue_fields_setup (+1 name, +1 address), granted at
+    # head-of-abm@v82 (Task 6).
+    assert len(registry.names()) == 162
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1645,7 +1706,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
     # Product management (2026-10-15, main): manage_products@1 (+1).
     # `launch_arv2_discovery@3` (2026-10-16, research-streaming: the brief's exclude list) (+1).
-    assert len(registry) == 177
+    # + the CRM-integration tools (Phase 1: 4; Phase 2: 3; Phase 3: 3; Phase 4: 1)
+    assert len(registry) == 188
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

@@ -1,0 +1,213 @@
+/*
+ * The CRM write permission card (card spec
+ * docs/superpowers/specs/crm-integration/2026-10-22-crm-write-permission-card-design.md).
+ *
+ * The frame, header, captions and actions are the connect card's own classes
+ * (crm-connect-card.module.css), so the two cards read as one family. This file holds only the
+ * parts the connect card has no use for: groups, record lists, the overwrite rows, the progress
+ * bar and the outcome lines. Spacing steps follow the connect card (4, 8, 12, 20).
+ */
+
+.symbolMuted {
+  background: var(--clue-ds-color-bg-subtle);
+}
+
+.symbolWarning {
+  background: var(--clue-ds-color-primitives-warning-100);
+  color: var(--clue-ds-color-content-utility-warning);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px; /* spacing/12 */
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px; /* spacing/4 */
+}
+
+.row {
+  display: flex;
+  gap: 8px; /* spacing/8 */
+  align-items: flex-start;
+}
+
+.row input[type="checkbox"] {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--clue-ds-color-primitives-brand-500);
+}
+
+.rowBody {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 4px; /* spacing/4 */
+  min-width: 0;
+}
+
+.rowTitle {
+  margin: 0;
+  color: var(--clue-ds-color-content-neutral);
+  font-family: var(--clue-ds-typography-text-default-medium-font-family);
+  font-size: var(--clue-ds-typography-text-default-medium-font-size);
+  font-weight: var(--clue-ds-typography-text-default-medium-font-weight);
+  line-height: var(--clue-ds-typography-text-default-medium-line-height);
+}
+
+.rowText {
+  margin: 0;
+  color: var(--clue-ds-color-content-neutral);
+  font-family: var(--clue-ds-typography-text-default-font-family);
+  font-size: var(--clue-ds-typography-text-default-font-size);
+  font-weight: var(--clue-ds-typography-text-default-font-weight);
+  line-height: var(--clue-ds-typography-text-default-line-height);
+}
+
+.reason {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.reason[data-expanded="true"] {
+  display: block;
+}
+
+.linkButton {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--clue-ds-color-content-utility-brand);
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.chevron {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px; /* radius/4 */
+  background: none;
+  cursor: pointer;
+}
+
+.chevron:hover {
+  background: var(--clue-ds-color-bg-neutral-hover);
+}
+
+.chevron[aria-expanded="true"] img {
+  transform: rotate(90deg);
+}
+
+.records {
+  display: flex;
+  flex-direction: column;
+  gap: 8px; /* spacing/8 */
+  margin-left: 24px;
+}
+
+.recordList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px; /* spacing/8 */
+  max-height: 320px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.filter {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--clue-ds-color-border-subtle);
+  border-radius: 8px; /* radius/8 */
+  background: var(--clue-ds-color-bg-neutral);
+  color: var(--clue-ds-color-content-neutral);
+  font: inherit;
+  font-size: 13px;
+}
+
+.warning {
+  margin: 0;
+  color: var(--clue-ds-color-content-neutral);
+  font-family: var(--clue-ds-typography-text-default-medium-font-family);
+  font-size: var(--clue-ds-typography-text-default-medium-font-size);
+  font-weight: var(--clue-ds-typography-text-default-medium-font-weight);
+  line-height: var(--clue-ds-typography-text-default-medium-line-height);
+}
+
+.warning span {
+  color: var(--clue-ds-color-content-utility-warning);
+}
+
+.progress {
+  display: flex;
+  gap: 12px; /* spacing/12 */
+  align-items: center;
+}
+
+.progressBar {
+  flex: 1 1 0;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--clue-ds-color-bg-subtle);
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--clue-ds-color-primitives-brand-500);
+  transition: width 0.3s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progressFill {
+    transition: none;
+  }
+}
+
+.outcome {
+  display: flex;
+  flex-direction: column;
+  gap: 8px; /* spacing/8 */
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mark {
+  flex: none;
+  width: 16px;
+  text-align: center;
+}
+
+.mark[data-mark="done"] {
+  color: var(--clue-ds-color-content-utility-positive);
+}
+
+.mark[data-mark="failed"] {
+  color: var(--clue-ds-color-content-utility-critical);
+}
+
+.mark[data-mark="skipped"] {
+  color: var(--clue-ds-color-content-subtle);
+}

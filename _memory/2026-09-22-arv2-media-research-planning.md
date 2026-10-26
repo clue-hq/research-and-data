@@ -20,7 +20,7 @@
   config reload. No model changes or catalog-byte changes. Live v2 acceptance remains outstanding.
 - Updated ARV2 README, master-plan header and committee design/plan/acceptance status to record
   the founder's later default-selection ruling without presenting it as live validation.
-- Added `docs/superpowers/specs/2026-09-22-arv2-media-research-design.md`: 14 verified gaps,
+- Added `docs/superpowers/specs/archive/2026-09-22-arv2-media-research-design.md`: 14 verified gaps,
   four media tools, native public-video route, feed/page resolution, source-level acquisition
   reuse, versioned transcripts/passages, hybrid retrieval, attribution/timing/quality, reference
   claims, transcript-aware audits, scoped lifecycle/erasure, coverage and 20 acceptance cases.

@@ -591,7 +591,13 @@ async def _purge_marked(
     try:
         async with conn_factory() as conn:
             result = await purge_erased_artifacts(
-                conn, storage, keys=None if scan_all else tuple(keys)
+                conn,
+                storage,
+                keys=None if scan_all else tuple(keys),
+                # Only the operator-wide sweep tombstones every expired row: a keyed purge
+                # cleans up after its own just-committed erasure and does no fleet work on
+                # other owners' rows (review I7).
+                sweep_expired=scan_all,
             )
         if result.purged_keys:
             sink.add(METRIC_DSAR_SNAPSHOT_ERASED, len(result.purged_keys), {"reason": reason.value})

@@ -285,6 +285,7 @@ def build_frontend_read_router(
     from clue_api.frontend_read.brand_products import register_brand_product_routes
     from clue_api.frontend_read.bulk_actions import register_bulk_action_routes
     from clue_api.frontend_read.contacts import register_contact_routes
+    from clue_api.frontend_read.crm import register_crm_routes
     from clue_api.frontend_read.discovery_status import register_discovery_status_route
     from clue_api.frontend_read.display_pages import DisplayPages
     from clue_api.frontend_read.product_notices import register_product_notice_routes
@@ -316,6 +317,13 @@ def build_frontend_read_router(
         queue=work_queue,
     )
     register_settings_routes(router, conn_factory=conn_factory, settings=settings, secrets=secrets)
+    register_crm_routes(
+        router,
+        conn_factory=conn_factory,
+        settings=settings,
+        secrets=secrets,
+        evidence_storage=evidence_storage,
+    )
     register_accounts_list_routes(router, conn_factory=conn_factory, settings=settings)
     # Static ``/accounts/bulk-*`` paths must be registered before the Account/Contact UUID routes,
     # otherwise Starlette would match a capability segment as ``{account_id}`` and return a 422.

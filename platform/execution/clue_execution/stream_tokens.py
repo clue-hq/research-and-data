@@ -58,6 +58,9 @@ from clue_core import ProjectRunId
 #: Mirrors ``run_event.subject_kind``'s taxonomy (D7). A token's subject and the stream's subject
 #: are the same vocabulary by construction — that is what makes "one auth model" true.
 PROJECT_RUN_SUBJECT_KIND = "project_run"
+#: A chat thread's live stream of turn lifecycle frames (CRM trial 1, F2): any turn in the thread,
+#: so an open chat follows turns it did not start.
+AGENT_THREAD_SUBJECT_KIND = "agent_thread"
 
 _MINT_SQL = text(
     """

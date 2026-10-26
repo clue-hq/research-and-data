@@ -81,6 +81,7 @@ from clue_api.arv2.read_tools import (
     build_arv2_read_tools,
 )
 from clue_api.auth_tool_context import require_human_authority
+from clue_api.brand_document_tool import build_brand_document_tools
 from clue_api.claim_entailment import FaithfulnessClaimEntailmentJudge
 from clue_api.client_knowledge_tools import (
     build_client_knowledge_tools,
@@ -92,6 +93,8 @@ from clue_api.coverage_tools import (
     build_research_account_gaps_tool,
     build_research_account_gaps_v2_tool,
 )
+from clue_api.crm.read_sinks import CrmReadSinks
+from clue_api.crm.tools import build_crm_tools
 from clue_api.design_leg_tools import build_design_leg_tools
 from clue_api.design_tools import build_design_tools, is_default_design_tool
 from clue_api.discovery_configuration import ConfirmedDiscoveryPreflight
@@ -2682,6 +2685,7 @@ def build_toolbelt(
     prose_synthesis: ProseSynthesisServices | None = None,
     sandbox_workspaces: SandboxWorkspaces | None = None,
     value_narrative: ValueNarrativeServices | None = None,
+    crm_read_sinks: CrmReadSinks | None = None,
 ) -> ToolRegistry:
     """Construct + register the concrete toolbelt over the existing capabilities (spec §2 slice 2).
 
@@ -3021,6 +3025,13 @@ def build_toolbelt(
     registry.register(
         ManageProductsTool(conn_factory=conn_factory, storage=storage), make_default=True
     )
+    # CRM integration (Task 9): the Head of ABM publishes a Brand-context document under
+    # company/ or proof/ (the sales motion, the CRM's customers), through the same brand writer.
+    # ``sandbox_workspaces`` lets it take the body from a file the agent wrote in outputs/.
+    for tool in build_brand_document_tools(
+        storage=storage, sandbox_workspaces=sandbox_workspaces, conn_factory=conn_factory
+    ):
+        registry.register(tool, make_default=True)
     # FI-4 slice 3: recon field progress commits on its OWN connection so the setup screen sees
     # motion while the lane runs (the lane's own transaction stays uncommitted until it ends).
     # That second checkout is only safe against the real pooled factory — an injected
@@ -3161,6 +3172,17 @@ def build_toolbelt(
     # `preconditions`, never by absence. Registered UNGRANTED here: the grants are the reviewed
     # `head-of-abm@v62` and `design@v3` bumps, never a dict edit.
     for tool in build_web_search_tools(secrets=secrets):
+        registry.register(tool, make_default=True)
+    # CRM integration (spec docs/superpowers/specs/crm-integration/): always registered; the
+    # tools refuse until the flag, the Composio key and an auth config are configured.
+    # ``crm_read_sinks`` is the registry the turn worker binds each turn's ``reads/`` folder into
+    # (the ``sandbox_workspaces`` arrangement); without it ``run_crm_action`` refuses by name.
+    for tool in build_crm_tools(
+        settings=resolved_settings,
+        secrets=secrets,
+        conn_factory=conn_factory,
+        read_sinks=crm_read_sinks,
+    ):
         registry.register(tool, make_default=True)
     # Lane E E3. Same everywhere-registered posture as the prose surface above, with one extra
     # gate: the positioning services are composed only when `value_narrative_synthesis_enabled`,

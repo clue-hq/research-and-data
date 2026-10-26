@@ -45,6 +45,10 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `configure_project_targeting@1` | write | no | no | Complete a project step |
 | `manage_products@1` | write | no | no | Update the product list |
 | `web_search@1` | spend | yes | no | Search the web |
+| `connect_crm@1` | write | no | no | Connect your CRM |
+| `find_crm_actions@1` | read | no | no | Look up CRM actions |
+| `run_crm_action@1` | spend | yes | no | Read from your CRM |
+| `write_brand_document@1` | write | no | no | Update brand context |
 
 ## inspect_statement_history@1
 
@@ -1106,6 +1110,222 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 **Taught by.** head-of-abm prompt v15, the paragraph "Look things up in this order".
 
 **See also.** `.deepagent/skills/manual-claims/v22/SKILL.md`, `.deepagent/skills/manual-accounts-research/v22/SKILL.md`.
+
+## connect_crm@1
+
+**What it does.** Report the workspace's CRM connection (HubSpot or Salesforce), or show the person a card to connect it. When the result's state is 'card', tell the person to use the card and end your turn: the chat continues by itself once the CRM is connected. Pass switch=true only when the person asked to replace the connected CRM with another one. Manual: .deepagent/skills/manual-tools/v22/SKILL.md#connect_crm
+
+- Effect class: `write`.
+- Spends: no.
+- Opens a human gate: no.
+- Replay identity: one connect card per presenting turn (crm_connect_request.turn_id).
+- Pins the call is bound to: `project`.
+- Journal-safe input fields: `switch`.
+- The human sees: "Connect your CRM".
+
+**Inputs**
+
+| Field | Type | Default | Bounds | What it is |
+| --- | --- | --- | --- | --- |
+| `switch` | `bool` | `False` | none | Only when the person asked to replace the connected CRM with another one. |
+| `source_turn_ref` | `str` | required | strip_whitespace=True, min_length=1, max_length=1000 | Injected by the platform from this turn. Never author one. |
+
+**Outputs**
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `state` | `Literal['connected', 'card']` | — |
+| `mode` | `Optional[Literal['connect', 'reconnect', 'switch']]` | — |
+| `request_id` | `str or None` | — |
+| `providers` | `list[Literal['hubspot', 'salesforce']]` | — |
+| `can_connect` | `bool` | — |
+| `connection` | `CrmConnectionView or None` | — |
+
+*CrmConnectionView*: One row.
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `provider` | `Literal['hubspot', 'salesforce']` | — |
+| `status` | `str` | — |
+| `connected_at` | `datetime` | — |
+| `connected_by_user_id` | `str` | — |
+
+**Refusals**
+
+| Code | Next move |
+| --- | --- |
+| `crm_not_configured` | Tell the person the CRM integration is not set up on this deployment, and take the sales numbers by hand (crm-sales-analysis section 11). |
+| `crm_turn_not_found` | Do not retry. The turn reference is injected by the platform; report that this turn cannot be resolved. |
+| `crm_project_unavailable` | Explain that this conversation's project is unavailable in the current workspace. |
+
+**Afterwards.** Either the workspace's CRM is connected (state "connected": which CRM, since when, by whom) or the chat now shows the person a connect card (state "card"). After a card, say in a sentence why connecting helps and end your turn: the chat continues by itself once the CRM is connected.
+
+**Taught by.** crm-sales-analysis v1 section 2, "Connecting".
+
+**See also.** `.deepagent/skills/manual-humans-screens/v22/SKILL.md`.
+
+## find_crm_actions@1
+
+**What it does.** Search the connected CRM's actions by what you want to do, e.g. 'search deals', 'deal pipeline stages', 'contacts of a company', 'run a SOQL query', 'update a company'. Returns each action's name, its input schema and its access: run a 'read' action with run_crm_action; a 'write' action is never run directly, propose it with propose_crm_changes so the person can approve it. Only reads and the writes Clue allows are listed. Manual: .deepagent/skills/manual-tools/v22/SKILL.md#find_crm_actions
+
+- Effect class: `read`.
+- Spends: no.
+- Opens a human gate: no.
+- Replay identity: none: a catalogue search writes nothing.
+- Pins the call is bound to: `project`.
+- Journal-safe input fields: `query`, `limit`.
+- The human sees: "Look up CRM actions".
+
+**Inputs**
+
+| Field | Type | Default | Bounds | What it is |
+| --- | --- | --- | --- | --- |
+| `query` | `str` | required | strip_whitespace=True, min_length=1, max_length=200 | — |
+| `limit` | `int` | `10` | ge=1, le=25 | — |
+
+**Outputs**
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `provider` | `Literal['hubspot', 'salesforce']` | — |
+| `actions` | `list[CrmActionView]` | — |
+
+*CrmActionView*: One row.
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `slug` | `str` | — |
+| `access` | `Literal['read', 'write']` | `read`: run it with run_crm_action. `write`: propose it with propose_crm_changes. |
+| `description` | `str` | — |
+| `input_schema` | `dict[str, Any]` | — |
+
+**Refusals**
+
+| Code | Next move |
+| --- | --- |
+| `crm_not_configured` | Tell the person the CRM integration is not set up on this deployment, and take the sales numbers by hand. |
+| `crm_not_connected` | Call connect_crm to ask the person to connect the CRM. |
+| `crm_unavailable` | Try once more later in the turn; if it still fails, tell the person the CRM is not answering right now. |
+
+**Afterwards.** A list of the connected CRM's read actions that match the search, each with its input schema. Nothing was read from the CRM. Run one with run_crm_action.
+
+**Taught by.** crm-sales-analysis v1 section 3, "Read the setup first".
+
+**See also.** `.deepagent/skills/manual-tools/v22/SKILL.md`.
+
+## run_crm_action@1
+
+**What it does.** Run one read action on the connected CRM (find it first with find_crm_actions). The whole result is written to a file in reads/ and you get back its path, how many records it holds, their field names and, when there are more pages, next_cursor to pass back as the page argument (HubSpot: 'after'; Salesforce: run SALESFORCE_QUERY_MORE with it). Analyse the file with run_python; do not paste records into the chat. Manual: .deepagent/skills/manual-tools/v22/SKILL.md#run_crm_action
+
+- Effect class: `spend`.
+- Spends: yes. This call costs money against the project's providers.
+- Opens a human gate: no.
+- Replay identity: reads/<operation_id>.json, rewritten by a re-run of the same operation.
+- Pins the call is bound to: `project`.
+- Journal-safe input fields: `slug`.
+- The human sees: "Read from your CRM".
+
+**Inputs**
+
+| Field | Type | Default | Bounds | What it is |
+| --- | --- | --- | --- | --- |
+| `slug` | `str` | required | strip_whitespace=True, min_length=1, max_length=200 | — |
+| `arguments` | `dict[str, Any]` | (built per call) | none | — |
+
+**Outputs**
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `provider` | `Literal['hubspot', 'salesforce']` | — |
+| `slug` | `str` | — |
+| `path` | `str` | Where the whole result was written; read it with the file tools or `run_python`. |
+| `record_count` | `int or None` | — |
+| `total` | `int or None` | — |
+| `fields` | `list[str]` | — |
+| `next_cursor` | `str or None` | — |
+| `done` | `bool` | — |
+
+**Refusals**
+
+| Code | Next move |
+| --- | --- |
+| `crm_not_configured` | Tell the person the CRM integration is not set up on this deployment, and take the sales numbers by hand. |
+| `crm_not_connected` | Call connect_crm to ask the person to connect the CRM. |
+| `crm_connection_expired` | Call connect_crm; it shows the person a Reconnect card. |
+| `crm_action_not_allowed` | Use find_crm_actions to find a read action that does what you need, and run that one. |
+| `crm_action_failed` | Check the setup you read (field and stage names), fix the arguments the CRM's message points at, and run it again. |
+| `crm_rate_limited` | Wait for the rest of your work in this turn, then try once more; if it still fails, say the CRM is busy. |
+| `crm_unavailable` | Try once more later in the turn; if it still fails, tell the person the CRM is not answering right now. |
+| `crm_reads_unavailable` | Tell the person CRM reads cannot be saved on this turn, and do not guess numbers. |
+| `salesforce_api_disabled` | Explain that this Salesforce org has no API access (Professional Edition needs a paid add-on), and offer to take the numbers by hand. |
+| `salesforce_api_share_exhausted` | Tell the person Clue has used its share of the org's API calls for today; work with what you already pulled and continue tomorrow. |
+| `salesforce_limits_unavailable` | Try once more; if it still fails, tell the person Clue cannot check the org's API allowance right now, so it is not reading Salesforce. |
+
+**Afterwards.** The whole result is in the file at `path` under reads/; you got only its record count, field names and next_cursor. Fetch every page, then read the files and compute in run_python. Never state a number you did not compute from these files.
+
+**Taught by.** crm-sales-analysis v1 sections 6 and 7, "Pulling the deals" and "Compute in the sandbox".
+
+**See also.** `.deepagent/skills/manual-workspace/v22/SKILL.md`, `.deepagent/skills/manual-limits/v22/SKILL.md`.
+
+## write_brand_document@1
+
+**What it does.** Publish a new version of a Brand-context document under company/, product/, audience/ or proof/ (for example company/sales-motion.md, or an updated proof/customers.md). Use it only when the person asks you to change a brand document, or a skill tells you to; never on your own initiative. The previous version is kept in its history, and the person can read and edit the document in Brand context. Write the whole document, not a change: read the current version from brand/, pass the version you read as based_on_version (from brand/index.json; leave it out only for a new document), and write it back with your changes. The product catalog cannot be written here. Give the document as markdown, or from_file for a file you wrote under outputs/ with run_python. Manual: .deepagent/skills/manual-tools/v22/SKILL.md#write_brand_document
+
+- Effect class: `write`.
+- Spends: no.
+- Opens a human gate: no.
+- Replay identity: the path's current brand-level version: identical bytes return it unchanged.
+- Pins the call is bound to: `project`.
+- Journal-safe input fields: `path`, `kind`, `from_file`, `based_on_version`.
+- The human sees: "Update brand context".
+
+**Inputs**
+
+| Field | Type | Default | Bounds | What it is |
+| --- | --- | --- | --- | --- |
+| `path` | `str` | required | strip_whitespace=True, min_length=1, max_length=200 | `<company\|product\|audience\|proof>/<name>.md`, lower-case letters, digits and hyphens. |
+| `kind` | `str or None` | `None` | none | What the document is, e.g. `sales-motion`. Needed only for a new document; an existing document keeps its kind. |
+| `markdown` | `str or None` | `None` | max_length=1000000 | The document's Markdown, without front matter. Give this or `from_file`, not both. Never name an input `body`/`content`/`text`…: the agent's plan validator refuses any binding with one of those names (`clue_execution.graph._RAW_BODY_KEYS`), trial 1 F4. |
+| `from_file` | `str or None` | `None` | none | A Markdown file you wrote in the sandbox, e.g. `outputs/sales-motion.md`. |
+| `based_on_version` | `int or None` | `None` | ge=1 | The version you read, from `brand/index.json`. Leave it out only for a new document. |
+| `source_turn_ref` | `str` | required | strip_whitespace=True, min_length=1, max_length=1000 | Injected by the platform from this turn. Never author one. |
+
+**Outputs**
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `document_id` | `str` | — |
+| `path` | `str` | — |
+| `version` | `int` | — |
+| `unchanged` | `bool` | `True` when the bytes matched the current version, so nothing new was published. |
+
+**Refusals**
+
+| Code | Next move |
+| --- | --- |
+| `path_not_allowed` | Use a company/, product/, audience/ or proof/ document named <folder>/<name>.md, with a lower-case name of letters, digits and hyphens. |
+| `document_generated` | Do not write this document; to change the product list, use manage_products. |
+| `document_changed` | Someone saved this document after your turn began. Tell the person, and write it again on the next turn from the new version. |
+| `markdown_or_file_required` | Give exactly one of markdown or from_file. |
+| `kind_invalid` | Use a kind of lower-case letters, digits and hyphens, such as sales-motion. |
+| `kind_required` | The document is new; add a kind, such as sales-motion, and call again. |
+| `kind_mismatch` | Leave kind out, so the document keeps the kind it already has. |
+| `markdown_empty` | Write the document's Markdown and call again. |
+| `front_matter_not_allowed` | Remove the front-matter block and send the Markdown only. |
+| `file_not_allowed` | Pass a path under outputs/, such as outputs/sales-motion.md. |
+| `file_not_found` | Check files_written from your run_python call and pass the exact path it wrote. |
+| `file_too_large` | Shorten the document to under 2 MB and write it again. |
+| `file_not_text` | Write the file as UTF-8 Markdown text and call again. |
+| `sandbox_unavailable` | Pass the document as markdown instead of from_file. |
+| `storage_unavailable` | Tell the person brand documents cannot be saved on this deployment right now. |
+| `turn_unavailable` | Do not retry. The turn reference is injected by the platform; report that this turn cannot be resolved. |
+| `brand_unavailable` | Explain that this project's brand is unavailable in the current workspace. |
+
+**Afterwards.** A new version of the brand document at `path` is current, attributed to the person whose turn this is; the previous version is kept in its history. `unchanged: true` means the bytes matched the current version and nothing new was published. The next turn's brand/knowledge/ shows it.
+
+**Taught by.** crm-sales-analysis v1 sections 12 and 13, "Write company/sales-motion.md" and "Add the new customers".
+
+**See also.** `.deepagent/skills/manual-documents-decisions/v22/SKILL.md`, `.deepagent/skills/manual-gates-authority/v22/SKILL.md`.
 
 ## The framework file tools
 

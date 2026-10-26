@@ -19,7 +19,7 @@ owns no block and composes the owner's stored body under its own heading.
 **Tech Stack:** Python 3.12 / FastAPI / SQLAlchemy async / Alembic / pytest (DB suites on the
 lane's throwaway DB only); Next.js App Router + Zod + `node:test` for the frontend.
 
-**Spec:** `docs/superpowers/specs/2026-09-12-display-prewrite-and-shared-blocks-design.md`
+**Spec:** `docs/superpowers/specs/archive/2026-09-12-display-prewrite-and-shared-blocks-design.md`
 (rulings of 2026-09-12; the pending-placeholder ruling of 2026-09-21 replaces the "simply blank"
 ruling). Read it first; this plan argues from it.
 
@@ -2066,7 +2066,7 @@ git commit -m "feat(display): shared blocks — insights context-only and contac
 **Files:**
 - Modify: `docs/specs/ARV2-MASTER-PLAN.md` §7 "Generation policy" paragraph
 - Modify: `apps/frontend/docs/api-contracts/accounts.md` (already touched in Task 4; add the shared-section note)
-- Modify: `docs/superpowers/specs/2026-09-12-display-prewrite-and-shared-blocks-design.md` status line
+- Modify: `docs/superpowers/specs/archive/2026-09-12-display-prewrite-and-shared-blocks-design.md` status line
 - Create: `_memory/2026-09-21-display-prewrite-execution.md`; add one line to `_memory/README.md`
 - Modify: `CLAUDE.md` backlog — replace the display-generation sentence in the `[chat×…]`-style
   bullets with a new `[display×prewrite]` bullet (what shipped, residuals, owed proofs)
@@ -2124,7 +2124,7 @@ polling; the inline write survives only as the queue-less fallback and the CLI. 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add docs/specs/ARV2-MASTER-PLAN.md apps/frontend/docs/api-contracts/accounts.md docs/superpowers/specs/2026-09-12-display-prewrite-and-shared-blocks-design.md _memory/2026-09-21-display-prewrite-execution.md _memory/README.md CLAUDE.md
+git add docs/specs/ARV2-MASTER-PLAN.md apps/frontend/docs/api-contracts/accounts.md docs/superpowers/specs/archive/2026-09-12-display-prewrite-and-shared-blocks-design.md _memory/2026-09-21-display-prewrite-execution.md _memory/README.md CLAUDE.md
 git commit -m "docs: display pages written on the fleet — master plan §7, contract notes, execution record, backlog"
 ```
 

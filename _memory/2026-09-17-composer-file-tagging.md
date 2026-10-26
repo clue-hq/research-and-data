@@ -4,7 +4,7 @@
 - Clipping bug fixed and verified: the `@` picker mounted with every account but
   `.composerEditorShell { overflow: hidden }` clipped it. Commit `89f34dd4e` (shell overflow
   visible; the editor is the scroll container). Details in `2026-09-12-composer-layout.md`.
-- Design spec approved: `docs/superpowers/specs/2026-09-17-composer-file-tagging-design.md`
+- Design spec approved: `docs/superpowers/specs/archive/2026-09-17-composer-file-tagging-design.md`
   (commit `ac86afa11`). Rulings: categories Files / Microsites / Accounts; scene ads and tables
   under Files; Gallery is the file system, no path or id in the UI; a tagged design artifact is a
   reference only, Head-of-ABM decides by reasoning whether to open a design leg; picker offers

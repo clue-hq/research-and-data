@@ -7,7 +7,7 @@
 **Status:** offline implementation verified; authorized v3 live cohort completed with quality defects. Full acceptance remains open; see the [live comparison](2026-09-22-arv3-live-poc-comparison.md).
 **Default:** AI Ark v2. Media v3 is available for explicit selection; it has not been activated.
 
-Authority: [approved design](../specs/2026-09-22-arv2-media-research-design.md),
+Authority: [approved design](../specs/archive/2026-09-22-arv2-media-research-design.md),
 [implementation plan](2026-09-22-arv2-media-research.md), and the activation-scoped amendment
 in [ARV2 master plan](../../specs/ARV2-MASTER-PLAN.md).
 

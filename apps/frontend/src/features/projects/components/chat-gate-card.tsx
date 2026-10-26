@@ -77,6 +77,7 @@ const PRIMITIVE_STATE = {
   requested: "approval-requested",
   responded: "approval-responded",
   denied: "output-denied",
+  withdrawn: "output-denied",
   unavailable: "approval-requested",
 } as const;
 

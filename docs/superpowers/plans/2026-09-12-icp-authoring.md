@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, SQLAlchemy async, Alembic, pydantic v2, the `clue_toolbelt` `Tool` envelope, the agent catalog (immutable versioned YAML/markdown), pytest on the lane DB.
 
-**Spec:** `docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.2 (rulings R4, R5, R7). Depends on plan 1 (`agent_turn_project_files`, `project_context_files.py`).
+**Spec:** `docs/superpowers/specs/archive/2026-09-12-project-context-and-icp-authoring-design.md` §4.2 (rulings R4, R5, R7). Depends on plan 1 (`agent_turn_project_files`, `project_context_files.py`).
 
 ## Global Constraints
 

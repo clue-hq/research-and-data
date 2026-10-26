@@ -28,6 +28,7 @@ Two identifiers, two jobs (§3.2):
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -41,11 +42,13 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_core import UtcDatetime, decode_jsonb, serialize_value_json
 
 __all__ = [
+    "LIFECYCLE_EVENT_TYPES",
     "TERMINAL_TURN_EVENTS",
     "TURN_EVENT_TYPES",
     "TurnEventRow",
     "TurnEventType",
     "TurnReplayPlan",
+    "end_unended_turn_as_failed",
     "emit_turn_event",
     "list_turn_events",
     "next_generation_attempt",
@@ -123,6 +126,20 @@ TERMINAL_TURN_EVENTS: Final = frozenset(
         TurnEventType.TURN_FAILED,
         TurnEventType.TURN_CANCELLED,
         TurnEventType.TURN_AWAITING_INPUT,
+    }
+)
+
+#: A turn's lifecycle frames — the only frames a thread stream sends (CRM trial 1, F2). They say
+#: that a turn exists and where it is; its parts, text and tools stay on the turn's own stream.
+LIFECYCLE_EVENT_TYPES: Final = frozenset(
+    {
+        TurnEventType.TURN_ACCEPTED.value,
+        TurnEventType.TURN_STARTED.value,
+        TurnEventType.TURN_AWAITING_INPUT.value,
+        TurnEventType.TURN_COMPLETED.value,
+        TurnEventType.TURN_FAILED.value,
+        TurnEventType.TURN_CANCELLED.value,
+        TurnEventType.TURN_RETRYING.value,
     }
 )
 
@@ -267,6 +284,55 @@ async def emit_turn_event(
     return _row(dict(row))
 
 
+async def end_unended_turn_as_failed(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    thread_id: str,
+    turn_id: UUID,
+) -> bool:
+    """Write ``turn.failed`` for a turn that has no ending yet; True when one was written.
+
+    For a turn whose run raised before it could say how it ended. Without an ending the person sees
+    the reasoning stop and nothing else, even after a reload; the chat renders a ``turn.failed``
+    with no ``failure_code`` as "Response failed". A turn that already ended (its run wrote its own
+    typed failure, or it completed) is left alone. Under the turn's sequence lock, so the check and
+    the append are one step.
+    """
+
+    await conn.execute(_TURN_SEQUENCE_LOCK_SQL, {"turn_lock_key": str(turn_id)})
+    ended = await conn.scalar(
+        text(
+            "SELECT 1 FROM agent_turn_event_stream "
+            "WHERE workspace_id = :workspace_id AND turn_id = :turn_id "
+            "AND event_type = ANY(CAST(:terminal AS text[])) LIMIT 1"
+        ),
+        {
+            "workspace_id": workspace_id,
+            "turn_id": turn_id,
+            "terminal": [event.value for event in TERMINAL_TURN_EVENTS],
+        },
+    )
+    if ended is not None:
+        return False
+    project_id = await conn.scalar(
+        text("SELECT project_id FROM agent_thread WHERE workspace_id = :ws AND id = :thread"),
+        {"ws": workspace_id, "thread": thread_id},
+    )
+    if project_id is None:
+        return False
+    await emit_turn_event(
+        conn,
+        workspace_id=workspace_id,
+        project_id=str(project_id),
+        thread_id=thread_id,
+        turn_id=turn_id,
+        event_type=TurnEventType.TURN_FAILED,
+        payload={"status": "failed"},
+    )
+    return True
+
+
 async def list_turn_events(
     conn: AsyncConnection,
     *,
@@ -275,12 +341,14 @@ async def list_turn_events(
     thread_id: str | None = None,
     after_event_id: int = 0,
     limit: int = 1000,
+    event_types: Collection[str] | None = None,
 ) -> tuple[TurnEventRow, ...]:
     """Read a tenant's turn frames in cursor order — the replay surface.
 
     Scoped in SQL on ``workspace_id`` on every statement: a cross-workspace read returns nothing,
     never another tenant's conversation. ``turn_id`` narrows to one turn's stream; ``thread_id``
-    narrows to a whole conversation. Read-only.
+    narrows to a whole conversation; ``event_types`` keeps only those frames (filtered in SQL, so
+    ``limit`` counts only the frames returned). Read-only.
     """
 
     clauses = ""
@@ -295,6 +363,9 @@ async def list_turn_events(
     if thread_id is not None:
         clauses += "AND thread_id = :thread_id "
         params["thread_id"] = thread_id
+    if event_types is not None:
+        clauses += "AND event_type = ANY(:event_types) "
+        params["event_types"] = sorted(event_types)
     rows = (
         (
             await conn.execute(
@@ -358,6 +429,7 @@ async def plan_turn_replay(
     horizon_s: float,
     now: datetime | None = None,
     limit: int = 1000,
+    event_types: Collection[str] | None = None,
 ) -> TurnReplayPlan:
     """Plan a consumer's replay from its ``Last-Event-ID`` cursor (§3.6).
 
@@ -384,6 +456,7 @@ async def plan_turn_replay(
         thread_id=thread_id,
         after_event_id=effective_cursor,
         limit=limit,
+        event_types=event_types,
     )
     return TurnReplayPlan(reset=reset, backlog=backlog, effective_cursor=effective_cursor)
 

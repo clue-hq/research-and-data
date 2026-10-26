@@ -1,7 +1,7 @@
 # Lane 3 slice 3 — Langfuse (3a foundation + 3b richness) — 2026-09-15
 
 Branch `lane3/sice1b` (the founder's; unpushed, no upstream), after slices 1b and 2. Design
-`docs/superpowers/specs/2026-09-15-lane3-slice3-langfuse-design.md` (cd962c712); plans
+`docs/superpowers/specs/archive/2026-09-15-lane3-slice3-langfuse-design.md` (cd962c712); plans
 `docs/superpowers/plans/2026-09-15-lane3-slice3a-langfuse-foundation.md` and
 `...slice3b-langfuse-richness.md`. Executed via SDD (Opus implementers, controller reviews). Both
 SDD workspaces deleted after this note.

@@ -1016,7 +1016,7 @@ Field rules:
   mentions carry the artifact's `document_id` and `Number(current_version_id)`
   and must belong to the project (`404 CONTEXT_REF_NOT_FOUND` otherwise). Tags
   never open a design leg; the agent decides that by reasoning. (2026-09-17,
-  spec `docs/superpowers/specs/2026-09-17-composer-file-tagging-design.md`.)
+  spec `docs/superpowers/specs/archive/2026-09-17-composer-file-tagging-design.md`.)
 - `attachment_refs` is ordered and may contain only durable, workspace-scoped
   upload receipts: `artifact_key`, 64-character lowercase `sha256`,
   `media_type`, `byte_count`, and `filename`. Browser blob URLs and local paths
@@ -2625,7 +2625,7 @@ The frontend composes this URL in `toProjectArtifact` from the list read's
 
 ### Research progress card (2026-09-12)
 
-Spec `docs/superpowers/specs/2026-09-12-research-progress-card-design.md`. One pinned card per
+Spec `docs/superpowers/specs/archive/2026-09-12-research-progress-card-design.md`. One pinned card per
 project above the composer, rendered from `GET /frontend/v1/projects/:projectId/research/progress`
 (BFF `GET /api/projects/:projectId/research-progress`): `{ requested_accounts, queued, running,
 finished, progress_pct, pill, last_finished_at, agents[{account_name, stage, subject}],
@@ -2650,7 +2650,7 @@ served and rotates the status line every 4 seconds (`model/research-progress-lin
 no dismiss, no per-account detail. Field mapping and multiple-project navigation are unchanged.
 
 **Provider incidents on the card (2026-09-16).** Spec
-`docs/superpowers/specs/2026-09-16-provider-incidents-design.md`. The payload carries one more
+`docs/superpowers/specs/archive/2026-09-16-provider-incidents-design.md`. The payload carries one more
 field:
 
 ```
@@ -2679,7 +2679,7 @@ as they did.
 
 ### Project documents — the plan and the project's own knowledge (2026-09-12)
 
-Spec `docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.3. A
+Spec `docs/superpowers/specs/archive/2026-09-12-project-context-and-icp-authoring-design.md` §4.3. A
 project owns documents of its own — the plan the Head of ABM writes (`write_project_document@1` →
 `project/plan.md`), and any ICP or persona document authored local to the project. They are served
 by three routes on the workspace-scoped `/frontend/v1` router
@@ -2844,7 +2844,7 @@ required.
 
 ## Chat attachments (2026-09-18)
 
-Backend as built on branch `add-attachment` (spec `docs/superpowers/specs/2026-09-18-chat-attachments-design.md`).
+Backend as built on branch `add-attachment` (spec `docs/superpowers/specs/archive/2026-09-18-chat-attachments-design.md`).
 Every refusal below reaches the browser as the FI-1 error envelope
 `{"error": {"code", "message", "requestId"}}` — the route raises
 `HTTPException(detail={"code","message"})` and the projections app's middleware renders the envelope.
@@ -2942,3 +2942,35 @@ product-set version tagged with the change), and the project's chat shows one li
 | `POST` | `/frontend/v1/projects/:projectId/product-notices/:changeId/dismiss` | `204`; per person. |
 
 Shown only in the project's chat, above the transcript (founder answer 2026-10-15).
+
+## CRM write permission card (2026-10-22)
+
+CRM integration Phase 2; card spec
+`docs/superpowers/specs/crm-integration/2026-10-22-crm-write-permission-card-design.md`. When the
+Head of ABM proposes CRM changes no standing permission covers, its turn ends on an `agent_gate`
+of kind `crm_write_permission`, rendered by `CrmWritePermissionCard`.
+
+- **The card's content** is the gate's `subject_snapshot` (`card_snapshot` in
+  `platform/api/clue_api/crm/write_prepare.py`): `crm`, `title`, `description`, `groups[]`
+  (`kind`, `object`, `field_label`, `list_ref`, `title`, `count`, `value_summary`, `reason`,
+  `records[{write_id, name, before, after}]`, `scope_key`, `always_allow`), `overwrites_heading`,
+  `overwrites[]`, `standing_permissions[{scope_key, phrase}]`, `caption`. Parsed by
+  `crmWriteCard` (`features/integrations/model/crm-write.ts`). The gate's `subject_ref` is
+  `crm_write_proposal:<proposalId>`; it has no `subject_revision` and no amount.
+- **Gate list** gains `withdrawn: bool` (default `false`): nobody answered and it can no longer
+  be answered (a newer card replaced it, or a reconnect closed it). A withdrawn gate is never open;
+  the card reads "Replaced by a newer proposal", or "These changes were not sent" when the
+  progress read says `closed`.
+- **Answer:** `POST …/turns` with `gate_response.crm_write = {selected_write_ids, always_allow}`
+  for Allow; "Don't allow" is `decision: "rejected"` with no `crm_write`. Any member of the
+  workspace may answer (R-6.8), so the addressee rule does not apply to this kind. Refusals shown
+  on the card, which stays as it was: `422 CRM_WRITE_NOTHING_SELECTED`,
+  `422 CRM_WRITE_UNKNOWN_CHANGE`, `409 CRM_CONNECTION_CHANGED`, `409 GATE_REPLACED`,
+  `409 CRM_WRITE_ALREADY_ANSWERED` (another member's answer got there first: "Someone answered
+  this card first."; the card then reads its gate again).
+- **Progress:** `GET /frontend/v1/crm/proposals/:proposalId` → `{proposalId, state (asking |
+  sending | paused | done | declined | replaced | closed), provider, counts{done, failed, skipped,
+  pending}, groups[{…, chosen, done, failed, skipped, pending}], overwrites[], failed[{writeId,
+  label, field, crmMessage}], skipped[{writeId, label, reason}], answeredBy, answeredByName,
+  answeredAt}`. Read once an answered or withdrawn card is shown, then every 2 s while `sending`
+  and the tab is visible.

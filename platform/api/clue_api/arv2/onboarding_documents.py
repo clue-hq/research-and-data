@@ -26,8 +26,10 @@ from clue_api.arv2.customer_domains import DomainCheck
 from clue_api.arv2.exa_client import ExaAgentRun, ExaDeepResult
 
 __all__ = [
+    "CustomerRow",
     "KnowledgeDocument",
     "company_overview_document",
+    "crm_customer_rows",
     "customer_reviews_document",
     "existing_customers_document",
     "demote_headings",
@@ -358,16 +360,132 @@ def _customer_source(grounding: Sequence[Any], index: int) -> str | None:
     return None
 
 
+_CUSTOMER_COLUMNS = (
+    "Customer",
+    "Domains",
+    "Domain check",
+    "How they buy",
+    "Evidence",
+    "Quote",
+    "Source",
+)
+#: What marks a customer row the CRM analysis wrote: its Source cell names the CRM (R-4.5).
+_CRM_MARK = "CRM:"
+_UNESCAPED_PIPE = re.compile(r"(?<!\\)\|")
+
+
+@dataclass(frozen=True)
+class CustomerRow:
+    """One row of the ``proof/customers.md`` table, as text."""
+
+    customer: str
+    domains: tuple[str, ...]
+    domain_check: str
+    how_they_buy: str
+    evidence: str
+    quote: str
+    source: str
+
+    def cells(self) -> tuple[str, ...]:
+        return (
+            self.customer,
+            ", ".join(self.domains),
+            self.domain_check,
+            self.how_they_buy,
+            self.evidence,
+            self.quote,
+            self.source,
+        )
+
+
+def _split_cells(line: str) -> list[str]:
+    inner = line.strip().removeprefix("|").removesuffix("|")
+    return [cell.strip().replace("\\|", "|") for cell in _UNESCAPED_PIPE.split(inner)]
+
+
+def _cell(cells: Sequence[str], column: Mapping[str, int], name: str) -> str:
+    position = column.get(name)
+    return cells[position] if position is not None and position < len(cells) else ""
+
+
+def crm_customer_rows(markdown: str) -> list[CustomerRow]:
+    """The rows of a ``proof/customers.md`` body whose Source names a CRM (they carry ``CRM:``).
+
+    Columns are found by their header names, so a table a person re-ordered or trimmed still
+    parses; a table without Customer, Domains and Source columns yields nothing.
+    """
+    lines = markdown.splitlines()
+    rows: list[CustomerRow] = []
+    index = 0
+    while index < len(lines):
+        header = _split_cells(lines[index]) if lines[index].lstrip().startswith("|") else []
+        if not {"Customer", "Domains", "Source"} <= set(header):
+            index += 1
+            continue
+        column = {name: position for position, name in enumerate(header)}
+        index += 2  # the header and its |---| separator
+        while index < len(lines) and lines[index].lstrip().startswith("|"):
+            cells = _split_cells(lines[index])
+            index += 1
+            if _CRM_MARK not in _cell(cells, column, "Source"):
+                continue
+            rows.append(
+                CustomerRow(
+                    customer=_cell(cells, column, "Customer"),
+                    domains=tuple(
+                        domain.strip().lower()
+                        for domain in _cell(cells, column, "Domains").split(",")
+                        if domain.strip()
+                    ),
+                    domain_check=_cell(cells, column, "Domain check"),
+                    how_they_buy=_cell(cells, column, "How they buy"),
+                    evidence=_cell(cells, column, "Evidence"),
+                    quote=_cell(cells, column, "Quote"),
+                    source=_cell(cells, column, "Source"),
+                )
+            )
+    return rows
+
+
+def _merge_crm_rows(
+    web: Sequence[tuple[Any, ...]], carried: Sequence[CustomerRow]
+) -> list[tuple[Any, ...]]:
+    """One row per domain (R-4.4, R-4.5): a carried CRM row whose domain the web also found adds
+    its ``CRM: …`` note to the web row's Source (so the next refresh still recognises it); any
+    other carried row is kept as it was. Sorted by customer name."""
+    merged = [list(row) for row in web]
+    for crm in carried:
+        note = crm.source[crm.source.index(_CRM_MARK) :]
+        shared = {domain.lower() for domain in crm.domains}
+        target = next(
+            (
+                row
+                for row in merged
+                if shared & {d.strip().lower() for d in str(row[1] or "").split(",") if d.strip()}
+            ),
+            None,
+        )
+        if target is None:
+            merged.append(list(crm.cells()))
+        elif note not in str(target[6] or ""):
+            target[6] = f"{target[6]} · {note}" if target[6] else note
+    return [tuple(row) for row in sorted(merged, key=lambda row: str(row[0] or "").lower())]
+
+
 def existing_customers_document(
     run: ExaAgentRun,
     *,
     company_domain: str,
     as_of: date,
     checks: Mapping[str, DomainCheck],
+    carried_rows: Sequence[CustomerRow] = (),
 ) -> KnowledgeDocument:
     """``proof/customers.md``. The list lives in the body only: the Brand-context editor copies a
     document's old front matter forward when a person edits its body, so a second copy there would
-    silently ignore their correction. The front matter carries the run header and sources."""
+    silently ignore their correction. The front matter carries the run header and sources.
+
+    ``carried_rows`` are the CRM rows of the version this refresh replaces (R-4.5): they are kept,
+    and the website's findings are merged around them by domain."""
     data = _structured(run)
     customers = [
         (index, c) for index, c in enumerate(data.get("customers") or []) if isinstance(c, dict)
@@ -417,14 +535,9 @@ def existing_customers_document(
         )
         for index, c in sorted(customers, key=lambda pair: str(pair[1].get("name") or "").lower())
     ]
-    table = (
-        _table(
-            ("Customer", "Domains", "Domain check", "How they buy", "Evidence", "Quote", "Source"),
-            rows,
-        )
-        if rows
-        else "_Not established._\n"
-    )
+    if carried_rows:
+        rows = _merge_crm_rows(rows, carried_rows)
+    table = _table(_CUSTOMER_COLUMNS, rows) if rows else "_Not established._\n"
     gaps = [_failure_note(run)] if run.status != "completed" else []
     body = "\n".join(
         [

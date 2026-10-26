@@ -1,7 +1,7 @@
 # Creative delivery plan update
 
 - User requested explicit next steps after the successful local ad harvest. Updated the existing Linear execution guide and project description; preserved historical architecture/implementation documents with a pointer to the current sequence.
-- Current guide: `docs/superpowers/specs/2026-09-08-reference-led-creative-delivery.md`; Linear document id `6a3c2c38-b6ec-495d-929d-f5e292296b9c`, title `Next steps: reference-led editable creatives`.
+- Current guide: `docs/superpowers/specs/archive/2026-09-08-reference-led-creative-delivery.md`; Linear document id `6a3c2c38-b6ec-495d-929d-f5e292296b9c`, title `Next steps: reference-led editable creatives`.
 - Sequence: one current-engine automatic-reference baseline; one matched layered candidate; real reference/visual/editing acceptance; then five creative families and brand/format matrix. Single creative-owner candidate borrows the website ownership pattern and retains canonical Scene geometry. No brand-specific layouts, mandatory scene prompts or flat-image decomposition default.
 - Updated PE-3–PE-9 acceptance and scope. Removed PE-2 blocking dependencies for single frozen-build work; PE-2 remains required before mixed-policy concurrent runs. PE-4 now explicitly tracks one creative owner. Existing In Progress/Done states were preserved; do not infer all earlier repairs are reconciled in Linear.
 - Created PE-16 (onboarding/Meta/refresh/catalog/partial recovery), PE-17 (safe concurrent artwork production and cross-process idempotency), PE-18 (provider capabilities and complete 3–4 minute timing proof). These are Todo, unassigned; no teammate messages or assignments.

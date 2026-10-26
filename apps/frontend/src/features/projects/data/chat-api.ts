@@ -29,7 +29,40 @@ const CHAT_MOUNT = "/api/v1";
 
 export type ChatTransport =
   | { mode: "fixture" }
-  | { mode: "http"; prefix: string };
+  // `workspaceId` is the workspace the page was loaded for (set by the protected layout).
+  | { mode: "http"; prefix: string; workspaceId?: string | null };
+
+/**
+ * The header a chat request names its page's workspace in. The BFF refuses the request with
+ * `WORKSPACE_CHANGED` when the selected workspace has changed since the page loaded, and the
+ * page reloads, so a page never shows one workspace with another's data (L4-4).
+ */
+export const PAGE_WORKSPACE_HEADER = "X-Clue-Page-Workspace";
+export const WORKSPACE_CHANGED = "WORKSPACE_CHANGED";
+
+/** What a page does when its workspace changed under it: load again, under the new one. */
+let onWorkspaceChanged: () => void = () => window.location.reload();
+
+/** For tests: replace the reload. */
+export function setWorkspaceChangedHandler(handler: () => void): void {
+  onWorkspaceChanged = handler;
+}
+
+/** Name the page's workspace on a chat request's headers. */
+export function withPageWorkspace(
+  transport: Extract<ChatTransport, { mode: "http" }>,
+  headers: Headers,
+): Headers {
+  if (transport.workspaceId) headers.set(PAGE_WORKSPACE_HEADER, transport.workspaceId);
+  return headers;
+}
+
+/** The refusal of ``response``; a workspace change also reloads the page. */
+export async function chatRefusalOf(response: Response): Promise<ClueChatApiError> {
+  const refusal = await refusalOf(response);
+  if (refusal.code === WORKSPACE_CHANGED) onWorkspaceChanged();
+  return refusal;
+}
 
 export const FIXTURE_TRANSPORT: ChatTransport = { mode: "fixture" };
 
@@ -169,12 +202,12 @@ export async function chatRequest(
   if (idempotencyKey) headers.set("Idempotency-Key", idempotencyKey);
   const response = await fetch(chatUrl(transport, path, query), {
     method,
-    headers,
+    headers: withPageWorkspace(transport, headers),
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
     signal,
   });
-  if (!response.ok) throw await refusalOf(response);
+  if (!response.ok) throw await chatRefusalOf(response);
   if (response.status === 204) return null;
   return response.json();
 }

@@ -31,7 +31,7 @@
 
 ## Documents
 
-- `docs/superpowers/specs/2026-09-22-arv2-ai-ark-committee-discovery-design.md`: reviewed-base
+- `docs/superpowers/specs/archive/2026-09-22-arv2-ai-ark-committee-discovery-design.md`: reviewed-base
   findings, approved flow, proposed contracts, identity, provenance, pins, replay, erasure,
   failure/spend behavior, version rollout and acceptance matrix.
 - `docs/superpowers/plans/2026-09-22-arv2-ai-ark-committee-discovery.md`: nine-step dependency

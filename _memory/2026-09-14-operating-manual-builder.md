@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-14. **Branch:** `research-streaming` (worktree `san-salvador`).
 **Commit:** `e6b87359e`, base `7d4c2def9`. Local only.
-**Design:** `docs/superpowers/specs/2026-09-13-head-of-abm-operating-manual-design.md`.
+**Design:** `docs/superpowers/specs/archive/2026-09-13-head-of-abm-operating-manual-design.md`.
 **Report:** `.superpowers/sdd/2026-09-13-operating-manual/task-1-report.md`.
 
 ## What exists now

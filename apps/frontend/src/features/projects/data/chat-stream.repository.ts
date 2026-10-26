@@ -1,17 +1,14 @@
-import { z } from "zod";
 import {
-  SseFrameReader,
   TERMINAL_TURN_EVENTS,
   parseChatStreamEvent,
   type ChatStreamEvent,
 } from "../model/chat-events";
+import type { ChatTransport } from "./chat-api";
 import {
-  ClueChatApiError,
-  chatRequest,
-  chatUrl,
-  refusalOf,
-  type ChatTransport,
-} from "./chat-api";
+  ChatStreamProtocolError,
+  openTokenStream,
+  type ChatStreamHandle,
+} from "./chat-sse";
 import type { FixtureChatState } from "./chat-fixture-state";
 import { fixtureLaunchEvents, fixtureTurnEvents } from "./chat.fixture";
 
@@ -44,19 +41,7 @@ import { fixtureLaunchEvents, fixtureTurnEvents } from "./chat.fixture";
  *   transcript. Nothing here can change a turn's outcome.
  */
 
-const StreamTokenSchema = z
-  .object({
-    data: z.object({
-      schema_version: z.string(),
-      stream_token: z.string().min(1),
-      turn_id: z.string().min(1),
-    }),
-  })
-  .transform((wire) => wire.data.stream_token);
-
-export interface ChatStreamHandle {
-  close(): void;
-}
+export type { ChatStreamHandle };
 
 export type ChatStreamCloseReason = "terminal" | "reset";
 
@@ -79,16 +64,6 @@ export interface ChatStreamRepository {
   attach(attachment: ChatStreamAttachment): ChatStreamHandle;
 }
 
-const MAX_RECONNECT_ATTEMPTS = 6;
-const BACKOFF_MS = [250, 500, 1000, 2000, 4000, 8000];
-
-class ChatStreamProtocolError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ChatStreamProtocolError";
-  }
-}
-
 function turnPath(
   projectId: string,
   threadId: string,
@@ -105,155 +80,57 @@ export function createHttpChatStreamRepository(
 ): ChatStreamRepository {
   return {
     attach(attachment) {
-      const controller = new AbortController();
-      let closed = false;
-      // The cursor the *reducer* would send: the highest event actually
-      // delivered to the consumer, not the highest the server mentioned.
-      let cursor = attachment.lastEventId;
       let terminal = false;
-      let reset = false;
-
-      const close = () => {
-        if (closed) return;
-        closed = true;
-        controller.abort();
-      };
-
-      void (async () => {
-        for (let attempt = 0; attempt <= MAX_RECONNECT_ATTEMPTS; attempt += 1) {
-          if (closed || terminal) break;
-          try {
-            const token = StreamTokenSchema.parse(
-              await chatRequest(
-                transport,
-                turnPath(
-                  attachment.projectId,
-                  attachment.threadId,
-                  attachment.turnId,
-                  "/stream_token",
-                ),
-                { method: "POST", signal: controller.signal },
-              ),
-            );
-            const headers = new Headers({ Accept: "text/event-stream" });
-            if (cursor !== null && cursor > 0) {
-              headers.set("Last-Event-ID", String(cursor));
-            }
-            const response = await fetch(
-              chatUrl(
-                transport,
-                turnPath(
-                  attachment.projectId,
-                  attachment.threadId,
-                  attachment.turnId,
-                  "/events",
-                ),
-                { stream_token: token },
-              ),
-              { headers, cache: "no-store", signal: controller.signal },
-            );
-            if (!response.ok) throw await refusalOf(response);
-            if (!response.body) throw new Error("the turn stream returned no body");
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            const frames = new SseFrameReader();
-            readLoop: for (;;) {
-              const chunk = await reader.read();
-              if (chunk.done) break;
-              for (const frame of frames.push(
-                decoder.decode(chunk.value, { stream: true }),
-              )) {
-                const parsed = parseChatStreamEvent(
-                  safeJson(frame.data),
-                  frame.event,
-                );
-                if (!parsed.ok) {
-                  if (parsed.fatal) {
-                    await reader.cancel().catch(() => undefined);
-                    throw new ChatStreamProtocolError(parsed.reason);
-                  }
-                  attachment.onWarning?.(parsed.reason);
-                  continue;
-                }
-                if (
-                  parsed.event.projectId !== attachment.projectId ||
-                  parsed.event.threadId !== attachment.threadId ||
-                  parsed.event.turnId !== attachment.turnId
-                ) {
-                  await reader.cancel().catch(() => undefined);
-                  throw new ChatStreamProtocolError(
-                    "turn-stream frame identity mismatch",
-                  );
-                }
-                if (parsed.event.eventId !== null) {
-                  cursor = Math.max(cursor ?? 0, parsed.event.eventId);
-                }
-                // A connect-time `stream.reset` restarts the backlog from zero,
-                // so the reconnect cursor must go with it or the repaired
-                // stream would resume past the events it was told to re-read.
-                if (
-                  parsed.event.type === "stream.reset" &&
-                  parsed.event.eventId === null
-                ) {
-                  cursor = 0;
-                  reset = true;
-                }
-                if (isTerminal(parsed.event)) terminal = true;
-                attachment.onEvent(parsed.event);
-                if (terminal || reset) {
-                  // Terminal state is known from the frame itself. Do not wait
-                  // for a proxy or TCP timeout before finalizing the UI.
-                  await reader.cancel().catch(() => undefined);
-                  break readLoop;
-                }
-              }
-            }
-            if (terminal || reset || closed) break;
-          } catch (error) {
-            if (closed || isAbort(error)) break;
-            if (error instanceof ChatStreamProtocolError) {
-              attachment.onError?.(error);
-              return;
-            }
-            if (
-              error instanceof ClueChatApiError &&
-              (error.status === 401 || error.status === 403 || error.status === 404)
-            ) {
-              attachment.onError?.(error);
-              return;
-            }
-            if (attempt >= MAX_RECONNECT_ATTEMPTS) {
-              attachment.onError?.(error);
-              return;
-            }
-            await delay(BACKOFF_MS[Math.max(0, attempt)] ?? 8000);
+      return openTokenStream({
+        transport,
+        mintPath: turnPath(
+          attachment.projectId,
+          attachment.threadId,
+          attachment.turnId,
+          "/stream_token",
+        ),
+        eventsPath: turnPath(
+          attachment.projectId,
+          attachment.threadId,
+          attachment.turnId,
+          "/events",
+        ),
+        lastEventId: attachment.lastEventId,
+        onFrame(frame) {
+          const parsed = parseChatStreamEvent(frame.data, frame.event);
+          if (!parsed.ok) {
+            if (parsed.fatal) throw new ChatStreamProtocolError(parsed.reason);
+            attachment.onWarning?.(parsed.reason);
+            return "continue";
           }
-        }
-        if (!closed && (terminal || reset)) {
+          if (
+            parsed.event.projectId !== attachment.projectId ||
+            parsed.event.threadId !== attachment.threadId ||
+            parsed.event.turnId !== attachment.turnId
+          ) {
+            throw new ChatStreamProtocolError("turn-stream frame identity mismatch");
+          }
+          // A connect-time `stream.reset` restarts the backlog from zero, and
+          // the durable read repairs the transcript, so the stream ends here.
+          const reset =
+            parsed.event.type === "stream.reset" && parsed.event.eventId === null;
+          terminal = isTerminal(parsed.event);
+          attachment.onEvent(parsed.event);
+          return terminal || reset ? "stop" : "continue";
+        },
+        onError(error) {
+          attachment.onError?.(error);
+        },
+        onStopped() {
           attachment.onClosed?.(terminal ? "terminal" : "reset");
-        }
-      })();
-
-      return { close };
+        },
+      });
     },
   };
 }
 
 function isTerminal(event: ChatStreamEvent): boolean {
   return TERMINAL_TURN_EVENTS.has(event.type);
-}
-
-function isAbort(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "AbortError";
-}
-
-function safeJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
 }
 
 function delay(ms: number): Promise<void> {

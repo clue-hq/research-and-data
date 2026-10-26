@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid5
@@ -28,6 +29,7 @@ from clue_agents import (
     ProjectContextArtifact,
     ResolvedAgentProfile,
 )
+from clue_agents.workspace_snapshot import SnapshotManifest
 from clue_api.account_research_wiring import (
     AccountResearchAgentRuntime,
     build_account_research_execution,
@@ -42,6 +44,11 @@ from clue_api.agent_turn_wiring import (
     DbAgentHistoryStore,
     DbAgentTurnJournal,
     DurableAgentArtifactStore,
+)
+from clue_api.agent_workspace_files_card import (
+    WORKSPACE_FILES_CARD_NAME,
+    WORKSPACE_FILES_MEDIA_TYPE,
+    build_workspace_files_card,
 )
 from clue_api.arv2.display.gather import SubjectNotFound, resolve_subject
 from clue_config import Settings
@@ -538,7 +545,7 @@ class PreparedAccountResearchTurnRunner:
         )
         await self._drive_execution(execution_id)
 
-        lease = self._workspaces.acquire(
+        lease = await self._workspaces.acquire_restored(
             workspace_id=workspace_id,
             project_id=project.project_id,
             thread_id=f"account-research-{account_run_id}",
@@ -581,6 +588,23 @@ class PreparedAccountResearchTurnRunner:
                         ),
                     ),
                 )
+            # F3 Phase 2 (WS-28, spec D-23): a research run's rough work expires on the same
+            # schedule as a chat's, so its turn opens on the same honest card — what it has, how
+            # old it is, and what is gone with the receipt saying how to fetch it again. Built
+            # from the file list this lease restored, never from the worker's disk (AW-23).
+            project_context_artifacts = (
+                *project_context_artifacts,
+                await self._workspace_files_context_artifact(
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    account_entity_id=account_entity_id,
+                    account_run_id=account_run_id,
+                    manifest=(
+                        None if lease.snapshot_base is None else lease.snapshot_base.manifest
+                    ),
+                    now=datetime.now(UTC),
+                ),
+            )
             card_ref = await self._artifact(
                 workspace_id,
                 ACCOUNT_RESEARCH_CARD_MEDIA_TYPE,
@@ -726,7 +750,7 @@ class PreparedAccountResearchTurnRunner:
             await self._complete_recipe_if_needed(outcome)
             return outcome
         finally:
-            lease.release()
+            await self._workspaces.release_saved(lease)
 
     async def _complete_recipe_if_needed(self, outcome: AgentTurnOutcome) -> None:
         if outcome.status is not AgentExecutionStatus.COMPLETED:
@@ -780,6 +804,40 @@ class PreparedAccountResearchTurnRunner:
             media_type=media_type,
             subject_bindings=((UUID(str(account_entity_id)), "context"),),
             project_bindings=((project_id, "account_research_context"),),
+        )
+
+    async def _workspace_files_context_artifact(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        account_entity_id: EntityId,
+        account_run_id: RunId,
+        manifest: SnapshotManifest | None,
+        now: datetime,
+    ) -> ProjectContextArtifact:
+        """Persist this run's file card and name it for the constitution (F3 Phase 2, WS-28).
+
+        The domain ref is the research **thread** — the same shape the chat path uses — because
+        the files belong to the conversation's workspace, not to the account under research.
+        """
+
+        ref = await self._artifact(
+            workspace_id,
+            WORKSPACE_FILES_MEDIA_TYPE,
+            build_workspace_files_card(manifest, now=now),
+            account_entity_id,
+            project_id,
+        )
+        return ProjectContextArtifact(
+            name=WORKSPACE_FILES_CARD_NAME,
+            artifact_ref=ref,
+            domain_ref=DomainObjectRef(
+                workspace_id=workspace_id,
+                object_type="thread",
+                object_id=f"account-research-{account_run_id}",
+                version=None,
+            ),
         )
 
     async def _load_scope(

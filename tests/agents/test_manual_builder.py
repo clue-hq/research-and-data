@@ -46,8 +46,10 @@ def test_tools_chapter_has_one_section_per_granted_tool_in_profile_order(
     granted = [pin.name for pin in profile.tools]  # type: ignore[attr-defined]
     # v61 replaces the two ICP/product gate tools with one automatic targeting tool.
     # 21 since head-of-abm@v62 granted web_search@1; 18 since v68 dropped three retired-lane tools;
-    # 19 since v71 granted manage_products@1.
-    assert len(granted) == 19
+    # 19 since v71 granted manage_products@1; 23 since v76 granted the four CRM-integration tools;
+    # 26 since v77 granted the three CRM write tools; 29 since v78 granted read_crm_targets,
+    # find_crm_list and link_crm_list; 30 since v82 granted propose_clue_fields_setup.
+    assert len(granted) == 30
 
     headings = [line[3:].strip() for line in chapter.body.splitlines() if line.startswith("## ")]
     # Every granted tool, in profile order, then the two fixed sections.
@@ -175,3 +177,16 @@ def _sections(body: str) -> dict[str, str]:
         elif current is not None:
             sections[current].append(line)
     return {key: "\n".join(value) for key, value in sections.items()}
+
+
+@pytest.mark.parametrize("gate", ["crm_write_permission", ""])
+def test_a_tool_that_opens_a_card_spells_out_the_link_the_chat_recognises(gate: str) -> None:
+    """The chat draws a card only for ``object_type == "agent_gate"`` (CRM card, 2026-10-22)."""
+
+    line = manual._gate_line(gate)
+
+    assert line.startswith("- Opens a human gate: yes")
+    assert (
+        'Put it into `open_gate_refs` as `{object_type: "agent_gate", object_id: <the gate id it '
+        "returns>}` when you finalize, or the human never sees the card." in line
+    )

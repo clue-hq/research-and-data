@@ -1,0 +1,190 @@
+/* The CRM provider page (Figma NcLl2r0dzVDN28xAQCwvM1, boards 02 2308:1592 / 03 2308:1593 / 07 2310:2463). */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.headerText,
+.stack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border: 1px solid var(--clue-ds-color-border-subtle);
+  border-radius: 8px;
+  background: var(--clue-ds-color-bg-neutral);
+  padding: 20px;
+}
+
+.researchCard {
+  gap: 12px;
+}
+
+.cardTitle,
+.providerName {
+  margin: 0;
+  color: var(--clue-ds-color-content-neutral);
+  font-family: var(--clue-ds-typography-text-default-medium-font-family);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.label {
+  margin: 0;
+  color: var(--clue-ds-color-content-neutral);
+  font-family: var(--clue-ds-typography-text-default-medium-font-family);
+  font-size: var(--clue-ds-typography-text-default-medium-font-size);
+  font-weight: var(--clue-ds-typography-text-default-medium-font-weight);
+  line-height: var(--clue-ds-typography-text-default-medium-line-height);
+}
+
+.subtle,
+.warning {
+  margin: 0;
+  font-family: var(--clue-ds-typography-text-sm-font-family);
+  font-size: var(--clue-ds-typography-text-sm-font-size);
+  font-weight: var(--clue-ds-typography-text-sm-font-weight);
+  line-height: var(--clue-ds-typography-text-sm-line-height);
+}
+
+.subtle {
+  color: var(--clue-ds-color-content-subtle);
+}
+
+.warning {
+  color: var(--clue-ds-color-content-utility-warning);
+}
+
+.details {
+  display: grid;
+  grid-template-columns: minmax(0, 245fr) minmax(0, 230fr) minmax(0, 230fr);
+  gap: 24px;
+}
+
+.divider {
+  height: 1px;
+  flex: 0 0 auto;
+  background: var(--clue-ds-color-border-subtle);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.row > .stack {
+  flex: 1;
+}
+
+/* "Read-only setup progress" (2338:2504). */
+.progress {
+  display: flex;
+  flex-direction: column;
+}
+
+.progressHead,
+.progressRow {
+  display: grid;
+  grid-template-columns: minmax(0, 560fr) minmax(0, 144fr);
+  gap: 16px;
+  padding: 8px;
+}
+
+.progressHead {
+  background: var(--clue-ds-color-bg-page);
+  color: var(--clue-ds-color-content-subtle);
+  font-family: var(--clue-ds-typography-text-default-medium-font-family);
+  font-size: var(--clue-ds-typography-text-default-medium-font-size);
+  font-weight: var(--clue-ds-typography-text-default-medium-font-weight);
+  line-height: var(--clue-ds-typography-text-default-medium-line-height);
+}
+
+.progressHead p {
+  margin: 0;
+}
+
+.progressRow {
+  align-items: center;
+  border-top: 1px solid var(--clue-ds-color-border-subtle);
+}
+
+/* "Option / …" (2309:2010): a 16px radio, 12px from its label. */
+.option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.option input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--clue-ds-color-content-neutral);
+  cursor: pointer;
+}
+
+.option input:disabled,
+.option input:disabled + .stack {
+  cursor: default;
+}
+
+@media (max-width: 640px) {
+  .details {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .progressHead,
+  .progressRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+.detailsBody,
+.optionGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+.detailsBody {
+  gap: 12px;
+}
+
+.optionGroup {
+  gap: 16px;
+}

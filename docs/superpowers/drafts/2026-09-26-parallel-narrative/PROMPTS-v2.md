@@ -1,6 +1,6 @@
 # Parallel narrative: exact prompt draft v2
 
-Review-only companion to the [design spec](../../specs/2026-09-26-arv4-parallel-narrative-design.md).
+Review-only companion to the [design spec](../../specs/archive/2026-09-26-arv4-parallel-narrative-design.md).
 Previous trial instructions are preserved in [PROMPTS-v1.md](PROMPTS-v1.md).
 Not installed in the agent catalog. These are section-writer instructions, not a researcher skill.
 They contain no Zafran, Clue, healthcare, or other fixture-specific assumptions.

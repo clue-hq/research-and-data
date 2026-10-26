@@ -2,7 +2,7 @@
 
 Branch `lane3/slice5-design-spend` (unpushed, local commits only), off `research-streaming` after
 PR #62 lifted the R12 hold. Design
-`docs/superpowers/specs/2026-09-18-lane3-slice5-design-subsystem-design.md`; plan
+`docs/superpowers/specs/archive/2026-09-18-lane3-slice5-design-subsystem-design.md`; plan
 `docs/superpowers/plans/2026-09-18-lane3-slice5-design-subsystem.md`. SDD with Opus implementers;
 the controller reviewed every task personally and re-ran each task's named suites first-hand.
 

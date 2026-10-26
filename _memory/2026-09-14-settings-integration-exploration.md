@@ -103,7 +103,7 @@ Connections / MCP server / Integrations — lifted as the dummy's inert Coming-s
 
 Slice order agreed: (1) Profile + Workspace + Members; (2) Research fields after the co-founder's
 redraw; Billing and Pages dummy. **Design spec written 2026-09-15 for founder review:
-`docs/superpowers/specs/2026-09-15-settings-integration-design.md` (carries assumptions A1 overlay on
+`docs/superpowers/specs/archive/2026-09-15-settings-integration-design.md` (carries assumptions A1 overlay on
 Billing/Pages dummies, A2 real workspace name in the profile-menu caption). No code yet; the plan
 is drawn only after the founder approves the spec.**
 

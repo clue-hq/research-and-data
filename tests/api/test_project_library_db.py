@@ -34,6 +34,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import ArtifactRef, MountRequest, WorkspacePolicy
+from clue_agents.worker_area import ChatScope
 from clue_api import project_library_refresh
 from clue_api.agent_turn_wiring import AgentPrivacyService, DurableAgentArtifactStore
 from clue_api.arv2.project_documents import PLAN_PATH, ProjectPlanWrite, write_project_plan
@@ -41,6 +42,8 @@ from clue_api.frontend_read.app import FRONTEND_READ_PREFIX
 from clue_api.project_context_files import PROJECT_LIBRARY_PREFIX
 from clue_api.project_document_tools import DbProjectDocumentService
 from clue_api.project_library import (
+    ProjectLibrarySnapshot,
+    bump_project_library_epoch,
     compile_project_library,
     ensure_project_library,
     project_library_digest,
@@ -254,8 +257,7 @@ def test_library_refreshes_changed_renderer_without_churning_unchanged_generatio
                         storage,
                         artifacts,
                         factory,
-                        workspace_id=project.workspace_id,
-                        project_id=project.project_id,
+                        chat=ChatScope(project.workspace_id, project.project_id, "thread-1"),
                     )
                 monkeypatch.setattr(library, "_LIBRARY_FORMAT_VERSION", 2, raising=False)
                 second = await ensure_project_library(
@@ -263,10 +265,14 @@ def test_library_refreshes_changed_renderer_without_churning_unchanged_generatio
                     storage,
                     artifacts,
                     factory,
-                    workspace_id=project.workspace_id,
-                    project_id=project.project_id,
+                    chat=ChatScope(project.workspace_id, project.project_id, "thread-1"),
                 )
-                tree = root / project.workspace_id / "projects" / project.project_id / "library"
+                tree = (
+                    factory.chat_host_path(
+                        ChatScope(project.workspace_id, project.project_id, "thread-1")
+                    )
+                    / "project"
+                )
                 assert second.digest != first.digest
                 assert (tree / "decisions.md").read_text() != "old decision view"
                 assert _QUOTE in (tree / "decisions.md").read_text()
@@ -277,8 +283,7 @@ def test_library_refreshes_changed_renderer_without_churning_unchanged_generatio
                     storage,
                     artifacts,
                     factory,
-                    workspace_id=project.workspace_id,
-                    project_id=project.project_id,
+                    chat=ChatScope(project.workspace_id, project.project_id, "thread-1"),
                 )
                 assert third.digest == second.digest
                 assert tree.stat().st_ino == before.st_ino
@@ -318,10 +323,9 @@ def test_the_library_is_rebuilt_only_when_a_contributing_row_changes(tmp_path: P
                     storage,
                     artifacts,
                     factory,
-                    workspace_id=ws,
-                    project_id=project_id,
+                    chat=ChatScope(ws, project_id, "thread-1"),
                 )
-                tree = root / ws / "projects" / project_id / "library"
+                tree = factory.chat_host_path(ChatScope(ws, project_id, "thread-1")) / "project"
                 assert (tree / "status.md").is_file()
                 assert (tree / "decisions.md").is_file()
                 assert "Nothing recorded yet." in (tree / "decisions.md").read_text()
@@ -345,13 +349,12 @@ def test_the_library_is_rebuilt_only_when_a_contributing_row_changes(tmp_path: P
                     storage,
                     artifacts,
                     factory,
-                    workspace_id=ws,
-                    project_id=project_id,
+                    chat=ChatScope(ws, project_id, "thread-1"),
                 )
                 after = tree.stat()
                 assert second.digest == first.digest
                 assert (after.st_ino, after.st_mtime_ns) == (before.st_ino, before.st_mtime_ns)
-                assert [child.name for child in tree.parent.iterdir()] == ["library"]
+                assert [child.name for child in tree.parent.iterdir()] == ["project"]
 
                 # …and a recorded decision moves the digest, so the next ensure replaces it.
                 await _seed_statement(conn, project, artifacts)
@@ -362,11 +365,9 @@ def test_the_library_is_rebuilt_only_when_a_contributing_row_changes(tmp_path: P
                     storage,
                     artifacts,
                     factory,
-                    workspace_id=ws,
-                    project_id=project_id,
+                    chat=ChatScope(ws, project_id, "thread-1"),
                 )
                 assert third.digest == moved
-                assert tree.stat().st_ino != before.st_ino
                 assert _QUOTE in (tree / "decisions.md").read_text()
                 assert json.loads((tree / "index.json").read_text())["library_sha256"] == moved
 
@@ -451,9 +452,13 @@ def test_the_library_shows_one_version_per_document_and_the_pinned_icp_wins(
             root, factory, _sink = make_factory(tmp_path)
             try:
                 await ensure_project_library(
-                    conn, storage, artifacts, factory, workspace_id=ws, project_id=project_id
+                    conn,
+                    storage,
+                    artifacts,
+                    factory,
+                    chat=ChatScope(ws, project_id, "thread-1"),
                 )
-                tree = root / ws / "projects" / project_id / "library"
+                tree = factory.chat_host_path(ChatScope(ws, project_id, "thread-1")) / "project"
                 assert (tree / "audience" / "icp-gi-dac.md").read_text() == _PINNED_ICP
                 assert not (tree / "audience" / "icp-gi-dac.v2.md").exists()
                 assert [child.name for child in (tree / "audience").iterdir()] == ["icp-gi-dac.md"]
@@ -517,10 +522,14 @@ def test_the_artifact_index_lists_design_documents_by_reference(tmp_path: Path) 
             root, factory, _sink = make_factory(tmp_path)
             try:
                 snapshot = await ensure_project_library(
-                    conn, storage, artifacts, factory, workspace_id=ws, project_id=project_id
+                    conn,
+                    storage,
+                    artifacts,
+                    factory,
+                    chat=ChatScope(ws, project_id, "thread-1"),
                 )
                 assert snapshot.index.artifacts == 1
-                tree = root / ws / "projects" / project_id / "library"
+                tree = factory.chat_host_path(ChatScope(ws, project_id, "thread-1")) / "project"
                 raw = (tree / "artifacts" / "index.json").read_text()
                 document = json.loads(raw)
                 assert document["schema_version"] == "1"
@@ -559,7 +568,11 @@ def test_the_artifact_index_lists_design_documents_by_reference(tmp_path: Path) 
                     != before
                 )
                 await ensure_project_library(
-                    conn, storage, artifacts, factory, workspace_id=ws, project_id=project_id
+                    conn,
+                    storage,
+                    artifacts,
+                    factory,
+                    chat=ChatScope(ws, project_id, "thread-1"),
                 )
                 refreshed = json.loads((tree / "artifacts" / "index.json").read_text())
                 assert {item["id"] for item in refreshed["artifacts"]} == {
@@ -602,20 +615,33 @@ def _refresher(
     artifacts: DurableAgentArtifactStore,
     factory: object,
 ) -> ProjectLibraryRefresher:
-    return ProjectLibraryRefresher(
-        storage=storage,  # type: ignore[arg-type]
-        artifacts=artifacts,
-        workspaces=factory,  # type: ignore[arg-type]
-        conn_factory=conn_session_factory(conn),
+    del storage, artifacts, factory  # since AW-20 the refresher touches no disk and no storage
+    return ProjectLibraryRefresher(conn_factory=conn_session_factory(conn))
+
+
+async def _next_turn_sync(
+    conn: AsyncConnection,
+    storage: _MemoryStorage,
+    artifacts: DurableAgentArtifactStore,
+    factory: object,
+    chat: ChatScope,
+) -> ProjectLibrarySnapshot:
+    """What the chat's next turn does before the agent runs: sync its own library copy."""
+
+    return await ensure_project_library(
+        conn,
+        storage,  # type: ignore[arg-type]
+        artifacts,
+        factory,  # type: ignore[arg-type]
+        chat=chat,
     )
 
 
-def test_the_agents_plan_write_refreshes_the_library_without_a_turn(tmp_path: Path) -> None:
-    """The plan the agent writes is readable in the library before any turn runs again.
+def test_the_agents_plan_write_reaches_the_chats_copy_on_its_next_turn(tmp_path: Path) -> None:
+    """The plan the agent writes moves the digest, so the chat's next turn syncs it in (AW-20).
 
-    Nothing depends on this for correctness — the next turn's digest would rebuild it anyway —
-    but the frontend reads the library's rendering, and a plan that appears only after the next
-    turn reads as a write that did not land.
+    Nothing renders the library outside a turn any more: the frontend reads the rows, and each
+    chat's copy follows the digest at the start of that chat's own turn.
     """
 
     async def scenario() -> None:
@@ -625,9 +651,13 @@ def test_the_agents_plan_write_refreshes_the_library_without_a_turn(tmp_path: Pa
             root, factory, _sink = make_factory(tmp_path)
             try:
                 await ensure_project_library(
-                    conn, storage, artifacts, factory, workspace_id=ws, project_id=project_id
+                    conn,
+                    storage,
+                    artifacts,
+                    factory,
+                    chat=ChatScope(ws, project_id, "thread-1"),
                 )
-                tree = root / ws / "projects" / project_id / "library"
+                tree = factory.chat_host_path(ChatScope(ws, project_id, "thread-1")) / "project"
                 assert not (tree / "plan.md").exists()
 
                 written = await DbProjectDocumentService(
@@ -647,6 +677,10 @@ def test_the_agents_plan_write_refreshes_the_library_without_a_turn(tmp_path: Pa
                 )
 
                 assert written.version == 1
+                assert not (tree / "plan.md").exists()
+                await _next_turn_sync(
+                    conn, storage, artifacts, factory, ChatScope(ws, project_id, "thread-1")
+                )
                 assert "Twenty qualified conversations" in (tree / "plan.md").read_text()
                 assert "Version 1" in (tree / "status.md").read_text()
             finally:
@@ -655,7 +689,7 @@ def test_the_agents_plan_write_refreshes_the_library_without_a_turn(tmp_path: Pa
     run_async(scenario())
 
 
-def test_the_humans_edit_through_the_route_refreshes_the_library(tmp_path: Path) -> None:
+def test_the_humans_edit_through_the_route_reaches_the_chats_copy(tmp_path: Path) -> None:
     """The other hand on the same file: the PUT the project-document editor sends.
 
     Through the real app, so the assertion covers the composition seam (the router is handed a
@@ -682,9 +716,13 @@ def test_the_humans_edit_through_the_route_refreshes_the_library(tmp_path: Path)
             root, factory, _sink = make_factory(tmp_path)
             try:
                 await ensure_project_library(
-                    conn, storage, artifacts, factory, workspace_id=ws, project_id=project_id
+                    conn,
+                    storage,
+                    artifacts,
+                    factory,
+                    chat=ChatScope(ws, project_id, "thread-1"),
                 )
-                tree = root / ws / "projects" / project_id / "library"
+                tree = factory.chat_host_path(ChatScope(ws, project_id, "thread-1")) / "project"
                 assert "Twenty qualified conversations" in (tree / "plan.md").read_text()
 
                 app = create_projections_app(
@@ -713,6 +751,9 @@ def test_the_humans_edit_through_the_route_refreshes_the_library(tmp_path: Path)
                     )
 
                 assert response.status_code == 200, response.text
+                await _next_turn_sync(
+                    conn, storage, artifacts, factory, ChatScope(ws, project_id, "thread-1")
+                )
                 assert "the human typed this line" in (tree / "plan.md").read_text()
                 assert "Twenty qualified conversations" not in (tree / "plan.md").read_text()
             finally:
@@ -725,8 +766,9 @@ def test_erasing_a_quoted_statement_takes_its_words_out_of_decisions_md(tmp_path
     """The DSAR case the digest cannot see.
 
     Erasing a statement's evidence leaves every row the digest hashes exactly where it was — the
-    ``volunteered_statement`` row survives as audit — so the refresh after an erasure is forced.
-    The library tree is not an artifact and is therefore never tombstoned; it is *rewritten*.
+    ``volunteered_statement`` row survives as audit — so the erasure's forced refresh bumps the
+    project's library epoch (AW-20). The digest moves, and every chat's copy — on whichever worker
+    holds it — loses the quote on its next turn.
     """
 
     async def scenario() -> None:
@@ -737,9 +779,13 @@ def test_erasing_a_quoted_statement_takes_its_words_out_of_decisions_md(tmp_path
             root, factory, _sink = make_factory(tmp_path)
             try:
                 before = await ensure_project_library(
-                    conn, storage, artifacts, factory, workspace_id=ws, project_id=project_id
+                    conn,
+                    storage,
+                    artifacts,
+                    factory,
+                    chat=ChatScope(ws, project_id, "thread-1"),
                 )
-                tree = root / ws / "projects" / project_id / "library"
+                tree = factory.chat_host_path(ChatScope(ws, project_id, "thread-1")) / "project"
                 assert _QUOTE in (tree / "decisions.md").read_text()
 
                 await Stage0StatementEraser(
@@ -752,12 +798,15 @@ def test_erasing_a_quoted_statement_takes_its_words_out_of_decisions_md(tmp_path
                     library=_refresher(conn, storage, artifacts, factory),
                 ).erase_statement(workspace_id=ws, statement_id=statement_id)
 
-                assert _QUOTE not in (tree / "decisions.md").read_text()
-                # The digest did not move — which is exactly why the erasure had to say so.
+                # The epoch moved the digest, which no row could have done.
                 assert (
                     await project_library_digest(conn, workspace_id=ws, project_id=project_id)
-                    == before.digest
+                    != before.digest
                 )
+                await _next_turn_sync(
+                    conn, storage, artifacts, factory, ChatScope(ws, project_id, "thread-1")
+                )
+                assert _QUOTE not in (tree / "decisions.md").read_text()
             finally:
                 factory.close()
 
@@ -846,9 +895,10 @@ def test_the_privacy_services_erasure_refreshes_every_project_it_touched(tmp_pat
     """The erasure that actually runs in production: ``AgentPrivacyService.erase_subject``.
 
     ``Stage0StatementEraser`` has no production composition yet; the DSAR route reaches the
-    privacy service, which erases the artifacts and purges the *thread* workspaces. The project
-    library sits beside the threads and survives that purge, so it is refreshed here — forced,
-    for the same reason as above.
+    privacy service, which erases the artifacts and removes the chats' own folders it holds. A
+    copy of the project library in any other chat's folder is not reachable from here, so the
+    erasure bumps the library epoch — forced, for the same reason as above — and every chat's
+    copy resyncs on its next turn.
     """
 
     async def scenario() -> None:
@@ -873,9 +923,13 @@ def test_the_privacy_services_erasure_refreshes_every_project_it_touched(tmp_pat
             root, factory, _sink = make_factory(tmp_path)
             try:
                 await ensure_project_library(
-                    conn, storage, artifacts, factory, workspace_id=ws, project_id=project_id
+                    conn,
+                    storage,
+                    artifacts,
+                    factory,
+                    chat=ChatScope(ws, project_id, "thread-1"),
                 )
-                tree = root / ws / "projects" / project_id / "library"
+                tree = factory.chat_host_path(ChatScope(ws, project_id, "thread-1")) / "project"
                 assert _QUOTE in (tree / "decisions.md").read_text()
 
                 await AgentPrivacyService(
@@ -885,6 +939,9 @@ def test_the_privacy_services_erasure_refreshes_every_project_it_touched(tmp_pat
                     library=_refresher(conn, storage, artifacts, factory),
                 ).erase_subject(workspace_id=ws, subject_entity_id=statement_id)
 
+                await _next_turn_sync(
+                    conn, storage, artifacts, factory, ChatScope(ws, project_id, "thread-1")
+                )
                 assert _QUOTE not in (tree / "decisions.md").read_text()
             finally:
                 factory.close()
@@ -897,9 +954,8 @@ def test_a_refresh_that_fails_is_logged_and_never_reaches_the_writer(
 ) -> None:
     """A write must never fail because a rendering did.
 
-    The digest is lazy, so a refresh that could not run is not even a correctness problem — the
-    next turn rebuilds. The refusal to raise is therefore the whole contract, and ``None`` is how
-    a caller that cares can tell nothing was installed.
+    A forced refresh that cannot bump the epoch is logged and answered with ``None``; the write
+    that preceded it stands.
     """
 
     async def scenario() -> None:
@@ -910,9 +966,9 @@ def test_a_refresh_that_fails_is_logged_and_never_reaches_the_writer(
             try:
 
                 def boom(*args: object, **kwargs: object) -> object:
-                    raise RuntimeError("the library could not be compiled")
+                    raise RuntimeError("the epoch could not be bumped")
 
-                monkeypatch.setattr(project_library_refresh, "ensure_project_library", boom)
+                monkeypatch.setattr(project_library_refresh, "bump_project_library_epoch", boom)
                 refresher = _refresher(conn, storage, artifacts, factory)
 
                 written = await DbProjectDocumentService(
@@ -934,9 +990,88 @@ def test_a_refresh_that_fails_is_logged_and_never_reaches_the_writer(
                 # The write landed and is durable; only the rendering is missing.
                 assert written.version == 1
                 assert written.path == PLAN_PATH
+                assert (
+                    await refresher.refresh(workspace_id=ws, project_id=project_id, force=True)
+                    is None
+                )
+                # An unforced refresh has nothing to do since AW-20.
                 assert await refresher.refresh(workspace_id=ws, project_id=project_id) is None
-                assert not (root / ws / "projects" / project_id / "library").exists()
             finally:
                 factory.close()
+
+    run_async(scenario())
+
+
+# --- F3 Phase 1, plan Task 7 (WS-37; AW-9, AW-20): each chat's own copy, the library epoch ---
+
+
+def test_two_chats_of_one_project_hold_separate_copies(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project, storage, artifacts = await _seed(conn, "twochats")
+            ws, project_id = project.workspace_id, project.project_id
+            _root, factory, _sink = make_factory(tmp_path)
+            first, second = ChatScope(ws, project_id, "thread-a"), ChatScope(ws, project_id, "t-b")
+            try:
+                for chat in (first, second):
+                    await _next_turn_sync(conn, storage, artifacts, factory, chat)
+                status_b = factory.chat_host_path(second) / "project" / "status.md"
+                text_b = status_b.read_text()
+                assert factory.remove_chat(first) is True
+                assert status_b.read_text() == text_b
+                assert not factory.chat_host_path(first).exists()
+            finally:
+                factory.close()
+
+    run_async(scenario())
+
+
+def test_an_unchanged_project_writes_no_file_in_the_chats_copy(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project, storage, artifacts = await _seed(conn, "nochurn")
+            chat = ChatScope(project.workspace_id, project.project_id, "thread-1")
+            _root, factory, _sink = make_factory(tmp_path)
+            try:
+                await _next_turn_sync(conn, storage, artifacts, factory, chat)
+                status = factory.chat_host_path(chat) / "project" / "status.md"
+                before = status.stat()
+                await _next_turn_sync(conn, storage, artifacts, factory, chat)
+                after = status.stat()
+                assert (after.st_ino, after.st_mtime_ns) == (before.st_ino, before.st_mtime_ns)
+            finally:
+                factory.close()
+
+    run_async(scenario())
+
+
+def test_the_epoch_bump_moves_the_digest_and_is_counted() -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project, _storage, _artifacts = await _seed(conn, "epoch")
+            ws, project_id = project.workspace_id, project.project_id
+            before = await project_library_digest(conn, workspace_id=ws, project_id=project_id)
+            assert (
+                await bump_project_library_epoch(conn, workspace_id=ws, project_id=project_id) == 1
+            )
+            middle = await project_library_digest(conn, workspace_id=ws, project_id=project_id)
+            assert (
+                await bump_project_library_epoch(conn, workspace_id=ws, project_id=project_id) == 2
+            )
+            after = await project_library_digest(conn, workspace_id=ws, project_id=project_id)
+            assert len({before, middle, after}) == 3
+
+    run_async(scenario())
+
+
+def test_a_forced_refresh_bumps_the_epoch_and_touches_no_disk(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project, storage, artifacts = await _seed(conn, "forced")
+            ws, project_id = project.workspace_id, project.project_id
+            refresher = _refresher(conn, storage, artifacts, None)
+            assert await refresher.refresh(workspace_id=ws, project_id=project_id, force=True) == 1
+            assert await refresher.refresh(workspace_id=ws, project_id=project_id) is None
+            assert list(tmp_path.iterdir()) == []
 
     run_async(scenario())

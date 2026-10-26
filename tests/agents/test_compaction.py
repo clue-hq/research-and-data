@@ -108,3 +108,37 @@ def test_every_governed_agent_has_exactly_our_summariser() -> None:
         ClueSummarizationMiddleware
     ]
     assert any(type(m).__name__ == "SummarizationToolMiddleware" for m in stack)
+
+
+class _RecordingBackend:
+    """Records where bytes land; nothing exists before the first write."""
+
+    def __init__(self) -> None:
+        self.written: dict[str, str] = {}
+
+    def download_files(self, paths: list[str]) -> list[Any]:
+        raise FileNotFoundError(paths[0])
+
+    def write(self, file_path: str, content: str) -> Any:
+        self.written[file_path] = content
+
+        class _Ok:
+            error = None
+
+        return _Ok()
+
+
+def test_the_summary_names_the_path_the_history_was_written_to() -> None:
+    """Spec §12 / WS-4: the summary tells the agent where its history is, so that path must be
+    the one the bytes sit at — under ``/work/``, which the agent can read and the snapshot saves.
+    """
+    from langchain_core.messages import HumanMessage
+
+    backend = _RecordingBackend()
+    summariser, _ = build_compaction_middleware(_fake(), backend, _settings(500_000))
+    named = summariser._offload_to_backend(summariser._backend, [HumanMessage(content="hi")])
+    assert named is not None
+    assert named.startswith("/work/conversation_history/")
+    assert list(backend.written) == [named]
+    summary = summariser._build_new_messages_with_path("s", named)[0]
+    assert named in str(summary.content)

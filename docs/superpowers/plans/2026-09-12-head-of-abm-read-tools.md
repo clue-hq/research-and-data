@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, SQLAlchemy async, the `clue_toolbelt` `Tool` envelope, `clue_research.claimstore.claims_for_entities`, the ARV2 display blocks reader, pytest on the lane DB.
 
-**Spec:** `docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.4 (ruling R8). Independent of plans 1–3 for code, but the skill version chain requires plan 3's v24 to exist first (this plan mints v25).
+**Spec:** `docs/superpowers/specs/archive/2026-09-12-project-context-and-icp-authoring-design.md` §4.4 (ruling R8). Independent of plans 1–3 for code, but the skill version chain requires plan 3's v24 to exist first (this plan mints v25).
 
 ## Global Constraints
 

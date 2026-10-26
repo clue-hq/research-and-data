@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, SQLAlchemy async `text()`, pytest with the repo's rolled-back-connection DB harness, `uv`.
 
-**Spec:** `docs/superpowers/specs/2026-09-14-lane3-slice1b-jsonl-ledgers-to-postgres-design.md` (decisions D1–D3 ruled 2026-09-14). Parent: `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md` §5.5, §9 item 1b.
+**Spec:** `docs/superpowers/specs/archive/2026-09-14-lane3-slice1b-jsonl-ledgers-to-postgres-design.md` (decisions D1–D3 ruled 2026-09-14). Parent: `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md` §5.5, §9 item 1b.
 
 ## Global Constraints
 
@@ -54,7 +54,7 @@
 | `tests/api/test_onboarding_evidence_tools.py` | **Modify.** Null connection factory; refusal case; factory signature. |
 | `tests/api/test_onboarding_evidence_tools_db.py` | **Create.** The drain lands one row under the context's factory. |
 | `tests/projections/test_cost_db.py` | **Modify.** `not_covered` assertion. |
-| `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md` | **Modify.** §3 row, §5.5, §9 item 1b. |
+| `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md` | **Modify.** §3 row, §5.5, §9 item 1b. |
 | `docs/superpowers/plans/2026-09-13-lane-plan-index.md` | **Modify.** Row 1b. |
 | `_memory/2026-09-14-lane3-slice1b-jsonl-ledgers-to-postgres.md` | **Create.** Session note (controller). |
 
@@ -1334,7 +1334,7 @@ artifacts_not_configured before spending (D3, lane 3 slice 1b)."
 **Files:**
 - Modify: `platform/projections/clue_projections/cost.py` (module docstring's "What this read cannot see" paragraph; `NOT_COVERED`)
 - Modify: `tests/projections/test_cost_db.py::test_not_covered_names_every_ledger_this_read_cannot_see`
-- Modify: `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md` (§3 row "Onboarding / display / evidence spend"; §5.5 last paragraph; §9 item 1b)
+- Modify: `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md` (§3 row "Onboarding / display / evidence spend"; §5.5 last paragraph; §9 item 1b)
 - Modify: `docs/superpowers/plans/2026-09-13-lane-plan-index.md` (Lane 3 table row 1b)
 
 **Interfaces:** none new. `NOT_COVERED` keeps its name and type (`tuple[str, ...]`), exported unchanged.
@@ -1405,7 +1405,7 @@ Expected: all PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add platform/projections/clue_projections/cost.py tests/projections/test_cost_db.py docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md docs/superpowers/plans/2026-09-13-lane-plan-index.md
+git add platform/projections/clue_projections/cost.py tests/projections/test_cost_db.py docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md docs/superpowers/plans/2026-09-13-lane-plan-index.md
 git commit -m "feat(projections): the cost read's not_covered list shrinks to the design hold and pre-column rows
 
 Slice 1b put the onboarding, display and evidence ledgers on provider_call_ledger; the design

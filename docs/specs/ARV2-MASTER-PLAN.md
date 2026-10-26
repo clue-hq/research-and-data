@@ -7,7 +7,7 @@
 > presentation rule when that profile is implemented and activated. It does not require dropping
 > observations, relax privacy/use restrictions, introduce monetary vetoes, or alter current/historical
 > profile behavior today. The founder approved this policy, not application implementation or every
-> remaining frontend/schema choice. See the [quality spec §1.2](../superpowers/specs/2026-09-22-arv3-research-quality-design.md#12-policy-decisions-and-proposed-contract-changes)
+> remaining frontend/schema choice. See the [quality spec §1.2](../superpowers/specs/archive/2026-09-22-arv3-research-quality-design.md#12-policy-decisions-and-proposed-contract-changes)
 > and [implementation plan](../superpowers/plans/2026-09-22-arv3-research-quality.md).
 
 > **Committee discovery, 2026-09-22 — implemented; v2 default by founder instruction.** The v2 account
@@ -22,7 +22,7 @@
 > the default for new launches. The Probook/Zafran live canary remains outstanding; no live
 > acceptance or deployment is implied by this default change. R4 account discovery, media,
 > model settings and general-purpose `web_search@1` are unchanged. See the
-> [design](../superpowers/specs/2026-09-22-arv2-ai-ark-committee-discovery-design.md),
+> [design](../superpowers/specs/archive/2026-09-22-arv2-ai-ark-committee-discovery-design.md),
 > [implementation plan](../superpowers/plans/2026-09-22-arv2-ai-ark-committee-discovery.md) and
 > [acceptance record](../superpowers/plans/2026-09-22-arv2-ai-ark-committee-acceptance.md).
 
@@ -530,7 +530,7 @@ Onboarding as a research pipeline (parallel research agents writing `.md` artifa
 deepagent workspace), 2–5 ICP proposal artifacts, the prompt-driven interview, the final ICP
 artifact under project + brand context, durable project context (replacing scoped memory for v1),
 the Exa MCP search tool on the main agent (landed 2026-09-22 as the direct governed tool
-`web_search@1`, not MCP — spec `docs/superpowers/specs/2026-09-22-web-search-tool-design.md`),
+`web_search@1`, not MCP — spec `docs/superpowers/specs/archive/2026-09-22-web-search-tool-design.md`),
 brand context, and the chat-shell output-pane motion
 handoff. The Head-of-ABM skills adopt the co-founder's refinements content with three edits: every
 "route to memory" becomes "record in project context"; the copy-voice lint/reviewer-judge lines are
@@ -651,7 +651,7 @@ frontend: `clue-frontend/port-of-spain` (accounts, insights, contact screens). C
 
 ## Media v3 amendment — approved 2026-09-22, activation pending
 
-The approved [media design](../superpowers/specs/2026-09-22-arv2-media-research-design.md)
+The approved [media design](../superpowers/specs/archive/2026-09-22-arv2-media-research-design.md)
 and [implementation plan](../superpowers/plans/2026-09-22-arv2-media-research.md) extend
 AI Ark v2 through an explicit `media_research` catalog capability. Only jobs pinned to v3
 use these changes. The launch default stays v2 until founder-triggered live acceptance.
@@ -678,7 +678,7 @@ engine and the quarantined research pipeline remain forbidden.
 
 ## Research quality shared seams — implementation amendment, 2026-09-23
 
-The approved [quality design](../superpowers/specs/2026-09-22-arv3-research-quality-design.md)
+The approved [quality design](../superpowers/specs/archive/2026-09-22-arv3-research-quality-design.md)
 reuses only `clue_research.narrative.fields` and `.support` for the existing narrative field
 and two-sided support table, and `clue_research.compliance` for shared workspace/use policy.
 The import guard admits these substrate helpers explicitly; it still rejects the legacy

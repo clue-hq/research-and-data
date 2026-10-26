@@ -1,7 +1,7 @@
 # Settings integration contract
 
 Implemented on Irvine `settings-page`, 2026-09-15. Product decisions and the design pin are in
-[`2026-09-15-settings-integration-design.md`](../../../../docs/superpowers/specs/2026-09-15-settings-integration-design.md).
+[`2026-09-15-settings-integration-design.md`](../../../../docs/superpowers/specs/archive/2026-09-15-settings-integration-design.md).
 This document records the implemented transport and state behavior. The founder confirmed real
 Clerk email receipt and acceptance on 2026-09-16; the invitee's own selected-workspace redirect
 remains a separate observation.
@@ -236,8 +236,8 @@ without horizontal overflow and use the collapsible Settings sidebar.
 Status: as-built contract for Settings → Pages, landed 2026-09-18 on `website/custom-domain` (S2 of
 custom-domain publishing). Covers the **Pages section only**; the other settings sections are the
 settings-integration slice's to record here.
-Spec: `docs/superpowers/specs/2026-09-17-custom-domain-publishing-design.md` §7 (repo root), with
-`docs/superpowers/specs/2026-09-15-settings-integration-design.md` §2.2–2.3 for the seam and authority.
+Spec: `docs/superpowers/specs/archive/2026-09-17-custom-domain-publishing-design.md` §7 (repo root), with
+`docs/superpowers/specs/archive/2026-09-15-settings-integration-design.md` §2.2–2.3 for the seam and authority.
 
 **Reconciled 2026-09-17:** the dummy proposes one blob, `GET /api/v1/settings`, with all nine
 sections inside. This repo serves **per-section reads under `/frontend/v1`** and each section needs

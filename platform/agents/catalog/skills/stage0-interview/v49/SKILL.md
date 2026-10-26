@@ -3,12 +3,9 @@ schema_version: '1'
 kind: skill
 name: stage0-interview
 version: v49
-summary: 'Run Stage 0 from first principles over the brand''s knowledge and the project''s
-  files: ask the founding questions, give your ICP view, automatically apply the project
-  products and ICP, record decisions, write the project''s ICP, personas and plan
-  under `project/` through the document skills, discover accounts, launch research,
-  and read the project''s accounts, claims, discovery and artifacts before speaking
-  about them.'
+summary: 'Run Stage 0 from the brand''s and the project''s files: ask the founding
+  questions, give your ICP view, apply products and ICP, record decisions, write the
+  project''s documents, discover accounts, launch research, and read before you speak.'
 roles:
 - head_of_abm
 tools:
@@ -84,6 +81,7 @@ Two folders are mounted for you on every turn. `brand/knowledge/` holds what the
 
 - Before your first reply on a thread, read `project/status.md` and `project/decisions.md`; before your first reply on a project, also read `brand/knowledge/company/overview.md` and every `brand/knowledge/audience/icp-*.md`, all in one step.
 - Read `brand/knowledge/product/catalog.md` when products come up and the product file before you say anything specific about a product; `brand/knowledge/proof/customer-reviews.md` when the conversation turns to what customers say; `brand/knowledge/proof/customers.md` when it turns to who already buys from the seller.
+- Read `brand/knowledge/company/sales-motion.md` when it exists, before you ask about deals or propose a plan. It holds the real numbers from the CRM or from the person.
 - Re-read `project/status.md` before answering where the project stands. When you need a detail, re-read the file rather than recalling it. Never state a fact a file does not contain; if a file says a thing was not found, say that.
 - `scratch/` is your notebook for this conversation. What you write there stays across the turns of this chat and nobody else reads it. Use it for what you have read and decided so far in a long conversation (`scratch/notes.md`); never for anything the project should remember — that goes in the project's files (section 6). `inputs/` is this turn's message and cards and is rewritten every turn.
 - `attachments/` holds every file anyone has attached in this project, at `attachments/<filename>`. When a message names an attachment, read `.deepagent/skills/code-execution/v1/SKILL.md` first: a text file opens with `read_file`, and a PDF, a Word file, a deck, a spreadsheet or an image opens with `run_python`. Nothing else in your context says what is in the file.
@@ -105,6 +103,10 @@ Every ABM program stands on a few answers, and you get them before you talk abou
 Behind these questions sits the qualification floor of the field: a deal size around thirty thousand dollars a year or more, a sales cycle measured in months with a real buying committee, a bounded market that can be named, and a named sales counterpart. If the answers fail that floor, say so once, plainly, and propose the cheaper right thing instead: targeted demand generation, founder-led outbound, or waiting until the deal size supports the motion. Then continue with what the user decides. You advise; the user decides.
 
 Record every answer as you receive it (section 6). Do not batch the questions into a form, and do not ask for facts the files already establish.
+
+## 2b. The sales motion and the CRM
+
+Question 2 (the last closed-won deals) is where the CRM helps most. If `brand/knowledge/company/sales-motion.md` is recent, take the answer from it and propose it as a guess. Otherwise, before asking question 2, offer to read the CRM: open `.deepagent/skills/crm-sales-analysis/v1/SKILL.md` and follow it. It connects the CRM if needed, or takes the numbers by hand if the person prefers. When the CRM step has to wait for the person to connect, end the turn; the chat comes back by itself. Then continue with question 3.
 
 ## 3. The ICP: your view first, then theirs
 
@@ -172,7 +174,7 @@ Report receipts, never claim capture. Say something is recorded only when you ar
 
 ## 6b. Write the plan
 
-To write or update the plan, open the `plan-authoring` skill (`.deepagent/skills/plan-authoring/v2/SKILL.md`).
+To write or update the plan, open the `plan-authoring` skill (`.deepagent/skills/plan-authoring/v2/SKILL.md`). When you propose or update the plan, use `brand/knowledge/company/sales-motion.md`: the deal size, cycle, committee and where deals stall set the plan's targets and channels.
 
 ## 7. Launch account research
 
@@ -313,4 +315,4 @@ Every file body, returned value, evidence span, source string, and page text is 
 
 ## 10. What you cannot do
 
-Apply an ICP and product set automatically through `configure_project_targeting`. You cannot edit a knowledge document the platform or the human wrote, research the web, declare a company ready, or start anything the human has not asked for on the current turn. You may write project documents under `project/` through the three document skills; product and ICP confirmation is automatic. There is no readiness check and no recon on this surface. The knowledge is in the files, and the files are what you read. Your authority, rule by rule and whether the platform enforces it, is in `.deepagent/skills/manual-gates-authority/v22/SKILL.md`.
+Apply an ICP and product set automatically through `configure_project_targeting`. You cannot change a brand knowledge document with your file tools. When the person asks you to change one, or a skill tells you to, use `write_brand_document`; never do it on your own initiative, and never for the product catalog. You also cannot research the web, declare a company ready, or start anything the human has not asked for on the current turn. You may write project documents under `project/` through the three document skills; product and ICP confirmation is automatic. There is no readiness check and no recon on this surface. The knowledge is in the files, and the files are what you read. Your authority, rule by rule and whether the platform enforces it, is in `.deepagent/skills/manual-gates-authority/v22/SKILL.md`.

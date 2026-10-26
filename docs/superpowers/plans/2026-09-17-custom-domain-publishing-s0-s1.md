@@ -19,7 +19,7 @@ one absolute URL on the system hostname, and publish responses return absolute `
 (`clue_config`), `clue_storage` (fs/S3-R2), uv workspace, import-linter, mypy strict; Next.js/TS
 frontend (`node --test` via tsx); Cloudflare Workers (wrangler); Railway (Dockerfile).
 
-**Spec:** `docs/superpowers/specs/2026-09-17-custom-domain-publishing-design.md` (v1 design, founder-approved
+**Spec:** `docs/superpowers/specs/archive/2026-09-17-custom-domain-publishing-design.md` (v1 design, founder-approved
 2026-09-17). Research record: `_memory/2026-09-17-custom-domain-publishing-research.md`.
 
 ## Global Constraints
@@ -2953,7 +2953,7 @@ git commit -m "infra: pages-edge Cloudflare Worker (public host + edge secret to
 
 **Files:**
 - Create: `docs/specs/pages-hosting-runbook.md`, `_memory/2026-09-17-custom-domain-publishing-s1.md`
-- Modify: `_memory/README.md` (topic-note line), `docs/superpowers/specs/2026-09-17-custom-domain-publishing-design.md` (status header: "S1 implemented on `<branch>`; S0 runbook at …")
+- Modify: `_memory/README.md` (topic-note line), `docs/superpowers/specs/archive/2026-09-17-custom-domain-publishing-design.md` (status header: "S1 implemented on `<branch>`; S0 runbook at …")
 
 - [ ] **Step 1: Write the runbook** — `docs/specs/pages-hosting-runbook.md`, with these sections, each ending in a "Recorded values" table the operator fills (angle-bracket placeholders are operator-supplied values, e.g. `<zone-id>`; secrets are never written here):
 
@@ -2972,7 +2972,7 @@ Also a "Values recorded" table at the top (zone id, bucket, hostnames, Railway s
 - [ ] **Step 3: Commit**
 
 ```bash
-git add docs/specs/pages-hosting-runbook.md _memory/2026-09-17-custom-domain-publishing-s1.md _memory/README.md docs/superpowers/specs/2026-09-17-custom-domain-publishing-design.md
+git add docs/specs/pages-hosting-runbook.md _memory/2026-09-17-custom-domain-publishing-s1.md _memory/README.md docs/superpowers/specs/archive/2026-09-17-custom-domain-publishing-design.md
 git commit -m "docs: pages hosting runbook (S0) and the custom-domain publishing S1 session record"
 ```
 

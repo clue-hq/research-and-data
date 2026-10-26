@@ -1,6 +1,6 @@
 # 2026-09-20 — Design clarification cards (points 3 + 4; SDD on `project-home`)
 
-Spec `docs/superpowers/specs/2026-09-20-design-clarification-cards-design.md`; plan
+Spec `docs/superpowers/specs/archive/2026-09-20-design-clarification-cards-design.md`; plan
 `docs/superpowers/plans/2026-09-20-design-clarification-cards.md`; ledger
 `.superpowers/sdd/2026-09-20-design-clarification-cards/progress.md`. Opus implementers; every
 review the controller's own. Founder rulings: opening-move only (the runtime never asks

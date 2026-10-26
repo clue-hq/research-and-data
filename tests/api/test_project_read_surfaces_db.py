@@ -5,7 +5,11 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import event
 
-from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
+from clue_api.chat.composer_context import (
+    PROJECT_CONVERSATION_AGENT_PROFILE_ID,
+    model_display_name,
+    project_conversation_model_id,
+)
 from clue_api.thread_store import create_thread, set_thread_pinned
 from clue_core import AccountStatus
 from clue_research.identity import insert_account_entity
@@ -91,10 +95,13 @@ def test_project_shell_is_scoped_real_and_fixture_free(require_chat_db: None) ->
             assert data["agent_profiles"] == [
                 {
                     "id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,
-                    "label": "Grok 4.6",
-                    "short_label": "Grok 4.6",
-                    "description": "Clue's governed Grok 4.6 conversation profile",
-                    "model_id": "x-ai/grok-4.6",
+                    # The configured model, readable; which model it is is not asserted.
+                    "label": model_display_name(project_conversation_model_id()),
+                    "short_label": model_display_name(project_conversation_model_id()),
+                    "description": "Clue's governed "
+                    f"{model_display_name(project_conversation_model_id())}"
+                    " conversation profile",
+                    "model_id": project_conversation_model_id(),
                 }
             ]
             assert data["default_agent_profile_id"] == PROJECT_CONVERSATION_AGENT_PROFILE_ID

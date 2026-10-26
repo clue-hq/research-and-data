@@ -14,6 +14,7 @@ from clue_agents import (
     WorkspaceConfigurationError,
     WorkspaceSecurityError,
 )
+from clue_agents.worker_area import ChatScope
 from tests.agents.workspace_helpers import (
     DEFAULT_READABLE_PREFIXES,
     EXECUTION_ID,
@@ -61,9 +62,9 @@ def test_attachments_mount_is_read_only_optional_and_readable(tmp_path: Path) ->
         finally:
             lease.release()
 
-        # 2. The fleet's sync writes the bytes beside the thread, never into it.
-        project_dir = factory.project_host_path(_WORKSPACE_ID, _PROJECT_ID)
-        attachments = project_dir / "attachments"
+        # 2. The fleet's sync writes the bytes into the chat's own folder, beside its agent root.
+        chat_dir = factory.chat_host_path(ChatScope(_WORKSPACE_ID, _PROJECT_ID, _THREAD_ID))
+        attachments = chat_dir / "attachments"
         attachments.mkdir(mode=0o700, parents=True)
         (attachments / "brief.md").write_text("# brief\n")
         (attachments / "r.pdf").write_bytes(b"%PDF-1.4\xff\xfe")
@@ -105,11 +106,12 @@ def test_host_path_accessors_name_the_real_directories_and_validate_segments(
     root, factory, _sink = make_factory(tmp_path)
     try:
         assert factory.root_path == root
-        assert factory.project_host_path(_WORKSPACE_ID, _PROJECT_ID) == (
-            root / _WORKSPACE_ID / "projects" / _PROJECT_ID
+        chat = ChatScope(_WORKSPACE_ID, _PROJECT_ID, _THREAD_ID)
+        assert factory.chat_host_path(chat) == (
+            root / "chats" / _WORKSPACE_ID / _PROJECT_ID / _THREAD_ID
         )
         assert factory.thread_host_path(_WORKSPACE_ID, _PROJECT_ID, _THREAD_ID) == (
-            root / _WORKSPACE_ID / "projects" / _PROJECT_ID / "threads" / _THREAD_ID
+            factory.chat_host_path(chat) / "agent"
         )
         lease = factory.acquire(
             workspace_id=_WORKSPACE_ID,
@@ -133,6 +135,6 @@ def test_host_path_accessors_name_the_real_directories_and_validate_segments(
         # A host path is built from validated segments, so it can never leave the root.
         for bad in ("../escape", "ws/../..", "", ".."):
             with pytest.raises(WorkspaceConfigurationError):
-                factory.project_host_path(bad, _PROJECT_ID)
+                factory.chat_host_path(ChatScope(bad, _PROJECT_ID, _THREAD_ID))
     finally:
         factory.close()

@@ -4,7 +4,7 @@ Branch `website/custom-domain`, worktree `addis-ababa`, lane DB `clue_addis-abab
 empty by the merge task, migrated to head `770bf20802e1` by Task 1's fixtures).
 Plan (with the ruling and the seven decisions): `docs/superpowers/plans/2026-09-28-custom-domain-f5-reconciliation.md`.
 Per-task briefs, reports and the ruling ledger: `.superpowers/sdd/2026-09-28-custom-domain-f5-reconciliation/progress.md`.
-Spec (binding for our side): `docs/superpowers/specs/2026-09-17-custom-domain-publishing-design.md`.
+Spec (binding for our side): `docs/superpowers/specs/archive/2026-09-17-custom-domain-publishing-design.md`.
 Predecessors: `_memory/2026-09-17-custom-domain-publishing-s1.md`, `_memory/2026-09-17-custom-domain-publishing-s2.md`,
 and F5's own record `_memory/2026-09-03-f5-multipage-build-close.md` (arrived with the merge).
 

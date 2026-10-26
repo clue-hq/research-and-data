@@ -59,7 +59,7 @@ routes or plan-part shape consumed here.
 
 ## Lane 3 — telemetry and cost (worktree `lane3/*` off `research-streaming`)
 
-Design note: `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md`.
+Design note: `docs/superpowers/specs/archive/2026-09-14-telemetry-and-cost-observability-design.md`.
 
 | # | Plan | What it builds | Depends on |
 | --- | --- | --- | --- |

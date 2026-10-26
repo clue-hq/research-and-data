@@ -1,6 +1,6 @@
 """The artifacts library on ``/frontend/v1``: one workspace-wide read and the caller's marks.
 
-Spec ``docs/superpowers/specs/2026-09-15-artifacts-page-integration-design.md`` §3.1–§3.2.
+Spec ``docs/superpowers/specs/archive/2026-09-15-artifacts-page-integration-design.md`` §3.1–§3.2.
 The read is the workspace-wide form of the per-project design-artifact feed; the marks are user
 metadata (saved, last-viewed) and never document state — document writes (rename, archive) are
 governed design tools on the design API, not routes here.
