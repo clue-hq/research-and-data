@@ -9,6 +9,7 @@ set the contacts table lists), and versions come from the identity store.
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -50,6 +51,8 @@ from clue_storage import StorageBackend
 __all__ = [
     "PROJECT_CONVERSATION_AGENT_PROFILE_ID",
     "PROJECT_CONVERSATION_MODEL_ID",
+    "model_display_name",
+    "project_conversation_model_id",
     "MAX_DESIGN_REFERENCE_ASSETS",
     "ComposerContextEntity",
     "ContextReferenceError",
@@ -85,6 +88,21 @@ __all__ = [
 # "Clue fit level" (R-14.6).
 PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v85"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
+"""The catalog's model for the conversation profile; ``HEAD_OF_ABM_AGENT_MODEL`` overrides it."""
+
+
+def project_conversation_model_id() -> str:
+    """The model the conversation agent runs on: ``HEAD_OF_ABM_AGENT_MODEL`` (the same env the
+    agent registry applies) or, unset or blank, the catalog's."""
+    return os.environ.get("HEAD_OF_ABM_AGENT_MODEL", "").strip() or PROJECT_CONVERSATION_MODEL_ID
+
+
+def model_display_name(model_id: str) -> str:
+    """A model id as people read it: ``x-ai/grok-4.6`` -> "Grok 4.6",
+    ``openai/gpt-6.1-sol`` -> "Gpt 6.1 Sol" (provider and any ``:variant`` dropped)."""
+    name = model_id.rsplit("/", 1)[-1].split(":", 1)[0]
+    return " ".join(part[:1].upper() + part[1:] for part in name.split("-") if part)
+
 
 _MAX_CONTEXT_ACCOUNTS = 50
 MAX_DESIGN_REFERENCE_ASSETS = 4

@@ -81,12 +81,13 @@ from clue_api.chat.attachments import (
 from clue_api.chat.composer_context import (
     PRESENTED_REF_TYPES,
     PROJECT_CONVERSATION_AGENT_PROFILE_ID,
-    PROJECT_CONVERSATION_MODEL_ID,
     ComposerContextEntity,
     ContextReferenceError,
     context_ref_presentations,
     list_composer_context_entities,
+    model_display_name,
     prepare_composer_context_entities,
+    project_conversation_model_id,
     validated_context_refs,
 )
 from clue_api.chat.context_refs import TurnContextRefsResponse, context_refs_response
@@ -636,13 +637,16 @@ def _gate_response(body: SubmitTurnRequest) -> GateResponseRequest:
 
 
 def _agent_profile_options() -> tuple[AgentProfileOptionWire, ...]:
+    # The label follows the configured model (HEAD_OF_ABM_AGENT_MODEL), never a fixed name.
+    model_id = project_conversation_model_id()
+    name = model_display_name(model_id)
     return (
         AgentProfileOptionWire(
             id=PROJECT_CONVERSATION_AGENT_PROFILE_ID,
-            label="Grok 4.6",
-            short_label="Grok 4.6",
-            description="Clue's governed Grok 4.6 conversation profile",
-            model_id=PROJECT_CONVERSATION_MODEL_ID,
+            label=name,
+            short_label=name,
+            description=f"Clue's governed {name} conversation profile",
+            model_id=model_id,
         ),
     )
 
