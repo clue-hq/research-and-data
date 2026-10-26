@@ -225,3 +225,51 @@ failed first and then passed. Commit `Final review fixes…`.
   The founder decides when.
 - **Estimates:** replace the placeholders with figures measured from `agent_model_call` and the
   ledger.
+
+## Live proof (2026-10-26, onbops lane)
+
+**The lane**
+- Wrapper `scripts/dev_stack_onbops.sh`. It is untracked and lives in this worktree only.
+- Ports: frontend 3071, design API 8071, platform API 8072, platform API twin 8073, pages 8074,
+  site editor 3171.
+- Database `clue_onbops` on `clue-pg-papeete:55040`, Redis DB 11.
+- `.env` was built from nashville's, with every lane-specific value replaced.
+- The design helper binary was built from this branch's own source.
+
+**The proof**
+- **Operator.** A seeded user, `proof.operator@cluehq.ai`, in the lane database only.
+- **Workspace.** "Clue Proof" (cluehq.ai), added through `POST /ops/v1/workspaces`: a dry run
+  first, then apply.
+
+**Step 1: refusal**
+- The check refuses a bad Exa key: `exa key_invalid`, then `503 providers_unavailable`, and no
+  run is created.
+- **Bug found on the first try.** With a bad key, Exa answers HTTP 401, and `ExaClient` returns
+  that as `result.status` instead of raising. The probe read it as `ok`, and one normal onboarding
+  started (about $2).
+- **Fixed** in `485f21926` with tests that failed first.
+
+**The baseline onboarding (organic gaps, not induced)**
+- The run ended `completed_with_gaps`: one persona turn hit an OpenRouter timeout.
+- The website job ended `succeeded_with_gaps`: 4 descriptions failed on malformed model JSON.
+- The harvest found no ads (`empty`), so no card was planned.
+
+**Step 2: repair through `/ops/v1`**
+- The plan was the persona plus 4 descriptions plus a kit republish, estimated at $0.51.
+- After apply:
+  - one repair run, `completed`: it re-ran only that persona, for $0.075
+  - one `kit_repair` job, `succeeded`: all 21 descriptions ready, kit version 2 with 18 of 18
+    images described
+- A second apply returned `409 nothing_to_repair`.
+- Afterwards the dry run says `nothing_to_repair`, and the research and brand-kit gaps are both
+  empty.
+- Three audit rows were written: `add_workspace`, `start_onboarding`, `repair`.
+
+**Spend on the lane:** about $2.73 on the provider ledger and $2.45 in model calls.
+
+**Not proven live:**
+- repairing the ICP turn
+- rebuilding a card (this company has no ads)
+- the induced outage with a broken OpenRouter key on the workers
+
+**Lane state:** the stack is still up. Stop it with `./scripts/dev_stack_onbops.sh down`.
