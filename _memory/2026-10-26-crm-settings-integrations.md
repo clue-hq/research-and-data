@@ -29,3 +29,12 @@ revoked by disconnect). Frontend gate green before the stack started.
 - Whole-branch review; parked minors in the ledger (crmDay dup, revoke copy parses descriptions,
   no hook render tests). Founder questions still open: reconnect to a different portal (design
   says Clue asks; backend switches), member text when nothing is connected.
+
+## Production env (2026-10-27)
+- VM `/srv/clue/env`: CRM block (prod Composio key, `ac_KeqvrdIN6q8d` / `ac_BYMP208InVku`, toolkit
+  versions, write tuning) + F3 agent-workspace/stream keys added; `CLUE_AGENT_WORKSPACE_RETENTION_S`
+  and `CLUE_AGENT_CLEANUP_INTERVAL_S` removed (250 → 269 keys). Backup `/srv/clue/env.bak-20261027-crm`.
+  Workers NOT restarted (deployed code predates CRM; keys take effect at the next deploy).
+- Railway platform-api (founder set them): every CRM key and the two chat-stream keys verified
+  with the CLI; the API key matches the local prod key by hash. Two old keys still on Railway
+  (`CLUE_AGENT_WORKSPACE_RETENTION_S`, `CLUE_AGENT_CLEANUP_INTERVAL_S`) — unread after the merge.
