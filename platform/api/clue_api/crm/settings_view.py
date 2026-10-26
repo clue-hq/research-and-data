@@ -232,7 +232,8 @@ async def research_view(conn: AsyncConnection, connection: CrmConnection | None)
         if state is not None
         else []
     )
-    if clue_fields_set_up(state) or _set_up_but_for_old_fields(state, gone_labels):
+    # Ready means exactly what the writes require (one predicate, clue_fields_set_up).
+    if clue_fields_set_up(state):
         research_state = "ready"
     # The card is allowed (queued/sending) a moment before its change is: both read Preparing.
     elif any(
@@ -280,17 +281,6 @@ async def research_view(conn: AsyncConnection, connection: CrmConnection | None)
         "reviewChat": review if research_state == "approval_needed" else None,
         "items": _items(provider, state, refused_step),
     }
-
-
-def _set_up_but_for_old_fields(state: ClueFieldsState | None, gone_labels: list[str]) -> bool:
-    """A setup marked gone only for a field Clue no longer sets up, with every current field
-    created: as good as ready."""
-    return (
-        state is not None
-        and state.status == "gone"
-        and not gone_labels
-        and all(f.qualified_name in state.created_names for f in CLUE_FIELDS[state.provider])
-    )
 
 
 def _refused_records(provider: CrmProvider, step: str | None) -> str | None:

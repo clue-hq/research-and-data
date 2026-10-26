@@ -532,7 +532,9 @@ def test_review_chat_is_only_given_while_approval_is_needed(tmp_path: Any) -> No
 
 
 def test_a_gone_field_clue_no_longer_sets_up_is_ignored(tmp_path: Any) -> None:
-    """The test CRMs' old "Clue tier" field (R-14.6) is not a missing field."""
+    """The test CRMs' old "Clue tier" field (R-14.6) is not a missing field, but a setup marked
+    gone for it refuses every Clue-field write, so the page never calls it Ready: it asks for
+    the setup again (final review 2026-10-26)."""
 
     async def body(conn: Any, client: httpx.AsyncClient, project: Project, _: Any) -> None:
         connection_id = await _connection(conn, project)
@@ -546,8 +548,8 @@ def test_a_gone_field_clue_no_longer_sets_up_is_ignored(tmp_path: Any) -> None:
             {"c": connection_id},
         )
         research = (await _integration(client, project))["research"]
-        assert research["state"] == "ready"
-        assert (research["failedField"], research["reason"]) == (None, None)
+        assert research["state"] == "approval_needed"
+        assert research["failedField"] is None
 
     _run(tmp_path, "owner", body)
 
