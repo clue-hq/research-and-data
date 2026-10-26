@@ -8,26 +8,27 @@ the detached fleet; this surface only records the intent and hands it over.
 from __future__ import annotations
 
 from typing import Annotated, Literal, Protocol
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import text
 
 from clue_api.arv2.onboarding_driver import (
     ONBOARDING_DEDUP_PREFIX,
     IcpRef,
     onboarding_work_id,
 )
-from clue_api.arv2.onboarding_store import create_run, fail_run, read_current_run
+from clue_api.arv2.onboarding_store import read_current_run
 from clue_api.auth_wiring import principal_from_request
 from clue_api.brand_kit_ingestion import BrandKitIngestionTrigger, read_newest_ingestion_job
+from clue_api.workspace_ops.onboarding_plan import brand_kit_gaps, research_gaps
+from clue_api.workspace_ops.onboarding_start import Preflight, normalize_domain, start_onboarding
+from clue_api.workspace_ops.operators import OpsRefused
 from clue_db import ConnFactory
 from clue_fleet import FleetTaskKind
 from clue_fleet.queue import DbWorkQueue, WorkQueue
 from clue_obs import get_logger
 from clue_projections import PROJECTIONS_SCHEMA_VERSION
-from clue_spine import get_brand, list_brands_for_workspace
 
 __all__ = [
     "DbOnboardingEnqueuer",
@@ -43,12 +44,6 @@ log = get_logger("clue_api.onboarding_routes")
 #: first knowledge base, so it claims before the ordinary background work but never ahead of the
 #: provisioning lane that has to finish before this one can even be started.
 ONBOARDING_TASK_PRIORITY = -150
-
-#: Serializes the "is a run already open for this workspace?" check with the insert that answers
-#: it. Transaction-scoped, so it is released by the same commit that makes the new run visible.
-#: Not provable by this module's tests — the harness hands both requests one connection, so the
-#: two-transaction race it closes cannot be expressed there; it is reasoned, not covered.
-_WORKSPACE_LOCK_SQL = text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))")
 
 
 def onboarding_workspace_resolver(
@@ -232,6 +227,17 @@ class OnboardingBrandKitIngestionView(BaseModel):
     status: str
 
 
+class OnboardingGapView(BaseModel):
+    """One thing onboarding finished without (spec 2026-10-25 §5.2): a failed research or ICP
+    step (its newest attempt, repairs included) or a brand-kit job's own gap. Additive; the
+    setting-up screen ignores it until a screen is designed for it."""
+
+    area: Literal["research", "brand_kit"]
+    item: str
+    code: str | None
+    message: str | None
+
+
 class OnboardingStatusResponse(BaseModel):
     """The §7 status read. ``status`` is ``"none"`` before the workspace has ever run one, so the
     poller can start before the first POST and never has to read a 404 as "not yet".
@@ -247,6 +253,7 @@ class OnboardingStatusResponse(BaseModel):
     steps: list[OnboardingStepView]
     costUsd: str
     brandKitIngestion: OnboardingBrandKitIngestionView | None = None
+    gaps: list[OnboardingGapView] = Field(default_factory=list)
 
 
 def create_onboarding_router(
@@ -254,7 +261,11 @@ def create_onboarding_router(
     conn_factory: ConnFactory,
     enqueuer: OnboardingEnqueuer,
     brand_kit_ingestion: BrandKitIngestionTrigger | None = None,
+    preflight: Preflight | None = None,
 ) -> APIRouter:
+    """``preflight`` (spec 2026-10-25 §3.3, ruling D8) guards every start, the setting-up
+    screen's included: a dead provider refuses with 503 ``providers_unavailable`` before any run
+    exists. ``None`` (offline tests) starts without checking."""
     router = APIRouter(tags=["onboarding"])
 
     def _user_id(request: Request) -> str:
@@ -275,110 +286,29 @@ def create_onboarding_router(
         return header
 
     @router.post("/onboarding", response_model=OnboardingStartResponse, status_code=202)
-    async def start_onboarding(
+    async def start_onboarding_route(
         request: Request, body: OnboardingStartRequest, workspace_id: WorkspaceDep
     ) -> OnboardingStartResponse:
-        domain = (
-            body.company_domain.strip()
-            .lower()
-            .removeprefix("https://")
-            .removeprefix("http://")
-            .rstrip("/")
-        )
-        if not domain:
+        if not normalize_domain(body.company_domain):
             raise HTTPException(status_code=422, detail="company_domain is blank")
         user_id = _user_id(request)
-        async with conn_factory() as conn:
-            if body.brand_id is not None:
-                # ``get_brand`` is workspace-scoped, so a foreign brand id reads as absent.
-                brand = await get_brand(conn, workspace_id=workspace_id, brand_id=body.brand_id)
-            else:
-                brands = await list_brands_for_workspace(conn, workspace_id)
-                brand = brands[0] if len(brands) == 1 else None
-            if brand is None:
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "error": "brand_unavailable",
-                        "reason": "name one brand of this workspace",
-                    },
-                )
-            # One onboarding *walk* at a time per workspace: two concurrent walks would race on
-            # the same brand's document paths and double the spend for one company. A ``personas``
-            # run is not one — it is a project's single turn for one ICP document, racing nothing
-            # this walk writes — so it is not counted here; blocking on it would mean a human who
-            # asked for personas could not re-onboard until that turn finished. The read and the
-            # insert are one atomic decision, so the check is taken under a transaction-scoped
-            # advisory lock (the brand-kit trigger's idiom) — without it two simultaneous POSTs
-            # each see no open run in their own snapshot and both start a run.
-            await conn.execute(
-                _WORKSPACE_LOCK_SQL, {"lock_key": f"onboarding-start:{workspace_id}"}
-            )
-            open_run = (
-                await conn.execute(
-                    text(
-                        "SELECT run_id FROM onboarding_run WHERE workspace_id = :ws "
-                        "AND kind = 'full' AND status IN ('queued', 'running') LIMIT 1"
-                    ),
-                    {"ws": workspace_id},
-                )
-            ).scalar_one_or_none()
-            if open_run is not None:
-                raise HTTPException(
-                    status_code=409,
-                    detail={"error": "onboarding_in_progress", "reason": str(open_run)},
-                )
-            run_id = uuid4()
-            await create_run(
-                conn,
-                run_id=run_id,
-                workspace_id=workspace_id,
-                brand_id=brand.brand_id,
-                company_domain=domain,
-                requested_by_user_id=user_id,
-            )
-        # The row lands before the offer: a task that arrives at a worker always finds its run.
-        # The reverse is what has to be contained — a run that was recorded but never offered is
-        # a row nothing will ever drive, stuck on ``queued`` forever and blocking (via the
-        # open-run check above) every later start for this workspace. So a failed offer fails the
-        # run, and the caller is told to try again rather than handed a run id that is already
-        # dead. A ``False`` return means the dedup key was already taken, which is impossible for
-        # a uuid minted three lines ago — so it is a queue anomaly, contained the same way.
-        offer_error: Exception | None = None
         try:
-            offered = await enqueuer.enqueue(
-                run_id=run_id,
+            run_id = await start_onboarding(
+                conn_factory,
                 workspace_id=workspace_id,
-                brand_id=brand.brand_id,
-                company_domain=domain,
-                company_name=(body.company_name or "").strip() or domain,
+                domain=body.company_domain,
+                brand_id=body.brand_id,
+                company_name=body.company_name,
+                requested_by_user_id=user_id,
+                enqueuer=enqueuer,
+                brand_kit_ingestion=brand_kit_ingestion,
+                preflight=preflight,
             )
-        except Exception as error:
-            # Broad on purpose: a transport error, a pool timeout and a programming error in the
-            # queue are the same fact here — the run was not offered — and all must be contained.
-            # Logged inside the handler because ``exception`` reads ``sys.exc_info()``, which is
-            # already empty by the time the ``if`` below runs.
-            log.exception(
-                "onboarding.enqueue_failed", run_id=str(run_id), workspace_id=workspace_id
-            )
-            offered, offer_error = False, error
-        if not offered:
-            if offer_error is None:
-                log.error(
-                    "onboarding.enqueue_refused", run_id=str(run_id), workspace_id=workspace_id
-                )
-            async with conn_factory() as conn:
-                await fail_run(conn, run_id=run_id)
+        except OpsRefused as refused:
             raise HTTPException(
-                status_code=503,
-                detail={
-                    "error": "enqueue_failed",
-                    "reason": "the onboarding job could not be queued; try again",
-                },
-            ) from offer_error
-        if brand_kit_ingestion is not None:
-            # Fail-soft by contract (``ensure`` never raises): no brand kit must fail onboarding.
-            await brand_kit_ingestion.ensure(workspace_id=workspace_id, website=f"https://{domain}")
+                status_code=refused.status,
+                detail={"error": refused.code, "reason": refused.message, **refused.detail},
+            ) from refused
         return OnboardingStartResponse(
             schema_version=PROJECTIONS_SCHEMA_VERSION, run_id=str(run_id), status="queued"
         )
@@ -387,6 +317,13 @@ def create_onboarding_router(
     async def current_onboarding(workspace_id: WorkspaceDep) -> OnboardingStatusResponse:
         async with conn_factory() as conn:
             status = await read_current_run(conn, workspace_id=workspace_id)
+            gaps = [
+                OnboardingGapView(**gap)
+                for gap in [
+                    *await research_gaps(conn, workspace_id=workspace_id),
+                    *await brand_kit_gaps(conn, workspace_id=workspace_id),
+                ]
+            ]
         # The same read the Stage-0 setup route serves, through the shared helper: the brand-kit
         # ingestion is separate work from the run, so it is read separately and never gated on
         # one existing.
@@ -403,6 +340,7 @@ def create_onboarding_router(
                 steps=[],
                 costUsd="0",
                 brandKitIngestion=brand_kit,
+                gaps=gaps,
             )
         return OnboardingStatusResponse(
             schema_version=PROJECTIONS_SCHEMA_VERSION,
@@ -423,6 +361,7 @@ def create_onboarding_router(
             ],
             costUsd=str(status.cost_usd),
             brandKitIngestion=brand_kit,
+            gaps=gaps,
         )
 
     return router

@@ -19,7 +19,11 @@ import { z } from "zod";
  */
 export const SetupBrandKitIngestionSchema = z.object({
   job_id: z.string().min(1),
-  status: z.enum(["queued", "running", "succeeded", "failed"]).catch("running"),
+  // `succeeded_with_gaps` (spec 2026-10-25): the kit was published, with failed descriptions,
+  // ad analyses or card listed as the job's gaps — a finished job, read like `succeeded`.
+  status: z
+    .enum(["queued", "running", "succeeded", "succeeded_with_gaps", "failed"])
+    .catch("running"),
 });
 
 /** One step of the new onboarding lane, as `GET /onboarding/current` serves it (camelCase, frozen §7). */

@@ -36,21 +36,35 @@ __all__ = ["KIT_INGESTION_KINDS", "card_job_id", "card_offer_hook", "offer_card_
 #: The ingestion kinds that end with a brand kit. An ``ad_assets`` job builds none.
 KIT_INGESTION_KINDS = ("website", "pdf", "asset_upload")
 
+#: A job that finished with a usable result — a gapped one included (spec 2026-10-25 §5.1).
+_FINISHED = ("succeeded", "succeeded_with_gaps")
+
 #: How far back the readiness check looks. A workspace has a handful of ingestion jobs.
 _RECENT = 50
 
 
-def card_job_id(workspace_id: str, harvest_job_id: str) -> str:
-    """The one card job a harvest can ever have."""
-    digest = hashlib.sha256(f"{workspace_id}:{harvest_job_id}".encode()).hexdigest()
-    return f"ingest_adcard_{digest[:24]}"
+def _attempt_suffix(attempt: int) -> str:
+    return f":{attempt}" if attempt else ""
 
 
-def offer_card_if_ready(workspace_id: str, *, tools: Any = None) -> Optional[str]:
+def card_job_id(workspace_id: str, harvest_job_id: str, attempt: int = 0) -> str:
+    """A harvest's card job for one attempt. Attempt 0 is the id the automatic hook has always
+    used; a workspace repair re-offers a failed card as attempt 1, 2, … (spec 2026-10-25)."""
+    key = f"{workspace_id}:{harvest_job_id}{_attempt_suffix(attempt)}"
+    return f"ingest_adcard_{hashlib.sha256(key.encode()).hexdigest()[:24]}"
+
+
+def offer_card_if_ready(
+    workspace_id: str, *, tools: Any = None, retry: bool = False
+) -> Optional[str]:
     """Offer the card job if a finished harvest and a kit both exist. Returns its id, or None.
 
     ``None`` covers every "nothing to do": the lane is off, no harvest has finished, the newest
     harvest kept no ads, no kit exists yet, or this harvest's card job was already offered.
+
+    ``retry`` is the workspace repair's re-offer of a card that never got written: when the
+    harvest has no card and none of its card jobs is still queued or running, the next attempt
+    is offered. The automatic hook never retries — a failed card stays failed until someone asks.
     """
     if not settings.lumen_brand_ad_assets:
         return None
@@ -61,10 +75,20 @@ def offer_card_if_ready(workspace_id: str, *, tools: Any = None) -> Optional[str
         return None
 
     harvest_job_id = str(harvest["job_id"])
-    job_id = card_job_id(workspace_id, harvest_job_id)
+    attempt = 0
+    if retry:
+        card_jobs = _card_jobs(store, harvest_job_id)
+        if any(job.get("status") in ("queued", "running") for job in card_jobs):
+            return None
+        if _harvest_has_card(workspace_id, harvest_job_id):
+            return None
+        attempt = len(card_jobs)
+    job_id = card_job_id(workspace_id, harvest_job_id, attempt)
     if store.get(job_id) is not None:
         return None
-    work_id = uuid5(NAMESPACE_URL, f"clue:adcard:{workspace_id}:{harvest_job_id}")
+    work_id = uuid5(
+        NAMESPACE_URL, f"clue:adcard:{workspace_id}:{harvest_job_id}{_attempt_suffix(attempt)}"
+    )
     request: JsonObject = {
         "phase": "card",
         "harvest_job_id": harvest_job_id,
@@ -112,17 +136,39 @@ def _newest_usable_harvest(store: IngestionJobStore) -> Optional[JsonObject]:
         request = job.get("request") or {}
         if request.get("phase") != "harvest":
             continue
-        if job.get("status") != "succeeded":
+        if job.get("status") not in _FINISHED:
             return None
         outcome = (job.get("evidence") or {}).get("outcome") or {}
         return job if int(outcome.get("creatives_custodied") or 0) > 0 else None
     return None
 
 
+def _card_jobs(store: IngestionJobStore, harvest_job_id: str) -> list[JsonObject]:
+    """Every card job already offered for this harvest, whatever became of it."""
+    return [
+        job
+        for job in store.list_recent(_RECENT, kinds=("ad_assets",))
+        if (job.get("request") or {}).get("phase") == "card"
+        and (job.get("request") or {}).get("harvest_job_id") == harvest_job_id
+    ]
+
+
+def _harvest_has_card(workspace_id: str, harvest_job_id: str) -> bool:
+    from clue_design.ad_assets import ad_dna_card_for_harvest_job
+    from lumen_api.design_store import DesignStoreBridge
+
+    async def read(conn: Any) -> Any:
+        return await ad_dna_card_for_harvest_job(
+            conn, workspace_id=workspace_id, harvest_job_id=harvest_job_id
+        )
+
+    return DesignStoreBridge(workspace_id)._run(read) is not None
+
+
 def _newest_kit(store: IngestionJobStore) -> Optional[JsonObject]:
     """The newest kit-building ingestion that finished with a kit."""
     for job in store.list_recent(_RECENT, kinds=KIT_INGESTION_KINDS):
-        if job.get("status") == "succeeded" and job.get("brand_kit_id"):
+        if job.get("status") in _FINISHED and job.get("brand_kit_id"):
             return job
     return None
 

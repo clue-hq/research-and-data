@@ -147,3 +147,62 @@ def test_enrichment_stores_an_image_vector_the_turn_can_read(tmp_path, workspace
         return (await conn.execute(text('SELECT 1 FROM workspace WHERE workspace_id = :w'), {'w': stranger})).first()
 
     assert DesignStoreBridge(stranger, ensure_workspace=False)._run(exists) is None
+
+
+def _png(colour: str) -> bytes:
+    buffer = BytesIO()
+    Image.new('RGB', (64, 48), colour).save(buffer, format='PNG')
+    return buffer.getvalue()
+
+
+def test_partial_enrichment_completes_with_gaps_not_failed(tmp_path, workspace_id, design_storage, monkeypatch):
+    """Spec 2026-10-25 §5.1: some assets analysed, some not, is a finished job WITH GAPS — not a
+    failure that hides the ones that did succeed."""
+    from uuid import uuid4 as _uuid4
+
+    from clue_design.enums import DesignIngestionKind
+    from clue_design.envelopes import DesignIngestionEnvelope
+    from clue_design.ingestion import new_id
+    from lumen_api.asset_enrichment import offer_retry
+    from lumen_ingestion.jobs import IngestionJobStore
+
+    class Good:
+        active = True
+        def describe(self, items):
+            return [DescribeResult(item.asset_id, 'Ok', 'Ok', 'Ok', [],
+                    analysis=analysis('Ok', item.source_occurrences)) for item in items]
+
+    class FailsForSecond(Good):
+        def describe(self, items):
+            if items[0].asset_id == second:
+                raise RuntimeError('provider_refused:openrouter:auth_invalid')
+            return super().describe(items)
+
+    monkeypatch.setattr(pipeline, 'resolve_describer', lambda: Good())
+    app = create_app(tmp_path / 'cache', storage=design_storage)
+    client = TestClient(app, headers={'X-Workspace-Id': workspace_id})
+    uploaded = []
+    for colour in ('#003366', '#663300'):
+        response = client.post('/assets', files={'file': (f'{colour[1:]}.png', _png(colour), 'image/png')},
+                               data={'creative_type': 'logo'}, headers={'Idempotency-Key': _uuid4().hex})
+        assert response.status_code == 200, response.text
+        uploaded.append(response.json())
+    first, second = (body['asset']['id'] for body in uploaded)
+    run_asset_enrichment(str(tmp_path / 'cache'), uploaded[0]['enrichment']['job_id'],
+                         workspace_id=workspace_id, storage=design_storage)
+
+    monkeypatch.setattr(pipeline, 'resolve_describer', lambda: FailsForSecond())
+    run_asset_enrichment(str(tmp_path / 'cache'), uploaded[1]['enrichment']['job_id'],
+                         workspace_id=workspace_id, storage=design_storage)
+    job_id, work_id = new_id('ingest'), _uuid4()
+    envelope = DesignIngestionEnvelope(work_id=work_id, workspace_id=workspace_id, kind='ingestion',
+                                       job_id=job_id, ingestion_kind=DesignIngestionKind.ASSET_ENRICHMENT,
+                                       ).model_dump(mode='json')
+    offer_retry(workspace_id, {'targets': {first: {}, second: {}}}, job_id=job_id, work_id=work_id,
+                envelope=envelope)
+    run_asset_enrichment(str(tmp_path / 'cache'), job_id, workspace_id=workspace_id, storage=design_storage)
+
+    job = IngestionJobStore(workspace_id=workspace_id).require(job_id)
+    assert job['status'] == 'succeeded_with_gaps', job
+    assert job['error'] is None
+    assert job['evidence']['gaps'] == [{'area': 'descriptions', 'failed': 1, 'reason': 'analysis failed'}]

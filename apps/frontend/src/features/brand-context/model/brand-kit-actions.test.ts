@@ -188,3 +188,14 @@ test("a pre-slice-4 job payload without website_url still parses", () => {
   assert.equal(parsed.website_url ?? null, null);
   assert.equal(latestWebsiteUrl([parsed]), null);
 });
+
+test("a job that finished with gaps is a finished job, not an active one", () => {
+  const parsed = IngestionJobSchema.parse({
+    job_id: "ingest_x",
+    kind: "website",
+    status: "succeeded_with_gaps",
+  });
+
+  assert.equal(parsed.status, "succeeded_with_gaps");
+  assert.equal(isJobActive(parsed), false);
+});

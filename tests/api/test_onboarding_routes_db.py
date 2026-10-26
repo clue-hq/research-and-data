@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -311,5 +312,129 @@ def test_current_echoes_the_workspaces_newest_brand_kit_ingestion_job() -> None:
                 # Newest-first ordering is the DAL's own contract (``list_recent``), pinned by
                 # the design ingestion tests; two rows minted inside one transaction share a
                 # ``created_at``, so asserting it here would pin the uuid tiebreak instead.
+
+    run_async(scenario())
+
+
+# --- workspace onboarding operations (spec 2026-10-25) ----------------------------------------
+
+
+def _blocked_preflight() -> Any:
+    from clue_api.workspace_ops.preflight import PreflightReport, ProbeResult
+
+    async def preflight(workspace_id: str) -> PreflightReport:
+        return PreflightReport(results=(
+            ProbeResult("exa", "no_credit", True, "Exa refused: payment_required"),
+            ProbeResult("openrouter_platform", "ok", True, "$40 left"),
+        ))
+
+    return preflight
+
+
+def test_start_refuses_when_preflight_blocks_and_creates_no_run() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            ws = "ws-ops-preflight-route"
+            await seed_project(conn, ws, name="Preflight route")
+            await seed_principal(conn, workspace_id=ws, user_id="usr_ops_pf_route")
+            enqueuer = _RecordingEnqueuer()
+            app = FastAPI()
+            app.include_router(create_onboarding_router(
+                conn_factory=conn_session_factory(conn), enqueuer=enqueuer,
+                preflight=_blocked_preflight()))
+            async with httpx.AsyncClient(transport=ASGITransport(app=app),
+                                         base_url="http://test") as client:
+                started = await client.post(
+                    "/onboarding",
+                    headers={"X-Workspace-Id": ws, "X-Test-User-Id": "usr_ops_pf_route"},
+                    json={"company_domain": "illumio.com"},
+                )
+            assert started.status_code == 503, started.text
+            detail = started.json()["detail"]
+            assert detail["error"] == "providers_unavailable"
+            assert [p["provider"] for p in detail["providers"]] == ["exa"]
+            assert enqueuer.calls == []
+            runs = (await conn.execute(
+                text("SELECT count(*) FROM onboarding_run WHERE workspace_id = :w"), {"w": ws}
+            )).scalar_one()
+            assert runs == 0
+
+    run_async(scenario())
+
+
+def test_start_refuses_while_a_repair_run_is_open() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            ws = "ws-ops-repair-open"
+            project = await seed_project(conn, ws, name="Repair open")
+            await seed_principal(conn, workspace_id=ws, user_id="usr_ops_repair_open")
+            await conn.execute(
+                text("INSERT INTO onboarding_run (run_id, workspace_id, brand_id, company_domain,"
+                     " requested_by_user_id, kind, planned_steps) VALUES (:r, :w, :b, 'a.com',"
+                     " :u, 'repair', '[]')"),
+                {"r": uuid4(), "w": ws, "b": project.brand_id, "u": "usr_ops_repair_open"},
+            )
+            app = FastAPI()
+            app.include_router(create_onboarding_router(
+                conn_factory=conn_session_factory(conn), enqueuer=_RecordingEnqueuer()))
+            async with httpx.AsyncClient(transport=ASGITransport(app=app),
+                                         base_url="http://test") as client:
+                started = await client.post(
+                    "/onboarding",
+                    headers={"X-Workspace-Id": ws, "X-Test-User-Id": "usr_ops_repair_open"},
+                    json={"company_domain": "a.com"},
+                )
+            assert started.status_code == 409, started.text
+            assert started.json()["detail"]["error"] == "onboarding_in_progress"
+
+    run_async(scenario())
+
+
+def test_current_lists_the_research_and_brand_kit_gaps() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            ws = "ws-ops-gaps"
+            project = await seed_project(conn, ws, name="Gaps")
+            await seed_principal(conn, workspace_id=ws, user_id="usr_ops_gaps")
+            run_id = uuid4()
+            await conn.execute(
+                text("INSERT INTO onboarding_run (run_id, workspace_id, brand_id, company_domain,"
+                     " requested_by_user_id, status, finished_at) VALUES (:r, :w, :b, 'a.com', :u,"
+                     " 'completed_with_gaps', now())"),
+                {"r": run_id, "w": ws, "b": project.brand_id, "u": "usr_ops_gaps"},
+            )
+            for kind, status, code in (("overview", "completed", None),
+                                       ("reviews", "empty", None),
+                                       ("synthesis", "failed", "provider_refused:openrouter:x")):
+                await conn.execute(
+                    text("INSERT INTO onboarding_step (step_id, run_id, workspace_id, kind, phase,"
+                         " status, started_at, finished_at, failure_code, failure_message)"
+                         " VALUES (:s, :r, :w, :k, 'fast', :st, now(), now(), :c, :m)"),
+                    {"s": uuid4(), "r": run_id, "w": ws, "k": kind, "st": status, "c": code,
+                     "m": "OpenRouter refused the key" if code else None},
+                )
+            job = await design_ingestion.create_job(conn, workspace_id=ws, kind="website",
+                                                    request={"url": "https://a.com"})
+            await conn.execute(
+                text("UPDATE design_ingestion_job SET status = 'succeeded_with_gaps',"
+                     " evidence_json = CAST(:e AS jsonb) WHERE job_id = :j"),
+                {"e": json.dumps({"gaps": [{"area": "descriptions", "failed": 252,
+                                            "reason": "auth_invalid"}]}),
+                 "j": job["job_id"]},
+            )
+            app = FastAPI()
+            app.include_router(create_onboarding_router(
+                conn_factory=conn_session_factory(conn), enqueuer=_RecordingEnqueuer()))
+            async with httpx.AsyncClient(transport=ASGITransport(app=app),
+                                         base_url="http://test") as client:
+                current = await client.get("/onboarding/current", headers={"X-Workspace-Id": ws})
+            body = current.json()
+            assert body["brandKitIngestion"]["status"] == "succeeded_with_gaps"
+            assert body["gaps"] == [
+                {"area": "research", "item": "synthesis",
+                 "code": "provider_refused:openrouter:x", "message": "OpenRouter refused the key"},
+                {"area": "brand_kit", "item": "descriptions", "code": "auth_invalid",
+                 "message": "252 failed"},
+            ]
 
     run_async(scenario())

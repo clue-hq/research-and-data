@@ -101,7 +101,7 @@ function annotationFor(steps: readonly SetupStep[], group: SetupGroup): string {
  * | --- | --- | --- |
  * | absent / null | `queued` | no ingestion exists (or a backend that predates the field) |
  * | `queued` / `running` | `running` | the fleet holds real work for this workspace |
- * | `succeeded` | `complete` | a draft kit was published |
+ * | `succeeded` / `succeeded_with_gaps` | `complete` | a draft kit was published (gaps or not) |
  * | `failed` | `queued` + failure annotation | see below |
  * | in flight, run halted | `queued` | see below |
  *
@@ -123,7 +123,9 @@ function brandKitItem(
   progress: { status: string },
 ): SetupItem {
   if (job === null) return { ...row, status: "queued" };
-  if (job.status === "succeeded") return { ...row, status: "complete" };
+  if (job.status === "succeeded" || job.status === "succeeded_with_gaps") {
+    return { ...row, status: "complete" };
+  }
   if (job.status === "failed") {
     return { ...row, status: "queued", detail: `${row.detail}${FAILED_MEMBER_ANNOTATION}` };
   }

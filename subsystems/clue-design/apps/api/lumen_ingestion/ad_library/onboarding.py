@@ -1208,12 +1208,39 @@ def _complete(
     """
     outcome = _outcome(evidence)
     evidence["outcome"] = outcome
+    evidence["gaps"] = _gaps(evidence)
     if reporter is not None:
         # Progress really is 1.0 — the job IS done, and `store.complete` forces it anyway. What
         # the stage now carries is WHAT it finished with, instead of whichever step happened to
         # narrate last before an early return.
         reporter(outcome["summary"], 1.0)
     return (brand_kit_id, brand_kit_version, json.dumps(evidence))
+
+
+def _gaps(evidence: JsonObject) -> list[JsonObject]:
+    """What this job finished WITHOUT, for ``succeeded_with_gaps`` (spec 2026-10-25 §5.1).
+
+    Deliberately not the outcome's ``partial``: a harvest always defers the card to its own job,
+    so ``partial`` is set on every healthy harvest. A gap is a step that RAN and failed — ad
+    analyses that did not finish, or a card that was not distilled. An empty harvest is a correct
+    outcome (the brand has no static ads), never a gap.
+    """
+    steps = evidence.get("steps") or {}
+    gaps: list[JsonObject] = []
+    enrich = steps.get("enrich") if isinstance(steps.get("enrich"), dict) else {}
+    # Analyses that RAN and failed. Analysis switched off or keyless (every ad ``pending``,
+    # ``failed`` 0) is a deployment setting the pre-flight refuses on, like a skipped card.
+    failed = int(enrich.get("failed") or 0)
+    if failed > 0:
+        gaps.append({"area": "ad_analyses", "failed": failed,
+                     "reason": str(enrich.get("reason") or "analysis failed")[:200]})
+    distill = steps.get("distill") if isinstance(steps.get("distill"), dict) else {}
+    # ``skipped`` is not a gap: a harvest-only request asked for no card, and a missing model key
+    # is a deployment setting the onboarding pre-flight refuses on — neither is a step that failed.
+    if distill.get("status") == "failed":
+        gaps.append({"area": "ad_card", "failed": 1,
+                     "reason": str(distill.get("reason") or "no card")[:200]})
+    return gaps
 
 
 def _reason(error: BaseException) -> str:

@@ -130,7 +130,8 @@ def _ingest(client: TestClient, url: str, **request) -> dict:
     post = client.post("/brand-kits/ingest/website", json={"url": url, **request})
     assert post.status_code == 200, post.text
     job = wait_for_ingestion_job(client, post.json()["job"]["job_id"], timeout_s=INGESTION_TIMEOUT_S)
-    assert job.get("status") == "succeeded", json.dumps(job, indent=1)[:4000]
+    # A finished kit; descriptions the test host's image pool never analyses are honest gaps.
+    assert job.get("status") in ("succeeded", "succeeded_with_gaps"), json.dumps(job, indent=1)[:4000]
     return job
 
 
@@ -171,7 +172,7 @@ def _drain_enrichment(client: TestClient, headers: dict | None = None) -> None:
     deadline = time.monotonic() + 120.0
     while True:
         jobs = [j for j in client.get("/brand-kits/ingest", headers=headers or {}).json()["jobs"] if j.get("kind") == "asset_enrichment"]
-        if all(j.get("status") in ("succeeded", "failed") for j in jobs):
+        if all(j.get("status") in ("succeeded", "succeeded_with_gaps", "failed") for j in jobs):
             return
         assert time.monotonic() < deadline, jobs
         time.sleep(0.2)

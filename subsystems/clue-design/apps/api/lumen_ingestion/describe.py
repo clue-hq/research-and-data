@@ -377,7 +377,16 @@ def describe_kit_assets(
     if not targets:
         return counts
 
-    cached = store.get_many(list(targets.keys()))
+    # A row is a cache hit only when it can actually be stamped: it carries a title or a
+    # description, and either a person wrote it or its analysis did not fail. An AI row whose
+    # analysis ``failed`` — every one an outage left behind (Illumio, 2026-10-23) — is a MISS and
+    # is described again (spec 2026-10-25 §3.4 B); a person's words are never second-guessed.
+    cached = {
+        asset_id: row
+        for asset_id, row in store.get_many(list(targets.keys())).items()
+        if (row.get("title") or row.get("description"))
+        and (row.get("origin") == "human" or row.get("status") != "failed")
+    }
     for asset_id, row in cached.items():
         for entry in targets[asset_id]:
             _stamp_kit_entry(entry, row)

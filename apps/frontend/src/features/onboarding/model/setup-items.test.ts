@@ -246,3 +246,10 @@ test("a halted run never spins the brand-kit row; finished outcomes still show",
     assert.equal(failed?.detail, `${BRAND_KIT_DETAIL}${FAILED_MEMBER_ANNOTATION}`);
   }
 });
+
+test("an ingestion job that finished with gaps still completes the brand-kit row", () => {
+  // The kit was published; what it lacks (failed descriptions, no ad card) is a repair's job.
+  const row = brandKitRow(withJob({ job_id: "ingest_1", status: "succeeded_with_gaps" }));
+  assert.equal(row?.status, "complete");
+  assert.equal(row?.detail, BRAND_KIT_DETAIL);
+});

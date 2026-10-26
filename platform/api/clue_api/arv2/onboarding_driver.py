@@ -366,8 +366,10 @@ class _Scope:
     brand_id: str
     company_domain: str
     company_name: str
-    kind: Literal["full", "personas", "customers"] = "full"
+    kind: Literal["full", "personas", "customers", "repair"] = "full"
     persona_icp: IcpRef | None = None
+    #: A ``repair`` run's planned steps, ``(kind, subject_ref)`` — spec 2026-10-25 §3.4 A.
+    planned: tuple[tuple[str, str | None], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -476,9 +478,18 @@ class OnboardingRunWorkHandler:
     def _scope(payload: Mapping[str, Any]) -> _Scope:
         try:
             named_kind = str(payload.get("kind") or "full")
-            if named_kind not in ("full", "personas", "customers"):
+            if named_kind not in ("full", "personas", "customers", "repair"):
                 raise ValueError(f"unknown onboarding run kind {named_kind!r}")
-            kind = cast(Literal["full", "personas", "customers"], named_kind)
+            kind = cast(Literal["full", "personas", "customers", "repair"], named_kind)
+            planned: tuple[tuple[str, str | None], ...] = ()
+            if kind == "repair":
+                planned = tuple(
+                    (
+                        str(step["kind"]),
+                        None if step.get("subject_ref") is None else str(step["subject_ref"]),
+                    )
+                    for step in payload["planned_steps"]
+                )
             icp: IcpRef | None = None
             if kind == "personas":
                 # Required, not optional: a personas run's whole subject is this document, and a
@@ -502,6 +513,7 @@ class OnboardingRunWorkHandler:
                 company_name=str(payload.get("company_name") or payload["company_domain"]),
                 kind=kind,
                 persona_icp=icp,
+                planned=planned,
             )
         except (KeyError, TypeError, ValueError) as error:
             raise ValueError("invalid onboarding task payload") from error
@@ -555,6 +567,8 @@ class OnboardingRunWorkHandler:
             return await self._personas_only(scope)
         if scope.kind == "customers":
             return await self._customers_only(scope)
+        if scope.kind == "repair":
+            return await self._repair_only(scope)
         async with self._connection() as conn:
             await self._store.mark_run_running(conn, run_id=scope.run_id)
             if self._binder is not None:
@@ -612,6 +626,75 @@ class OnboardingRunWorkHandler:
         async with self._connection() as conn:
             await self._store.mark_run_running(conn, run_id=scope.run_id)
         await self._customers(scope)
+        async with self._connection() as conn:
+            return str(await self._store.finish_run(conn, run_id=scope.run_id))
+
+    async def _repair_only(self, scope: _Scope) -> str:
+        """A repair run: only the steps a workspace repair planned (spec 2026-10-25 §3.4 A).
+
+        The same step methods as the full walk, so a repaired step lands exactly as it would have
+        the first time — new document versions, the same ledger stamps, the same containment. The
+        lineup re-runs its catalog sync and researches the products that have never been
+        researched; a re-run ICP turn writes the personas of the ICPs it registers; a planned
+        persona is written for the brand's current ICP of that key.
+        """
+        async with self._connection() as conn:
+            await self._store.mark_run_running(conn, run_id=scope.run_id)
+        planned = set(scope.planned)
+        kinds = {kind for kind, _ in planned}
+        recon: list[Any] = []
+        if "overview" in kinds:
+            recon.append(self._overview(scope))
+        if "reviews" in kinds:
+            recon.append(self._reviews(scope, phase="fast"))
+        links: tuple[ProductLink, ...] = ()
+        if "lineup" in kinds:
+            links, *_ = await asyncio.gather(self._lineup(scope), *recon)
+        else:
+            await asyncio.gather(*recon)
+        async with self._connection() as conn:
+            researched = await self._store.researched_product_ids(
+                conn, workspace_id=scope.workspace_id, brand_id=scope.brand_id
+            )
+            named = sorted(subject for kind, subject in planned
+                           if kind == "product_research" and subject)
+            planned_links = await self._store.product_links(
+                conn, workspace_id=scope.workspace_id, product_ids=named
+            )
+            persona_keys = sorted(subject for kind, subject in planned
+                                  if kind == "persona" and subject)
+            persona_icps = await self._store.current_brand_icps(
+                conn, workspace_id=scope.workspace_id, brand_id=scope.brand_id,
+                icp_keys=persona_keys,
+            )
+        products = [
+            link for link in _one_link_per_product([link for link in links if not link.redirected])
+            if link.product_id not in researched
+        ]
+        known = {link.product_id for link in products}
+        products += [link for link in planned_links if link.product_id not in known]
+        semaphore = asyncio.Semaphore(self._settings.onboarding_max_parallel_runs)
+
+        async def bounded(work: Any) -> None:
+            async with semaphore:
+                await work
+
+        background = [self._product_research(scope, link) for link in products]
+        if "customers" in kinds:
+            background.append(self._customers(scope))
+        tasks = [asyncio.create_task(bounded(work)) for work in background]
+        try:
+            icps: tuple[IcpRef, ...] = ()
+            if "synthesis" in kinds:
+                icps = await self._synthesis_step(scope)
+            registered = {icp.icp_key for icp in icps}
+            persona_work = [*icps, *(icp for icp in persona_icps if icp.icp_key not in registered)]
+            await asyncio.gather(
+                *(asyncio.create_task(bounded(self._persona_step(scope, icp)))
+                  for icp in persona_work)
+            )
+        finally:
+            await asyncio.gather(*tasks)
         async with self._connection() as conn:
             return str(await self._store.finish_run(conn, run_id=scope.run_id))
 

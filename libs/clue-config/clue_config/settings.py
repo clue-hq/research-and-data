@@ -622,6 +622,14 @@ class Settings(BaseSettings):
     onboarding_customers_effort: str = "xhigh"
     # When the reviews run happens (ruling O-D3: ``fast``). Env: ``CLUE_ONBOARDING_REVIEWS_PHASE``.
     onboarding_reviews_phase: Literal["fast", "background"] = "fast"
+    # Onboarding pre-flight (spec 2026-10-25 §3.3): an OpenRouter key whose readable credit is
+    # below this many dollars WARNS (``low_credit``); at or below zero the start is refused.
+    # Env: ``CLUE_PREFLIGHT_OPENROUTER_MIN_CREDIT_USD``.
+    preflight_openrouter_min_credit_usd: Decimal = Decimal("5")
+    # The open operator routes ``/ops/v1`` (add a workspace, start onboarding, pre-flight, repair;
+    # spec 2026-10-25). Founder ruling D1: no sign-in, for now. ``false`` unmounts them — every
+    # path a 404 — without a code change. Env: ``CLUE_OPS_ROUTES_ENABLED``.
+    ops_routes_enabled: bool = True
     # Cap on concurrent background per-product Exa Agent runs.
     # Env: ``CLUE_ONBOARDING_MAX_PARALLEL_RUNS``.
     onboarding_max_parallel_runs: int = Field(default=6, ge=1)

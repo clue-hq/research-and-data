@@ -6,6 +6,7 @@ import {
   type IngestJob,
   fetchIngestJob,
   fetchIngestJobs,
+  isSucceededJob,
   isTerminalJob,
   startAssetIngest,
   startPdfIngest,
@@ -102,7 +103,7 @@ export function IngestConsole({ apiBaseUrl }: { apiBaseUrl: string }) {
                 <span className="chip is-uppercase">{jobKindLabel(job.kind)}</span>
                 <span className="ingest-recent-stage">{jobStageText(job)}</span>
                 <span className="caption mono">{formatJobTime(job.updated_at)}</span>
-                {job.status === "succeeded" && job.brand_kit_id ? (
+                {isSucceededJob(job) && job.brand_kit_id ? (
                   <a
                     className="btn btn-quiet btn-sm"
                     href={`/brand/kits/${job.brand_kit_id}`}
@@ -178,7 +179,7 @@ function TerminalPanel({
   job: IngestJob;
   onRetry: () => void;
 }) {
-  if (job.status === "succeeded") {
+  if (isSucceededJob(job)) {
     return (
       <div className="ingest-result">
         <span className="status-pill is-approved">Captured</span>
