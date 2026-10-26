@@ -195,7 +195,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # and manual@v30 carry F3's workspace text re-minted above CRM.
         # v85 (2026-10-25, R-14.6): no address moves; `read_crm_targets@1` re-pinned at its new
         # output digest (clue_fit_level), `crm-writing@v7`, stage0-interview@v58 and manual@v31.
-        AgentRole.HEAD_OF_ABM: ("420a963b1922219a259f5d9bb976713bd805efd79d744de33c37c2493d129ed2"),
+        # v86 (2026-10-27, main merged into the CRM line): main's prompt v19, stage0-interview@v59
+        # and manual@v32; no address moves.
+        AgentRole.HEAD_OF_ABM: ("5faa39b7b333cbafa0013cde5b911101dff987864a63f6a18320696e54b7cf5c"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -690,9 +692,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v85"
+    assert production.profile_ref.address == "profile:head-of-abm@v86"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v58"
+        "skill:stage0-interview@v59"
     )
     # ARV2 onboarding O6 retired the S4-E Client-KB/Product-KB reader surface from this role: the
     # new lane's Stage-0 knowledge is brand knowledge documents the agent reads off its workspace,
@@ -732,7 +734,7 @@ def test_v70_grants_the_agent_authored_discovery_pair_and_its_teaching(
     stage0-interview version whose section 7b teaches how to write the brief.
     """
 
-    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v85"
+    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v86"
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
     granted = {pin.address for pin in head.profile.tools}
     # v72 re-pins it at `@3` (the brief's exclude list, spec 2026-10-16).
@@ -741,8 +743,8 @@ def test_v70_grants_the_agent_authored_discovery_pair_and_its_teaching(
     assert "launch_arv2_discovery@1" not in granted
     assert "read_discovery_run@3" in granted
     assert "read_discovery_run@2" not in granted
-    assert head.profile.skills[0].resource.address == "skill:stage0-interview@v58"
-    body = head.open_skill("skill:stage0-interview@v58")
+    assert head.profile.skills[0].resource.address == "skill:stage0-interview@v59"
+    body = head.open_skill("skill:stage0-interview@v59")
     assert "## 7b. Discover accounts for this project" in body
     assert "`must_not`" in body
     assert "discovery_in_progress" in body
@@ -765,7 +767,7 @@ def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents(
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v58")
+    body = production.open_skill("skill:stage0-interview@v59")
 
     assert "onboarding has not produced knowledge for this brand yet" in body
     assert "brand onboarding runs from the workspace's onboarding flow" in body
@@ -825,7 +827,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     # uncallable. v54 adds the fifteen manual chapters after it, in profile order: reference, not
     # procedure, each granting no tool.
     assert [item.resource.address for item in disclosures] == [
-        "skill:stage0-interview@v58",
+        "skill:stage0-interview@v59",
         # v55 adds the three document skills between the procedure and the reference shelf: each
         # one is the whole procedure for one document written under `project/`, and grants no tool.
         "skill:account-research-briefing@v3",
@@ -847,7 +849,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
         # Clue's own fields; v83 at v6, which rewords section 3c items 2 and 3; v85 at v7, which
         # names Clue's field "Clue fit level".
         "skill:crm-writing@v7",
-        *(f"skill:manual-{name}@v31" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v32" for name in MANUAL_CHAPTERS),
     ]
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -857,7 +859,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     assert briefing_path in body
     assert briefing_path in head.prompt_body
     assert briefing_path in launch.model_description
-    assert briefing_path in head.open_skill("skill:manual-tools@v31")
+    assert briefing_path in head.open_skill("skill:manual-tools@v32")
     with pytest.raises(AgentCatalogError, match="not disclosed"):
         head.open_skill("skill:unknown@v1")
 
@@ -970,7 +972,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v58")
+    body = head.open_skill("skill:stage0-interview@v59")
 
     assert required_guidance in body
 
@@ -1024,7 +1026,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     # procedure uncallable. What it can make is a chapter that over-describes the narrowed
     # surface, which is the manual's honesty problem, not the ceiling's.
     remaining = [item.resource.address for item in head.skill_disclosures()]
-    assert "skill:stage0-interview@v58" not in remaining
+    assert "skill:stage0-interview@v59" not in remaining
     # v55's three document skills survive with the manual chapters, and for the same reason: a
     # skill that requires no tool cannot be made uncallable by withdrawing one.
     assert remaining == [
@@ -1047,7 +1049,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
         # Clue's own fields; v83 at v6, which rewords section 3c items 2 and 3; v85 at v7, which
         # names Clue's field "Clue fit level".
         "skill:crm-writing@v7",
-        *(f"skill:manual-{name}@v31" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v32" for name in MANUAL_CHAPTERS),
     ]
 
 
@@ -1077,7 +1079,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
 def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path) -> None:
     copied = tmp_path / "catalog"
     shutil.copytree(CATALOG_ROOT, copied)
-    prompt = copied / "prompts/head-of-abm/v18/SYSTEM.md"
+    prompt = copied / "prompts/head-of-abm/v19/SYSTEM.md"
     prompt.write_text(prompt.read_text() + "\nChanged under the same version.\n")
     toolbelt = build_toolbelt(storage=None, gateway=None)
     admitted = frozenset(
@@ -1181,7 +1183,7 @@ def test_v80_teaches_that_a_message_clue_wrote_is_never_the_persons_words(
     taught, that a wake-up, a finished discovery or a connected CRM is never recorded."""
 
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v58")
+    body = head.open_skill("skill:stage0-interview@v59")
     passage = (
         "Only the person's own words are recorded. A message Clue wrote — a wake-up after CRM "
         "changes, a finished discovery, a connected CRM — is never recorded as an interview answer."
@@ -1314,8 +1316,8 @@ def test_v85_names_clues_field_clue_fit_level(registry: AgentProfileRegistry) ->
     the field named "Clue fit level" and that digest; the hand-written manual chapters v31 are v30
     with their version tokens moved."""
 
+    # v86 is active and still discloses crm-writing v7; manual v31 is read from its folder.
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    assert head.profile_ref.address == "profile:head-of-abm@v85"
     root = Path(__file__).resolve().parents[2] / "platform" / "agents" / "catalog"
     profiles = root / "profiles" / "head-of-abm"
     v84 = (profiles / "v84" / "profile.yaml").read_text()
@@ -1352,5 +1354,32 @@ def test_v85_names_clues_field_clue_fit_level(registry: AgentProfileRegistry) ->
         v30 = (skills / f"manual-{name}" / "v30" / "SKILL.md").read_text()
         v31 = (skills / f"manual-{name}" / "v31" / "SKILL.md").read_text()
         assert v31.replace("v31", "v30") == v30, name
-    tools_chapter = head.open_skill("skill:manual-tools@v31")
+    tools_chapter = (skills / "manual-tools" / "v31" / "SKILL.md").read_text()
     assert "clue_fit_level" in tools_chapter and "clue_tier" not in tools_chapter
+
+
+def test_v86_carries_mains_prompt_v19_above_crm(registry: AgentProfileRegistry) -> None:
+    """main merged into the CRM line (2026-10-27): head-of-abm v86 is v85 with main's prompt v19
+    (the design brief carries no copy; a menu of angles for variants), stage0-interview v59 and
+    manual v32; no address added or removed, the same tools and skills otherwise."""
+
+    head = registry.resolve(AgentRole.HEAD_OF_ABM)
+    assert head.profile_ref.address == "profile:head-of-abm@v86"
+    assert head.profile.prompt.address == "prompt:head-of-abm@v19"
+    root = Path(__file__).resolve().parents[2] / "platform" / "agents" / "catalog"
+    profiles = root / "profiles" / "head-of-abm"
+    v85 = (profiles / "v85" / "profile.yaml").read_text()
+    v86 = (profiles / "v86" / "profile.yaml").read_text()
+
+    def tools_of(text: str) -> str:
+        return text.split("\ntools:\n", 1)[1]
+
+    assert tools_of(v86) == tools_of(v85)
+    skills = root / "skills"
+    v58 = (skills / "stage0-interview" / "v58" / "SKILL.md").read_text()
+    v59 = (skills / "stage0-interview" / "v59" / "SKILL.md").read_text()
+    assert v59 == v58.replace("v31", "v32").replace("v58", "v59")
+    for name in MANUAL_CHAPTERS:
+        v31 = (skills / f"manual-{name}" / "v31" / "SKILL.md").read_text()
+        v32 = (skills / f"manual-{name}" / "v32" / "SKILL.md").read_text()
+        assert v32 == v31.replace("v31", "v32").replace("v85", "v86"), name

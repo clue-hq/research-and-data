@@ -1,8 +1,12 @@
 ## Images and placement
 
-Use `image asset(id)` for a real raster, `svg(icon:name)` for a supported library
-icon, and `vector path("…")` for a native path. An image declaration needs a real
-asset ID. Logo or product images must remain authentic independent assets.
+Pictures, illustrations, backgrounds and textures are images: a library image
+(`search_assets`, then `place`) or a generated one (`generate_image`; see
+`/.deepagent/skills/generative-imagery/SKILL.md`), declared with `image asset(id)`.
+Use `svg(icon:name)` for a supported library icon. Use `vector path("…")` only for
+simple geometry such as a divider, an arrow or a plain shape. Never use it to draw a
+picture or an illustration, and generate an icon the library lacks as an image. An
+image declaration needs a real asset ID. Logo or product images must remain authentic independent assets.
 
 Fit, focal point and alt text belong to AssetPlacement, set by
 `asset(action="place", ...)`; they are not DSL image-leaf properties. Frame

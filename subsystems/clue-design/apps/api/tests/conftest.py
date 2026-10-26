@@ -120,7 +120,7 @@ def wait_for_ingestion_job(
         response = client.get(f"/brand-kits/ingest/{job_id}")
         if response.status_code == 200:
             job = response.json()["job"]
-            if job.get("status") in ("succeeded", "failed"):
+            if job.get("status") in ("succeeded", "succeeded_with_gaps", "failed"):
                 return job
         if time.monotonic() >= deadline:
             return job

@@ -199,7 +199,13 @@ def run_asset_enrichment(
             job_id=job_id,
         )
         counts = {key: value for key, value in summary.items() if key != "results"}
-        if summary["ready"] != summary["total"]:
+        if 0 < summary["ready"] < summary["total"]:
+            # Spec 2026-10-25 §5.1: some analysed, some not — a finished job WITH GAPS, so the
+            # assets that did succeed are not reported as a failure.
+            gap = {"area": "descriptions", "failed": summary["total"] - summary["ready"],
+                   "reason": "analysis failed"}
+            store.complete(job_id, None, None, json.dumps({**counts, "gaps": [gap]}))
+        elif summary["ready"] != summary["total"]:
             store.fail(
                 job_id,
                 {

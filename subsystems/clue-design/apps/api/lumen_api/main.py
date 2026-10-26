@@ -2430,85 +2430,43 @@ def create_app(
         metadata. The republish is load-bearing: descriptions are frozen into
         the kit JSON at publish, so healing the ``asset_descriptions`` library
         alone never reaches the agent's brand card. Generic for any kit."""
-        from lumen_ingestion.describe import describe_kit_assets
-        from lumen_ingestion.normalizer.font_metrics import (
-            ensure_glyph_coverage,
-            ensure_type_size_ramp,
-        )
-        from lumen_ingestion.pipeline import (
-            make_rasterize_svg,
-            make_resolve_bytes,
-            resolve_describer,
-        )
+        from lumen_ingestion.kit_republish import republish_kit_with_descriptions
+        from lumen_ingestion.pipeline import resolve_describer
 
-        record = repo.require_brand_kit(brand_kit_id)
-        brand_kit = json.loads(json.dumps(record["brand_kit"]))
-        before = json.dumps(brand_kit, sort_keys=True)
-        # Re-run the normalizer's type-size ramp emission before publishing:
-        # kits produced before the ramp normalizer (K4 rung 2) lack $type.size.*
-        # and die preflight LUMB0301 on standard size tokens. Idempotent — a kit
-        # that already carries the up-to-date ramp is left byte-identical, so
-        # this alone never forces a no-op republish.
-        ensure_type_size_ramp(brand_kit)
-        # D4: byte reads resolve durably (`make_resolve_bytes` reads through the blob store);
-        # only the SVG rasterizer touches the engine, and it materializes what it needs.
-        blobs = blob_store(repo)
-        cache_dir = request_cache_dir(repo)
-        describe_diagnostics: list = []
-        # Glyph-coverage audit backfill (same pattern as the ramp): kits ingested
-        # before the audit get fonts.*.metrics.missing_glyphs stamped from their
-        # stored face bytes, so the honesty note reaches the agent's brand card
-        # on republish without a full re-ingestion. Advisory LUMI0806 warnings.
-        ensure_glyph_coverage(
-            brand_kit,
-            make_resolve_bytes(repo, blobs),
-            describe_diagnostics,
-        )
-        counts = describe_kit_assets(
-            brand_kit,
-            describer=resolve_describer(),
-            resolve_bytes=make_resolve_bytes(repo, blobs),
-            rasterize_svg=make_rasterize_svg(repo, blobs, cache_dir),
-            diagnostics=describe_diagnostics,
-            brand_name=record.get("name"),
-            workspace_id=repo.workspace_id,
-        )
-        if json.dumps(brand_kit, sort_keys=True) == before:
+        def publish(
+            brand_kit: JsonObject, summary: JsonObject, diagnostics: list, base_version: int
+        ) -> JsonObject:
+            return _publish_brand_kit_version(
+                repo, brand_kit, summary, diagnostics, "manual",
+                expected_base_version=base_version,
+            )
+
+        # Cache-first: only misses (no row, or a FAILED one) cost a vision call. The shared step
+        # is also what the workspace-repair job runs (spec 2026-10-25 §3.4 B).
+        try:
+            result = republish_kit_with_descriptions(
+                repo,
+                brand_kit_id=brand_kit_id,
+                blobs=blob_store(repo),
+                describer=resolve_describer(),
+                core=app.state.core,
+                publish=publish,
+                cache_dir=request_cache_dir(repo),
+            )
+        except CoreError as error:
+            raise core_http_error(error) from error
+        counts = result["counts"]
+        if not result["published"]:
             # Nothing stamped (all failed, describe disabled, or already
             # described) — publishing an identical version would be noise.
             return {
                 "brand_kit_id": brand_kit_id,
                 "published": False,
                 "counts": counts,
-                "diagnostics": describe_diagnostics,
+                "diagnostics": result["diagnostics"],
             }
-        # Provisional, as on the logo route: the write allocates the real number (D6 Round C).
-        base_version = int(record["version"])
-        brand_kit["version"] = base_version + 1
-        try:
-            validation = app.state.core.validate_brand_kit(
-                brand_kit, product_ready=False
-            )
-            summary_response = app.state.core.summarize_brand_kit(
-                validation["brand_kit"], raise_on_error=False
-            )
-            # The engine returns only what its BrandKit knows; the kit's brief, grammar audit and
-            # measured components ride on (Wave 2 A9 — every curated kit lost them before).
-            brand_kit = carry_kit_sections(brand_kit, validation["brand_kit"])
-        except CoreError as error:
-            raise core_http_error(error) from error
-        diagnostics = (
-            summary_response.get("diagnostics")
-            or validation.get("diagnostics", [])
-        ) + describe_diagnostics
-        created = _publish_brand_kit_version(
-            repo,
-            brand_kit,
-            summary_response.get("brand_summary") or {},
-            diagnostics,
-            "manual",
-            expected_base_version=base_version,
-        )
+        created = result["created"]
+        diagnostics = result["diagnostics"]
         log_event(
             api_logger,
             logging.INFO,
@@ -12679,6 +12637,7 @@ def _execute_ingestion_job(
     workspace_id = envelope.workspace_id
     kind = DesignIngestionKind(envelope.ingestion_kind)
     from .asset_enrichment import run_asset_enrichment
+    from lumen_ingestion.kit_repair import run_kit_repair
     runner = {
         DesignIngestionKind.ASSET_ENRICHMENT: run_asset_enrichment,
         DesignIngestionKind.WEBSITE: run_website_ingestion,
@@ -12687,6 +12646,8 @@ def _execute_ingestion_job(
         # Brand Ad Assets v1 W2. Same signature, same never-raises contract, same fence — the
         # lane is a fourth ingestion kind rather than a second job system (see the enum).
         DesignIngestionKind.AD_ASSETS: run_ad_assets_onboarding,
+        # Workspace repair (spec 2026-10-25): batch-describe, republish, re-offer the ad card.
+        DesignIngestionKind.KIT_REPAIR: run_kit_repair,
     }[kind]
     runner(
         str(_host_engine_cache_root(host, workspace_id)),

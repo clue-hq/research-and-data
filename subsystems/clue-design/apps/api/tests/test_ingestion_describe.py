@@ -1133,3 +1133,98 @@ def test_captured_section_images_are_described_once_and_named_by_digest_in_the_b
                "html": "".join(f'<img src="/asset-store/{digest}">' for digest in digests)}]
     found = captured_image_descriptions(clones, workspace_id=DescriptionStore().workspace_id)
     assert found == {digest: f"A caption for {asset_id}." for digest, asset_id in zip(digests, ids)}
+
+
+# --------------------------------------------------------------------------- #
+# Workspace repair (spec 2026-10-25 §3.4 B): the backfill heals FAILED rows and the
+# describe-and-republish step is one reusable function.
+# --------------------------------------------------------------------------- #
+
+
+def _mark_failed(asset_id: str) -> None:
+    """A row the enrichment pass left ``failed`` — the placeholder ``_locked`` writes (origin
+    ``human``, no text), as production leaves it."""
+    from sqlalchemy import text
+
+    from lumen_api.design_store import DesignStoreBridge, default_workspace_id
+
+    async def write(conn):
+        await conn.execute(
+            text(
+                "INSERT INTO design_asset_description (workspace_id, asset_id, origin,"
+                " analysis_status) VALUES (:w, :a, 'human', 'failed')"
+                " ON CONFLICT (workspace_id, asset_id) DO UPDATE SET analysis_status = 'failed'"
+            ),
+            {"w": default_workspace_id(), "a": asset_id},
+        )
+
+    DesignStoreBridge(default_workspace_id())._run(write)
+
+
+def test_kit_backfill_redescribes_failed_rows(tmp_path: Path) -> None:
+    from lumen_ingestion.describe import describe_kit_assets
+
+    _register("asset_logo", "asset_photo", "asset_photo_described")
+    DescriptionStore().put_human(
+        "asset_photo_described", "Existing title", "Existing caption.", None, []
+    )
+    _mark_failed("asset_logo")
+    _mark_failed("asset_photo")
+    describer = _ScriptedDescriber()
+    counts = describe_kit_assets(
+        _backfill_kit(),
+        describer=describer,
+        resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
+    )
+    assert sorted(describer.seen_ids) == ["asset_logo", "asset_photo"]
+    assert counts["cached"] == 1
+    assert counts["described"] == 2
+
+
+class _StubCore:
+    def validate_brand_kit(self, kit, product_ready=False):
+        return {"brand_kit": kit, "diagnostics": []}
+
+    def summarize_brand_kit(self, kit, raise_on_error=False):
+        return {"brand_summary": {}, "diagnostics": []}
+
+
+def test_republish_publishes_a_new_version_only_when_something_was_stamped(tmp_path: Path) -> None:
+    from lumen_ingestion.kit_republish import republish_kit_with_descriptions
+
+    _register("asset_logo", "asset_photo", "asset_photo_described")
+    DescriptionStore().put_human(
+        "asset_photo_described", "Existing title", "Existing caption.", None, []
+    )
+    from clue_storage import storage_from_settings
+
+    from lumen_api.design_store import DesignBlobStore
+
+    repo = HybridRepository()
+    blobs = DesignBlobStore(storage_from_settings(), repo.workspace_id)
+    kit = {**_backfill_kit(), "id": "brand_kit_republish", "version": 1, "name": "Republish",
+           "approval_status": "approved"}
+    repo.create_brand_kit(kit, {"product_ready": False}, [], "website")
+    published: list[int] = []
+
+    def publish(brand_kit, summary, diagnostics, base_version):
+        published.append(base_version)
+        brand_kit = {**brand_kit, "version": base_version + 1}
+        return repo.create_brand_kit(brand_kit, summary, diagnostics, "manual")
+
+    inactive = _CountingNull()
+    inactive.active = False
+    first = republish_kit_with_descriptions(
+        repo, brand_kit_id="brand_kit_republish", blobs=blobs, describer=inactive, core=_StubCore(),
+        publish=publish, cache_dir=str(tmp_path),
+    )
+    assert first["published"] is True
+    assert published == [1]
+    assert first["created"]["version"] == 2
+
+    second = republish_kit_with_descriptions(
+        repo, brand_kit_id="brand_kit_republish", blobs=blobs, describer=inactive, core=_StubCore(),
+        publish=publish, cache_dir=str(tmp_path),
+    )
+    assert second["published"] is False
+    assert published == [1]

@@ -55,6 +55,7 @@ from sqlalchemy import text
 
 from clue_config import Settings
 from clue_db import ConnFactory
+from clue_design.brand import list_brand_kits
 from clue_design.ingestion import list_recent
 from clue_obs import get_logger
 
@@ -165,7 +166,16 @@ class BrandKitWebsiteIngestion:
             existing = await list_recent(
                 conn, workspace_id=workspace_id, limit=1, kinds=KIT_INGESTION_KINDS
             )
-            if existing:
+            # Gap-aware (spec 2026-10-25 §3.2): a kit job queued, running or finished — gapped or
+            # not — suppresses a new capture (a gapped kit is REPAIRED, not re-captured). Only a
+            # newest capture that FAILED with no kit in the workspace at all is captured again,
+            # so a capture that died (the design API was down) cannot block every later start.
+            recapture = (
+                bool(existing)
+                and existing[0].get("status") == "failed"
+                and not await list_brand_kits(conn, workspace_id=workspace_id)
+            )
+            if existing and not recapture:
                 log.info(
                     "brand_kit_ingestion.already_ingested",
                     workspace_id=workspace_id,

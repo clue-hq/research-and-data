@@ -266,3 +266,15 @@ test("status reads surface BFF auth envelopes with their code", async (t) => {
 test("the parsed status validates through the schema", () => {
   assert.ok(SetupStatusSchema.safeParse(setupStatusFromOnboarding(running)).success);
 });
+
+test("a brand-kit job that finished with gaps is carried as finished, not in flight", () => {
+  // Spec 2026-10-25 §5.3: the design API now says `succeeded_with_gaps` when descriptions, ad
+  // analyses or the card failed. The kit exists; the checklist row must not spin forever.
+  assert.deepEqual(
+    setupStatusFromOnboarding({
+      ...running,
+      brandKitIngestion: { jobId: "job-1", status: "succeeded_with_gaps" },
+    }).brand_kit_ingestion,
+    { job_id: "job-1", status: "succeeded_with_gaps" },
+  );
+});

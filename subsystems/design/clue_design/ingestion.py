@@ -292,12 +292,22 @@ async def complete(
 
     ``expected_generation`` (D5 Round C) is the zombie fence — an abandoned ingestion thread must
     not stamp its result over the takeover worker's.
+
+    The status is derived HERE, from the evidence itself (spec 2026-10-25 §5.1): a non-empty
+    ``gaps`` list — failed descriptions, ad analyses, card, brief or grammar audit — makes the job
+    ``succeeded_with_gaps``, everything else ``succeeded``. One place decides, so a producer that
+    records a gap cannot also forget to say so in the status.
     """
     return await _write_or_fence(
         conn,
         """
         UPDATE design_ingestion_job
-        SET status = CAST('succeeded' AS design_ingestion_status), progress = 1,
+        SET status = CAST(
+              CASE WHEN jsonb_typeof(CAST(:evidence AS jsonb) -> 'gaps') = 'array'
+                        AND jsonb_array_length(CAST(:evidence AS jsonb) -> 'gaps') > 0
+                   THEN 'succeeded_with_gaps' ELSE 'succeeded' END
+              AS design_ingestion_status),
+            progress = 1,
             brand_kit_id = :b, brand_kit_version = :v,
             evidence_json = CAST(:evidence AS jsonb), updated_at = now()
         WHERE job_id = :j AND workspace_id = :w

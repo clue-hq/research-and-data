@@ -809,3 +809,97 @@ def test_the_builder_reads_the_ad_harvest_settings(
 )
 def test_company_domain_is_the_bare_host(website: str, domain: str | None) -> None:
     assert company_domain(website) == domain
+
+
+# --- gap-aware re-entry (spec 2026-10-25 §3.2, defect d) --------------------------------------
+
+
+async def _job_with_status(conn: AsyncConnection, workspace_id: str, status: str,
+                           *, kit: bool) -> None:
+    from sqlalchemy import text
+
+    kit_id = None
+    if kit:
+        kit_id = f"brand_kit_gap_{uuid4().hex[:8]}"
+        await design_brand.create_brand_kit(
+            conn, workspace_id=workspace_id,
+            brand_kit={"id": kit_id, "version": 1, "name": "Kit", "approval_status": "approved"},
+            brand_summary={"product_ready": False}, diagnostics=[], source="website",
+        )
+    job = await design_ingestion.create_job(
+        conn, workspace_id=workspace_id, kind="website",
+        request={"url": PROFILE["company_website"]},
+    )
+    await conn.execute(
+        text("UPDATE design_ingestion_job SET status = CAST(:s AS design_ingestion_status),"
+             " brand_kit_id = :k, brand_kit_version = :v WHERE job_id = :j"),
+        {"s": status, "k": kit_id, "v": 1 if kit else None, "j": job["job_id"]},
+    )
+
+
+async def _replay_setup(conn: AsyncConnection, workspace_id: str) -> _DesignApiDouble:
+    design = _DesignApiDouble()
+    app = _setup_app(conn_factory=_shared_conn_factory(conn), design=design,
+                     recon=_CaptureEnqueuer())
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        replayed = await client.post("/stage0/setup", headers={"X-Workspace-Id": workspace_id})
+    assert replayed.status_code == 202
+    return design
+
+
+def test_ensure_recaptures_when_the_newest_capture_failed_and_no_kit_exists() -> None:
+    """A capture that died (the design API was down) must not block every later start."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            provisioned = await _provision(conn, "brandkit-recapture")
+            workspace_id = provisioned.workspace.workspace_id
+            await _job_with_status(conn, workspace_id, "failed", kit=False)
+            design = await _replay_setup(conn, workspace_id)
+            assert [request.url.path for request in design.requests].count(INGEST_WEBSITE_PATH) == 1
+
+    run_async(scenario())
+
+
+def test_ensure_skips_a_gapped_kit_which_repair_heals() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            provisioned = await _provision(conn, "brandkit-gapped")
+            workspace_id = provisioned.workspace.workspace_id
+            await _job_with_status(conn, workspace_id, "succeeded_with_gaps", kit=True)
+            design = await _replay_setup(conn, workspace_id)
+            assert INGEST_WEBSITE_PATH not in [request.url.path for request in design.requests]
+
+    run_async(scenario())
+
+
+def test_a_failed_harvest_is_not_re_offered_by_the_kit_recapture_rule() -> None:
+    """Final review #3: the kit's re-capture rule (no kit + failed capture) is the KIT's alone.
+    A workspace with no kit whose ad harvest failed must not re-buy a harvest on every start."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            provisioned = await _provision(conn, "adharvest-failed")
+            workspace_id = provisioned.workspace.workspace_id
+            harvest = await design_ingestion.create_job(
+                conn, workspace_id=workspace_id, kind="ad_assets", request={"phase": "harvest"}
+            )
+            from sqlalchemy import text
+
+            await conn.execute(
+                text("UPDATE design_ingestion_job SET status = 'failed' WHERE job_id = :j"),
+                {"j": harvest["job_id"]},
+            )
+            design = _DesignApiDouble()
+            app = _setup_app(conn_factory=_shared_conn_factory(conn), design=design,
+                             recon=_CaptureEnqueuer(), ad_harvest=AD_HARVEST)
+            transport = ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                started = await client.post(
+                    "/stage0/setup", headers={"X-Workspace-Id": workspace_id}
+                )
+            assert started.status_code == 202
+            assert ONBOARD_AD_ASSETS_PATH not in [r.url.path for r in design.requests]
+
+    run_async(scenario())

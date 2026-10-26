@@ -176,3 +176,32 @@ def test_brand_kits_source_check_accepts_website(tmp_path: Path) -> None:
 # the pre-007 upgrade/FK-preservation walk, and the 007 rebuild-on-boot check): their subject —
 # `run_migrations`, `apps/api/migrations/*.sql`, and the SQLite tables themselves — no longer
 # exists. Schema evolution is Alembic's, covered by `make db-smoke` and the platform suite.
+
+
+def test_ingestion_gaps_names_failed_descriptions_brief_and_grammar() -> None:
+    """Spec 2026-10-25 §5.1: what a kit-building job finished WITHOUT, as its evidence ``gaps``."""
+    from types import SimpleNamespace
+
+    from lumen_ingestion.pipeline import ingestion_gaps
+
+    evidence = SimpleNamespace(description_progress={"total": 5, "ready": 3, "failed": 2})
+    diagnostics = [
+        {"code": "LUMI0803", "severity": "warning", "asset_id": "a1",
+         "message": "a1: provider_refused:openrouter:auth_invalid"},
+        {"code": "LUMI0903", "severity": "warning", "message": "brief failed"},
+        {"code": "LUMI0910", "severity": "warning", "message": "grammar audit failed"},
+        {"code": "LUMI0806", "severity": "warning", "message": "advisory, not a gap"},
+    ]
+    gaps = ingestion_gaps(evidence, diagnostics)
+    assert [gap["area"] for gap in gaps] == ["descriptions", "brief", "grammar_audit"]
+    assert gaps[0]["failed"] == 2
+    assert "auth_invalid" in gaps[0]["reason"]
+
+
+def test_ingestion_gaps_is_empty_for_a_clean_job() -> None:
+    from types import SimpleNamespace
+
+    from lumen_ingestion.pipeline import ingestion_gaps
+
+    evidence = SimpleNamespace(description_progress={"total": 2, "ready": 2, "failed": 0})
+    assert ingestion_gaps(evidence, [{"code": "LUMI0806", "severity": "warning"}]) == []

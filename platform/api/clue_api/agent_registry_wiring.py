@@ -330,7 +330,10 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # own CRM field "Clue tier" becomes "Clue fit level", so `read_crm_targets@1` is re-pinned at
     # its new output digest (clue_fit_level), `crm-writing` v7, `stage0-interview@v58` (v57 with
     # its manual paths repointed), `manual-*@v31` and recipe 45. Prompt v18 stays.
-    AgentRole.HEAD_OF_ABM: "v85",
+    # v86 (2026-10-27, main merged into the CRM line): v85's surface, no address added or removed,
+    # with main's prompt v19 (the design brief carries no copy; a menu of angles for variants),
+    # `stage0-interview@v59` (v58 with its manual paths repointed), `manual-*@v32` and recipe 46.
+    AgentRole.HEAD_OF_ABM: "v86",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

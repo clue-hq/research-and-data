@@ -20,8 +20,11 @@ Start with advertiser kit assets and the current workspace's `source_assets.json
 Search that catalog by the target's name, domain and logo labels; a truncated
 opening excerpt is not the complete catalog. Inspect matching original assets
 with their `view_target` and provenance before acquiring replacements. Previously
-fetched originals and traceable crops remain usable; a prior generated ad is not
-logo authority. Then use `fetch_logo(domain, company_name)` for missing or
+fetched originals remain usable; a prior generated ad is not logo authority. Never
+crop a logo out of another image, such as an ad, a screenshot or a web page, and
+never reuse a logo crop from an earlier run: crops come out blurry and carry stray
+pixels. Use only original logo files: the brand card, logos fetched earlier, or
+`fetch_logo`. Then use `fetch_logo(domain, company_name)` for missing or
 unsuitable variants. Fetch the exact advertiser too when its kit only has an
 unsuitable social avatar.
 Inspect returned provenance, missing cells, `cache_hit` and visible identity.
@@ -47,7 +50,9 @@ needed for legibility within the approved treatment; record any unmet variant re
 
 Inspect actual ink, transparent padding, baked-in plates and resolution. The
 white/charcoal asset comparison is inspection only; place the unchanged original.
-Prefer complete wordmarks. A supported authentic favicon fallback stays compact;
+For a single logo, prefer its complete lockup. For an advertiser and target pair,
+the pairing order below decides, even when that means using symbols. A supported
+authentic favicon fallback stays compact;
 its frame cannot recover missing detail. A required unavailable exact mark stays
 a gap. Never generate, redraw, recolor or stretch a logo, or add a duplicate symbol
 beside a full lockup. A plate around one logo does not supply a missing variant.
@@ -63,11 +68,42 @@ lockup needs at comparable visible letter heights, preserving both aspect ratios
 A long name needs more width; squeezing it into the short mark's width makes its
 letters too small. Reduce the whole group to fit rather than shrinking only it.
 
+The two logos must always be in visual balance: a viewer sees them as equals, and
+neither looks bigger, heavier or more important than the other.
+
+Choose the pair first. List every variant each brand has: the brand card's logo
+inventory, including its mark, and every `fetch_logo` cell and alternative. View
+each one to see its shape, because a `*_lockup` cell can be stacked. Then use the
+first pair in this order that both brands have:
+1. both horizontal: symbol beside the name, or the name alone on one line;
+2. both stacked: symbol above the name;
+3. both symbols alone.
+
+If none of these exists for both brands, or the symbols alone would leave a reader
+unsure whose logos they are, use the two closest variants.
+
+Never set a company's name in type beside or under its symbol: that makes a logo the
+company never made. If the reader needs the name, put it in the headline or support
+as part of a sentence.
+
+Then balance them. Judge by eye in the render, as a viewer would see them, not by
+file or frame sizes:
+- Size: compare the logo ink you can see. Two of the same shape get the same letter
+  height. Two different shapes get about the same ink area, so the taller one is
+  narrower and the wider one is shorter.
+- Weight: a dense, dark or solid logo looks bigger than a light, thin one at the
+  same size. Make the heavier one a little smaller until they feel equal.
+- Alignment: centre both on the same middle line, with equal space on either side
+  of the ×.
+
+If one still looks bigger, adjust it and look again before you review. Say in your
+summary which pair you used and why.
+
 Use independent advertiser, quiet native `×`, and target nodes. Optically align
 the letters on one line, give each authentic mark its clear space, and associate
 them closely enough to read together. A constrained format can stack the group
-deliberately. Match apparent weight as well as scale: a dense symbol may need less
-height. View the pair in the full composition and at detail scale before accepting.
+deliberately. View the pair in the full composition and at detail scale before
+accepting.
 
 ## 3. Compose the message and visual idea together
 

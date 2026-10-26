@@ -686,7 +686,8 @@ def test_a_failed_distillation_does_not_lose_the_harvested_creatives(
     brand_kit_id = _seed_brand_kit(client)
 
     job = _run_job(client, tmp_path, brand_kit_id=brand_kit_id, distiller=_FailingDistiller())
-    assert job["status"] == "succeeded", job
+    # Finished, but without its card: a gap, not a failure (spec 2026-10-25 §5.1).
+    assert job["status"] == "succeeded_with_gaps", job
 
     steps = job["evidence"]["steps"]
     assert steps["record"]["count"] == 4
@@ -1189,3 +1190,161 @@ def test_the_website_pipeline_hands_its_completion_to_the_card_offer(
     monkeypatch.setattr(pipeline, "run_ingestion_job", capture)
     pipeline.run_website_ingestion(str(tmp_path), "ingest_x", workspace_id="ws_x")
     assert callable(seen["on_complete"])
+
+
+# --- honest status (spec 2026-10-25 §5.1) ------------------------------------------------------
+
+
+class _FailingAssetDescriber:
+    """Every ad analysis fails, as it did when the OpenRouter key was disabled (Illumio)."""
+
+    active = True
+    last_failure_reason = "provider_refused:openrouter:auth_invalid"
+
+    def describe(self, items: list[Any]) -> list[Any]:
+        raise RuntimeError(self.last_failure_reason)
+
+
+def test_harvest_with_failed_ad_analyses_records_an_ad_analyses_gap(
+    tmp_path: Path, lane_on: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lumen_ingestion import pipeline
+
+    monkeypatch.setattr(pipeline, "resolve_describer", lambda: _FailingAssetDescriber())
+    client = _client(tmp_path)
+    job = _run_harvest(client, tmp_path)
+
+    assert job["status"] == "succeeded_with_gaps", job
+    gaps = job["evidence"]["gaps"]
+    assert [gap["area"] for gap in gaps] == ["ad_analyses"]
+    enrich = job["evidence"]["steps"]["enrich"]
+    assert enrich["status"] == "failed" and enrich["ready"] == 0
+    assert gaps[0]["failed"] == enrich["total"]
+
+
+def test_harvest_with_no_ads_or_a_deferred_card_has_no_gaps(
+    tmp_path: Path, lane_on: None
+) -> None:
+    client = _client(tmp_path)
+    job = _run_harvest(client, tmp_path)
+
+    assert job["status"] == "succeeded", job
+    assert job["evidence"]["steps"]["distill"]["status"] == "deferred"
+    assert job["evidence"]["gaps"] == []
+
+
+def test_card_phase_distil_failure_records_an_ad_card_gap(tmp_path: Path, lane_on: None) -> None:
+    from lumen_ingestion.ad_library.auto_card import offer_card_if_ready
+
+    client = _client(tmp_path)
+    _run_harvest(client, tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+    _finish_a_kit_ingestion(client, brand_kit_id)
+    card_job_id = offer_card_if_ready(client.headers["X-Workspace-Id"])
+    assert card_job_id is not None
+
+    job = _drive(
+        client,
+        tmp_path,
+        card_job_id,
+        provider=_NoLibraryCalls(),
+        distiller=_FailingDistiller(),
+        generate=_stub_generate,
+        fetch_creative=_no_creative_fetch,
+    )
+
+    assert job["status"] == "succeeded_with_gaps", job
+    assert [gap["area"] for gap in job["evidence"]["gaps"]] == ["ad_card"]
+
+
+def test_card_offer_accepts_a_gapped_kit_and_harvest(
+    tmp_path: Path, lane_on: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lumen_ingestion import pipeline
+    from lumen_ingestion.ad_library.auto_card import offer_card_if_ready
+    from lumen_ingestion.jobs import IngestionJobStore
+
+    client = _client(tmp_path)
+    workspace_id = client.headers["X-Workspace-Id"]
+    # The harvest kept its ads but some analyses failed: gapped, still usable.
+    monkeypatch.setattr(pipeline, "resolve_describer", lambda: _FailingAssetDescriber())
+    harvest = _run_harvest(client, tmp_path)
+    assert harvest["status"] == "succeeded_with_gaps"
+    brand_kit_id = _seed_brand_kit(client)
+    store = IngestionJobStore(workspace_id=workspace_id)
+    kit_job = store.create("website", {"url": "https://ramp.com"})
+    store.complete(
+        kit_job["job_id"],
+        brand_kit_id,
+        BRAND_KIT_VERSION,
+        json.dumps({"gaps": [{"area": "descriptions", "failed": 1, "reason": "x"}]}),
+    )
+    assert store.require(kit_job["job_id"])["status"] == "succeeded_with_gaps"
+
+    assert offer_card_if_ready(workspace_id) is not None
+
+
+# --- a failed card can be offered again (spec 2026-10-25 §3.4 B) -------------------------------
+
+
+def test_card_job_id_attempt_zero_is_unchanged() -> None:
+    import hashlib
+
+    from lumen_ingestion.ad_library.auto_card import card_job_id
+
+    expected = "ingest_adcard_" + hashlib.sha256(b"ws:h").hexdigest()[:24]
+    assert card_job_id("ws", "h") == expected
+    assert card_job_id("ws", "h", 0) == expected
+    assert card_job_id("ws", "h", 1) != expected
+
+
+def test_failed_card_is_reoffered_as_attempt_one_on_retry(tmp_path: Path, lane_on: None) -> None:
+    from lumen_ingestion.ad_library.auto_card import card_job_id, offer_card_if_ready
+
+    client = _client(tmp_path)
+    workspace_id = client.headers["X-Workspace-Id"]
+    harvest = _run_harvest(client, tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+    _finish_a_kit_ingestion(client, brand_kit_id)
+    first = offer_card_if_ready(workspace_id)
+    assert first == card_job_id(workspace_id, harvest["job_id"])
+    failed = _drive(
+        client,
+        tmp_path,
+        first,
+        provider=_NoLibraryCalls(),
+        distiller=_FailingDistiller(),
+        generate=_stub_generate,
+        fetch_creative=_no_creative_fetch,
+    )
+    assert failed["status"] == "succeeded_with_gaps"
+
+    # The automatic hook never re-offers; only an explicit repair retry does, once.
+    assert offer_card_if_ready(workspace_id) is None
+    retried = offer_card_if_ready(workspace_id, retry=True)
+    assert retried == card_job_id(workspace_id, harvest["job_id"], 1)
+    assert offer_card_if_ready(workspace_id, retry=True) is None  # attempt 1 is queued
+
+
+def test_retry_does_not_offer_when_the_harvest_already_has_a_card(
+    tmp_path: Path, lane_on: None
+) -> None:
+    from lumen_ingestion.ad_library.auto_card import offer_card_if_ready
+
+    client = _client(tmp_path)
+    workspace_id = client.headers["X-Workspace-Id"]
+    _run_harvest(client, tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+    _finish_a_kit_ingestion(client, brand_kit_id)
+    first = offer_card_if_ready(workspace_id)
+    done = _drive(
+        client,
+        tmp_path,
+        first,
+        provider=_NoLibraryCalls(),
+        distiller=_StubDistiller(),
+        generate=_stub_generate,
+        fetch_creative=_no_creative_fetch,
+    )
+    assert done["status"] == "succeeded"
+    assert offer_card_if_ready(workspace_id, retry=True) is None

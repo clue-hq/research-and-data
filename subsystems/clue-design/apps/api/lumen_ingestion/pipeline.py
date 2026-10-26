@@ -1185,6 +1185,7 @@ def _ingest(
         fragment_diagnostics=mint_diagnostics,
         page_coverage=getattr(outcome, "page_coverage", None),
         missing_page_roles=getattr(outcome, "missing_page_roles", None),
+        gaps=ingestion_gaps(evidence, diagnostics),
     )
     return (record["brand_kit_id"], int(record["version"]), evidence_json)
 
@@ -1450,6 +1451,36 @@ def _screenshot_bytes(snapshot: Any) -> "bytes | None":
     return None
 
 
+#: The diagnostics that mean a kit-building job finished WITHOUT something it set out to produce
+#: (spec 2026-10-25 §5.1). Everything else a job reports is advisory and is not a gap.
+_GAP_DIAGNOSTICS = {"LUMI0903": "brief", "LUMI0910": "grammar_audit"}
+
+
+def ingestion_gaps(evidence: Any, diagnostics: "list[JsonObject] | None") -> list[JsonObject]:
+    """What a website/PDF/upload job finished without, as the evidence ``gaps`` list.
+
+    ``clue_design.ingestion.complete`` reads this list to choose ``succeeded_with_gaps`` over
+    ``succeeded``. A description gap counts the failed analyses (or, when the whole pass died
+    before reporting progress, its LUMI0803 diagnostics); the brief and grammar audit are one
+    gap each. Unsupported files (LUMI0804) are not gaps: they cannot be described.
+    """
+    rows = list(diagnostics or [])
+    progress = getattr(evidence, "description_progress", None) or {}
+    describe_failures = [row for row in rows if row.get("code") == "LUMI0803"]
+    failed = max(int(progress.get("failed") or 0), len(describe_failures))
+    gaps: list[JsonObject] = []
+    if failed:
+        reason = str(describe_failures[0].get("message") or "") if describe_failures else ""
+        gaps.append({"area": "descriptions", "failed": failed,
+                     "reason": reason[:200] or "analysis failed"})
+    for code, area in _GAP_DIAGNOSTICS.items():
+        hit = next((row for row in rows if row.get("code") == code), None)
+        if hit is not None:
+            gaps.append({"area": area, "failed": 1,
+                         "reason": str(hit.get("message") or area)[:200]})
+    return gaps
+
+
 def _evidence_dump(
     evidence: Any,
     *,
@@ -1458,6 +1489,7 @@ def _evidence_dump(
     fragment_diagnostics: "list[JsonObject] | None" = None,
     page_coverage: list[JsonObject] | None = None,
     missing_page_roles: list[str] | None = None,
+    gaps: "list[JsonObject] | None" = None,
 ) -> Optional[str]:
     """Dump BrandEvidence to JSON for the job row (it carries no raw bytes).
 
@@ -1471,6 +1503,8 @@ def _evidence_dump(
     if evidence is None:
         return None
     payload = evidence.model_dump() if hasattr(evidence, "model_dump") else evidence
+    if gaps is not None:
+        payload = {**payload, "gaps": list(gaps)}
     if site_snapshots is not None:
         payload = {**payload, "site_snapshots": [ref.as_job_ref() for ref in site_snapshots]}
     if web_fragments is not None:
@@ -1734,7 +1768,7 @@ def _ingest_pdf(
         job_derived_id=requested_kit_id is None,
     )
 
-    evidence_json = _evidence_dump(evidence)
+    evidence_json = _evidence_dump(evidence, gaps=ingestion_gaps(evidence, diagnostics))
     return (record["brand_kit_id"], int(record["version"]), evidence_json)
 
 
@@ -2006,7 +2040,7 @@ def _ingest_assets(
         job_derived_id=requested_kit_id is None,
     )
 
-    evidence_json = _evidence_dump(evidence)
+    evidence_json = _evidence_dump(evidence, gaps=ingestion_gaps(evidence, diagnostics))
     return (record["brand_kit_id"], int(record["version"]), evidence_json)
 
 

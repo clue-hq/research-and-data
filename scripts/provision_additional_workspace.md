@@ -1,5 +1,10 @@
 # Adding a workspace to an existing account
 
+> **Since 2026-10-25** this is step 1 of `workspace_onboarding_operations.md`. That runbook also
+> covers starting onboarding without signing in as the user, checking the providers first, and
+> repairing a workspace that onboarded during an outage. `--operator-email` (your own Clue login)
+> is now required, and `--apply` writes an audit row.
+
 Use this when someone who already has a Clue account needs one more workspace they own, on the
 same login. Self-serve signup only creates a person's first workspace, so a second one goes
 through `provision_additional_workspace.py` and the onboarding link it prints.
@@ -18,7 +23,7 @@ email, the new company's website, and its name. It prints the workspace it would
 onboarding link, then rolls everything back.
 
 ```bash
-ssh ubuntu@40.160.37.148 'sudo docker exec -i vm-batch1-1 python - --email shank@cluehq.ai --website https://acme.com --company-name "Acme" --app-origin https://app.cluehq.ai' < scripts/provision_additional_workspace.py
+ssh ubuntu@40.160.37.148 'sudo docker exec -i vm-batch1-1 python - --email shank@cluehq.ai --website https://acme.com --company-name "Acme" --operator-email you@cluehq.ai --app-origin https://app.cluehq.ai' < scripts/provision_additional_workspace.py
 ```
 
 **2. Create it.** If the dry run looks right, run the same command again with `--apply` added at
@@ -26,7 +31,7 @@ the end. It creates the workspace, its brand, and the owner membership, and prin
 onboarding link. Run it from the repo root, since it reads the script from there.
 
 ```bash
-ssh ubuntu@40.160.37.148 'sudo docker exec -i vm-batch1-1 python - --email shank@cluehq.ai --website https://acme.com --company-name "Acme" --app-origin https://app.cluehq.ai --apply' < scripts/provision_additional_workspace.py
+ssh ubuntu@40.160.37.148 'sudo docker exec -i vm-batch1-1 python - --email shank@cluehq.ai --website https://acme.com --company-name "Acme" --operator-email you@cluehq.ai --app-origin https://app.cluehq.ai --apply' < scripts/provision_additional_workspace.py
 ```
 
 **3. Onboard it.** Sign in to app.cluehq.ai as that account, then open the printed link in the

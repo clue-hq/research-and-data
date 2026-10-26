@@ -1367,3 +1367,111 @@ def test_a_customers_run_takes_only_the_customers_step() -> None:
     assert [kind for kind, _subject in store.opened.values()] == ["customers"]
     assert exa.calls == ["customers"]
     assert store.events[-1][0] == "finish_run"
+
+
+# -- the repair run (spec 2026-10-25 §3.4 A) ---------------------------------------------------
+
+
+class RepairStore(GapAwareStore):
+    """The three reads a repair run makes, answered from memory."""
+
+    def __init__(self, *, icps: tuple[IcpRef, ...] = (), products: dict[str, str] | None = None,
+                 researched: frozenset[str] = frozenset()) -> None:
+        super().__init__()
+        self._icps = icps
+        self._products = products or {}
+        self._researched = researched
+
+    async def current_brand_icps(self, conn: Any, *, workspace_id: str, brand_id: str,
+                                 icp_keys: Any) -> tuple[IcpRef, ...]:
+        return tuple(icp for icp in self._icps if icp.icp_key in set(icp_keys))
+
+    async def product_links(self, conn: Any, *, workspace_id: str,
+                            product_ids: Any) -> tuple[ProductLink, ...]:
+        return tuple(ProductLink(pid, self._products[pid], "repair", 0, uuid4())
+                     for pid in product_ids if pid in self._products)
+
+    async def researched_product_ids(self, conn: Any, *, workspace_id: str,
+                                     brand_id: str) -> frozenset[str]:
+        return self._researched
+
+
+def _repair_context(run_id: Any, planned: list[dict[str, Any]]) -> WorkContext:
+    context = _context(run_id)
+    return WorkContext(
+        task_id=context.task_id, work_id=context.work_id, worker_id=context.worker_id,
+        lease_generation=context.lease_generation,
+        payload={**context.payload, "kind": "repair", "planned_steps": planned},
+        stop_requested=context.stop_requested, lease_lost=context.lease_lost,
+    )
+
+
+def test_a_repair_run_drives_only_its_planned_steps() -> None:
+    """A failed ICP turn is re-run alone — no Exa call, no recon, no catalog — and the ICPs it
+    registers get their persona turns, exactly as in a full walk."""
+    icps = (_icp("enterprise-security"),)
+    personas: list[str] = []
+
+    class Synth:
+        async def launch_icps(self, **kw: Any) -> IcpSynthesisOutcome:
+            return IcpSynthesisOutcome("completed", None, None, Decimal("0.2"), icps)
+
+        async def launch_persona(self, *, icp: IcpRef, **kw: Any) -> SynthesisOutcome:
+            personas.append(icp.icp_key)
+            return SynthesisOutcome("completed", None, None, Decimal("0.1"))
+
+    exa = _all_answers()
+    store = RepairStore()
+    handler = _handler(exa, store, synthesis=Synth(), links=_one_link)
+
+    result = asyncio.run(handler.handle(
+        _repair_context(uuid4(), [{"kind": "synthesis", "subject_ref": None}])))
+
+    assert result.outcome == "completed"
+    assert exa.calls == []
+    started = [event[1:] for event in store.events if event[0] == "start_step"]
+    assert started == [("synthesis", None), ("persona", "enterprise-security")]
+    assert personas == ["enterprise-security"]
+
+
+def test_a_repair_run_rewrites_a_failed_persona_for_its_current_icp() -> None:
+    seen: list[str] = []
+
+    class Synth:
+        async def launch_icps(self, **kw: Any) -> IcpSynthesisOutcome:
+            raise AssertionError("the ICP is fine; only its persona failed")
+
+        async def launch_persona(self, *, icp: IcpRef, **kw: Any) -> SynthesisOutcome:
+            seen.append(icp.icp_key)
+            return SynthesisOutcome("completed", None, None, Decimal("0.1"))
+
+    store = RepairStore(icps=(_icp("enterprise-security"), _icp("smb")))
+    handler = _handler(_all_answers(), store, synthesis=Synth(), links=_one_link)
+
+    result = asyncio.run(handler.handle(_repair_context(
+        uuid4(), [{"kind": "persona", "subject_ref": "enterprise-security"}])))
+
+    assert result.outcome == "completed"
+    assert seen == ["enterprise-security"]
+
+
+def test_a_repair_run_redoes_the_lineup_and_researches_only_unresearched_products() -> None:
+    exa = _all_answers()
+    store = RepairStore(products={"prd_magicflow": "MagicFlow"}, researched=frozenset())
+    handler = _handler(exa, store, links=_one_link)
+
+    result = asyncio.run(handler.handle(
+        _repair_context(uuid4(), [{"kind": "lineup", "subject_ref": None}])))
+
+    assert result.outcome == "completed_with_gaps" or result.outcome == "completed"
+    started = [event[1:] for event in store.events if event[0] == "start_step"]
+    assert ("lineup", None) in started and ("catalog_sync", None) in started
+    assert ("product_research", "prd_magicflow") in started
+    assert not any(kind in ("overview", "reviews", "customers", "synthesis")
+                   for kind, _ in started)
+
+    researched = RepairStore(products={"prd_magicflow": "MagicFlow"},
+                             researched=frozenset({"prd_magicflow"}))
+    asyncio.run(_handler(_all_answers(), researched, links=_one_link).handle(
+        _repair_context(uuid4(), [{"kind": "lineup", "subject_ref": None}])))
+    assert not [e for e in researched.events if e[:2] == ("start_step", "product_research")]

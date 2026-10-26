@@ -38,3 +38,11 @@ revoked by disconnect). Frontend gate green before the stack started.
 - Railway platform-api (founder set them): every CRM key and the two chat-stream keys verified
   with the CLI; the API key matches the local prod key by hash. Two old keys still on Railway
   (`CLUE_AGENT_WORKSPACE_RETENTION_S`, `CLUE_AGENT_CLEANUP_INTERVAL_S`) — unread after the merge.
+
+## main merged in (2026-10-27, for PR #134)
+- main had 30 commits (workspace onboarding operations #133, site engine for every workspace #132,
+  scene-ad wording #131 with Head of ABM v76 = v75 + prompt v19). Catalog collisions (v76 profile,
+  manual v22, stage0 v49) resolved to OUR files (our v76..v85 pin them); main's change re-minted
+  as **head-of-abm v86** = v85 + prompt v19, `manual-*@v32`, `stage0-interview@v59`, recipe 46.
+- Migrations: `alembic merge` join `67008abcd347` (280cce98bc76 + main's 177d009a8b9d); up/down/up
+  proven on clue_nashville_crm_test. The nashville stack DB still needs `alembic upgrade head`.
