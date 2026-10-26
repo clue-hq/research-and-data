@@ -42,7 +42,9 @@ def _refusing_web_minter(**_: Any) -> dict[str, Any]:
     raise AssertionError("a listed workspace must never mint a WebDoc")
 
 
-def _registry(seeds: dict[str, Any], *, listed: bool) -> ToolRegistry:
+def _registry(
+    seeds: dict[str, Any], *, listed: bool, engine: frozenset[str] | None = None
+) -> ToolRegistry:
     registry = ToolRegistry()
     registry.register(
         OpenDesignLegTool(
@@ -50,7 +52,13 @@ def _registry(seeds: dict[str, Any], *, listed: bool) -> ToolRegistry:
             storage=seeds["storage"],
             scene_document_minter=_RecordingSceneMinter(),
             web_document_minter=_refusing_web_minter if listed else engine_web_doc,
-            site_engine_workspaces=frozenset({seeds["workspace_id"]}) if listed else frozenset(),
+            site_engine_workspaces=(
+                engine
+                if engine is not None
+                else frozenset({seeds["workspace_id"]})
+                if listed
+                else frozenset()
+            ),
         ),
         make_default=True,
     )
@@ -73,6 +81,31 @@ def test_a_listed_workspace_births_a_site_document(tmp_path: Path, migrated_db: 
             assert document["doc_kind"] == "site"
             assert document["scene"]["pages"]["/"]["content"] == []
             assert document["current_version"] == 0
+
+    run_async(scenario())
+
+
+def test_a_star_births_a_site_document_in_every_workspace(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """`CLUE_DESIGN_SITE_ENGINE_WORKSPACES=*` (founder 2026-10-26): every workspace's new websites
+    are Puck sites, including workspaces created after the setting was written."""
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_conversation(conn, storage_root=tmp_path, label="site-star")
+            registry = _registry(seeds, listed=True, engine=frozenset({"*"}))
+            result = await _open(seeds, registry, doc_kind="web")
+            document = await get_document(
+                conn,
+                workspace_id=seeds["workspace_id"],
+                document_id=str(result.references["document_id"]),
+            )
+            assert document["doc_kind"] == "site"
+            assert document["scene"]["pages"]["/"]["content"] == []
 
     run_async(scenario())
 
