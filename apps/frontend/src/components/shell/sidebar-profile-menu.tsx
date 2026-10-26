@@ -3,17 +3,30 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Menu } from "@base-ui/react/menu";
-import { Check, ChevronRight } from "lucide-react";
+import { Check, ChevronRight, LogOut } from "lucide-react";
 import { DesignIcon } from "@/components/ui/design-icon";
 import styles from "./app-sidebar.module.css";
 import { workspaceInitials } from "@/features/accounts/model/workspace-profile";
 import { useWorkspaceProfile } from "./workspace-profile-context";
 import { useWorkspaceSwitcher } from "./workspace-switcher-context";
+import { useCanSignOut, useSignOut } from "./sign-out-context";
 
 /** The company's logo in the workspace avatar box, or its initials when it has none.
  * unoptimized: Brandfetch's Logo API is embed-only, loaded by the browser itself. */
 function WorkspaceMark({ initials, logoUrl }: { initials: string; logoUrl?: string | null }) {
   return logoUrl ? <Image alt="" height={16} src={logoUrl} unoptimized width={16} /> : <>{initials}</>;
+}
+
+/** "Log out": ends the session like /sign-out and lands on sign-in. Mounted only with a
+ * signed-in session, where Clerk is present. */
+function SignOutMenuItem() {
+  const { signOut, pending } = useSignOut();
+  return (
+    <Menu.Item className={styles.profileMenuItem} closeOnClick={false} disabled={pending} onClick={signOut}>
+      <LogOut aria-hidden="true" size={13} />
+      {pending ? "Logging out…" : "Log out"}
+    </Menu.Item>
+  );
 }
 
 export function SidebarProfileMenu({ collapsed }: { collapsed: boolean }) {
@@ -22,6 +35,7 @@ export function SidebarProfileMenu({ collapsed }: { collapsed: boolean }) {
   // hands the switcher the signed-in user's memberships by name. A person with
   // one workspace has nothing to choose, so the submenu is disabled.
   const profile = useWorkspaceProfile();
+  const canSignOut = useCanSignOut();
   if (!profile) return null;
   const workspaceName = activeWorkspace?.name ?? profile.workspaceName ?? "Clue workspace";
   const workspaceMark = activeWorkspace?.initials ?? workspaceInitials(workspaceName);
@@ -113,6 +127,7 @@ export function SidebarProfileMenu({ collapsed }: { collapsed: boolean }) {
                 <DesignIcon name="settings" size={13} />
                 Settings
               </Menu.LinkItem>
+              {canSignOut ? <SignOutMenuItem /> : null}
             </Menu.Popup>
           </Menu.Positioner>
         </Menu.Portal>

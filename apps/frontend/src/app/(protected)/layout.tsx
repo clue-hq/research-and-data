@@ -6,7 +6,8 @@ import { ProjectCatalogInvalidationProvider } from "@/features/projects/model/pr
 import { ProjectApplicationShell } from "@/components/shell/application-shell";
 import { WorkspaceProfileProvider } from "@/components/shell/workspace-profile-context";
 import { WorkspaceSwitcherProvider } from "@/components/shell/workspace-switcher-context";
-import { switchWorkspace } from "@/features/session/data/session-actions";
+import { clearWorkspaceSelection, switchWorkspace } from "@/features/session/data/session-actions";
+import { SignOutProvider } from "@/components/shell/sign-out-context";
 import { roleLabel } from "@/features/session/model/session";
 import { workspaceInitials } from "@/features/accounts/model/workspace-profile";
 import { ConfirmationProvider } from "@/components/ui/confirmation-card";
@@ -88,9 +89,11 @@ export default async function ProtectedLayout({
         >
           <ConfirmationProvider>
             {profile ? (
-              <WorkspaceProfileProvider profile={profile}>
-                <ProjectApplicationShell>{children}</ProjectApplicationShell>
-              </WorkspaceProfileProvider>
+              <SignOutProvider clearWorkspace={clearWorkspaceSelection}>
+                <WorkspaceProfileProvider profile={profile}>
+                  <ProjectApplicationShell>{children}</ProjectApplicationShell>
+                </WorkspaceProfileProvider>
+              </SignOutProvider>
             ) : (
               <ProjectApplicationShell>{children}</ProjectApplicationShell>
             )}
