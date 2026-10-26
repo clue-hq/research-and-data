@@ -272,4 +272,6 @@ failed first and then passed. Commit `Final review fixes…`.
 - rebuilding a card (this company has no ads)
 - the induced outage with a broken OpenRouter key on the workers
 
-**Lane state:** the stack is still up. Stop it with `./scripts/dev_stack_onbops.sh down`.
+**Lane state:** the stack was stopped on 2026-10-26 (all ports down, no processes left). The
+`clue_onbops` database and the `.env` are kept. The Illumio repair comes next, after the founder
+merges PR #133.
