@@ -31,7 +31,7 @@ import re
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
-from typing import Any, Literal, cast
+from typing import Any, Literal, Protocol, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, JsonValue
@@ -234,6 +234,25 @@ def _without_nones(row: Mapping[str, Any], *, keep: tuple[str, ...] = ()) -> dic
     return {key: value for key, value in row.items() if value is not None or key in keep}
 
 
+class ClaimSubject(Protocol):
+    """What a claim is stamped with: the workspace, the run, the account (and a person, if any).
+
+    :class:`JobScope` is one; discovery's per-account scope is the other
+    (``discovery_firmographics``), so the AI Ark company mapping is written once for both.
+    """
+
+    @property
+    def workspace_id(self) -> str: ...
+    @property
+    def run_id(self) -> UUID: ...
+    @property
+    def account_id(self) -> EntityId: ...
+    @property
+    def account_domain(self) -> str: ...
+    @property
+    def person_subject_id(self) -> EntityId | None: ...
+
+
 def _use_class_for(hint: str | None) -> UseClass:
     """The use class a contact claim is born with: the field's own declared hint, else the plain
     professional-public class every non-facet contact fact belongs to.
@@ -253,7 +272,7 @@ def _use_class_for(hint: str | None) -> UseClass:
 
 
 def _draft(
-    scope: JobScope,
+    scope: ClaimSubject,
     *,
     field_key: str,
     value: JsonValue,
@@ -629,7 +648,7 @@ def _revenue_bounds(
     return None, None
 
 
-def _revenue_band_draft(company: AiArkCompany, scope: JobScope) -> ClaimDraft | None:
+def _revenue_band_draft(company: AiArkCompany, scope: ClaimSubject) -> ClaimDraft | None:
     """The ``core.revenue_band`` claim for one company record, when the record names one band."""
     raw = company.raw if isinstance(company.raw, Mapping) else {}
     financial = raw.get("financial")
@@ -660,7 +679,7 @@ def _revenue_band_draft(company: AiArkCompany, scope: JobScope) -> ClaimDraft | 
 
 
 def _ai_ark_draft(
-    scope: JobScope,
+    scope: ClaimSubject,
     *,
     field_key: str,
     value: JsonValue,
@@ -684,7 +703,7 @@ def _ai_ark_draft(
 
 
 def ai_ark_company_claims(
-    company: AiArkCompany, scope: JobScope, *, catalog: FieldCatalog
+    company: AiArkCompany, scope: ClaimSubject, *, catalog: FieldCatalog
 ) -> list[ClaimDraft]:
     """Basic typed company facts, cited by raw path, never by a fake URL.
 

@@ -590,6 +590,11 @@ class Settings(BaseSettings):
     #: the Head of ABM wrote, while it has shown fewer companies than asked (spec 2026-09-30 §4).
     #: ``3`` means at most four searches. Env: ``CLUE_ARV2_DISCOVERY_MAX_TOPUPS``.
     arv2_discovery_max_topups: int = Field(default=3, ge=0, le=15)
+    #: Discovery enriches each round's accounts with one AI Ark company search (industry, revenue,
+    #: headcount, location, LinkedIn, Twitter; founder ruling 2026-10-27). The search is read page
+    #: by page, 100 records a page at 0.1 credit each, up to this many pages per round. ``0`` turns
+    #: the enrichment off. Env: ``CLUE_ARV2_DISCOVERY_FIRMOGRAPHICS_MAX_PAGES``.
+    arv2_discovery_firmographics_max_pages: int = Field(default=10, ge=0, le=50)
     #: How long a discovery run waits for its Exa Import of excluded companies (the brief's
     #: ``exclude`` list and the seller's own domain) to finish before its first webset goes ahead
     #: without it; the domain skip still applies (spec 2026-10-16, §4.6).
