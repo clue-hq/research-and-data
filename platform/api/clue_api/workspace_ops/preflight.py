@@ -259,7 +259,7 @@ def build_exa_probe(
         make_caller = caller_factory or build_onboarding_provider_caller
         client = ExaClient(make_caller(raw=raw, ledger=ledger), key)
         try:
-            await asyncio.to_thread(
+            answer = await asyncio.to_thread(
                 client.search,
                 "example",
                 type="keyword",
@@ -267,7 +267,19 @@ def build_exa_probe(
                 label="onboarding-preflight",
                 timeout_s=PROBE_TIMEOUT_S * 2,
             )
-            result = ProbeResult("exa", "ok", True, "a one-result search succeeded")
+            # The client RETURNS a non-2xx answer (``status``) instead of raising — a bad key is a
+            # returned 401 (found by the live proof, 2026-10-26). Only a 2xx is a working key.
+            status = int(getattr(answer, "status", 200) or 200)
+            if 200 <= status < 300:
+                result = ProbeResult("exa", "ok", True, "a one-result search succeeded")
+            elif status in (401, 403):
+                result = ProbeResult(
+                    "exa", "key_invalid", True, f"Exa refused the key (HTTP {status})"
+                )
+            elif status == 402:
+                result = ProbeResult("exa", "no_credit", True, "Exa refused: payment_required")
+            else:
+                result = ProbeResult("exa", "unreachable", True, f"Exa answered HTTP {status}")
         except ProviderHalted as halt:
             reason = halt.reason_code.removeprefix("latched:")
             outcome: ProbeOutcome = "key_invalid" if reason == "forbidden" else "no_credit"
