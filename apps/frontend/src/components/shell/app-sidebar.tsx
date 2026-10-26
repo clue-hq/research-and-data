@@ -78,7 +78,14 @@ export function AppSidebar({
         id={id}
         style={{ width: collapsed ? 56 : "var(--clue-ds-product-dimension-sidebar-width)" }}
       >
-        <div className={`flex h-[var(--clue-ds-product-dimension-sidebar-header-height)] shrink-0 items-center transition-[padding] duration-200 ${collapsed ? "px-2" : "px-4"}`}>
+        {/* Collapsed, the toggle sits under the centred Clue mark instead of beside it. */}
+        <div
+          className={`flex shrink-0 items-center transition-[padding] duration-200 ${
+            collapsed
+              ? "flex-col justify-center gap-2 px-2 py-3"
+              : "h-[var(--clue-ds-product-dimension-sidebar-header-height)] px-4"
+          }`}
+        >
           {/* Preserve the exact Figma SVG while presenting it at the clearer
               65.33 × 16 product-header size. */}
           <span className={`block h-4 overflow-hidden transition-[width] duration-200 ${collapsed ? "w-4" : "w-[65.333px]"}`}>
@@ -95,7 +102,7 @@ export function AppSidebar({
             aria-label={
               toggleLabel ?? (collapsed ? "Expand sidebar" : "Collapse sidebar")
             }
-            className="ml-auto flex size-6 items-center justify-center rounded-[4px] hover:bg-[var(--clue-background-hover)]"
+            className={`flex size-6 items-center justify-center rounded-[4px] hover:bg-[var(--clue-background-hover)] ${collapsed ? "" : "ml-auto"}`}
             onClick={(event) => onToggle?.(event.currentTarget)}
             type="button"
           >
