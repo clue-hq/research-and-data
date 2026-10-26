@@ -1,6 +1,7 @@
 .page {
   display: flex;
-  min-height: 60vh;
+  box-sizing: border-box;
+  min-height: 100dvh;
   align-items: center;
   justify-content: center;
   padding: 24px;
