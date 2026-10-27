@@ -67,3 +67,10 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **R9.2** Ask one short question, and build nothing, only when the page cannot be right without the answer and no reasonable default exists — e.g. who the page is for cannot be told from the brief or the person's message; there is no action or destination at all; an event page has no date or place.
 - **R9.3** Never more than one question per turn, and never to approve a plan.
 - **R9.4** Mechanics (step 3/4): give the site agent the scene agent's asking path (a clarification tool and the chat clarification card). Until then, asking means ending the turn with the question in the report and saving nothing.
+
+## P10 · Pages for one person — RULED 2026-10-27
+- **R10.1** Contact pages are supported (option B): a sixth case skill, built from Shashank's `web-contact-personalization` (and the contact parts of `web-account-personalization`), rewritten for site documents. R1.4's page kinds gain "one person at an account".
+- **R10.2** On a contact page the reader may be identified discreetly (e.g. an eyebrow), never as a navbar label, and the material must differ from the account page (explanation, priority, depth or evidence), driven by the person's own sourced professional criterion or documented responsibility. Never private or sensitive interests, inferred emotional pressure or assumed budget authority. On every other page kind, people at the account are still never named.
+- **R10.3** The one-to-one skill also covers a page aimed at a role at the account (shaped by the brief's committee notes), never naming the person.
+- **R10.4** Mechanics are part of this work: a page tagged to a contact; that contact's research read into the workspace; the identity-binding and allowed-use gates applied before any personal fact reaches the page. The design of these (how the tag travels, which reads, where the gates sit) is an architecture decision to bring to the founder before building.
+  - Note: this brings the contact-page part of the privacy/use gates forward from the deferred privacy sprint (2026-10-14 ruling).

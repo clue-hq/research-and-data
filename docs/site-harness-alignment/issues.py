@@ -144,7 +144,7 @@ ISSUES = [
      ("L1a", "ask one consequential question before a costly build"), ("L1b", "Ask only for a missing decision that changes the argument"),
      ("L6", "never an approval gate")]}]},
 
- {"id": "P10", "family": 1, "topic": "PEOPLE", "severity": "medium", "status": "open",
+ {"id": "P10", "family": 1, "topic": "PEOPLE", "severity": "medium", "status": "RULED 2026-10-27 (R10.1–R10.4)",
   "title": "Pages for one person",
   "what": "The site forbids naming or describing anyone at the account, and its workspace carries no contact research. The legacy skills support a page for one buying-committee member: resolve the person, use their own sourced professional criterion, change the material compared with the account page, keep their name discreet, never use private or sensitive facets.",
   "why": "Decides whether 'contact page' is one of the page kinds in P1.",
