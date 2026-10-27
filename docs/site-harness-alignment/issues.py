@@ -134,7 +134,7 @@ ISSUES = [
      ("L6", "A simple request for an account page does not specify a pilot"), ("L2", "A short account-page request does not mandate"),
      ("L6", "an explicit user offer cannot silently become a different one")]}]},
 
- {"id": "P9", "family": 1, "topic": "ASK", "severity": "medium", "status": "open",
+ {"id": "P9", "family": 1, "topic": "ASK", "severity": "medium", "status": "RULED 2026-10-27 (R9.1–R9.4)",
   "title": "When may the agent ask before building a new page?",
   "what": "The site agent may only ask on an edit, when the request names something that is not on the page. The legacy skills allow one consequential question before a costly build when the purpose would change the argument, but otherwise make reversible assumptions and say so; a plan is never an approval gate. The site agent has no clarification tool today.",
   "why": "A campaign request with no clear reader, offer or destination is built on a guess.",

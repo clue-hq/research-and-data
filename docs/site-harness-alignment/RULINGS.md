@@ -61,3 +61,9 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 
 ## P8 · How much weight the brief carries — RULED 2026-10-27
 - **R8** Keep what the site agent receives today: the brief inside its "agent-authored summary" wrapper, the session history, the person's own message last; and the system prompt's rule that the brief sets the goal, the reader and the offer, its facts, proof and structure are suggestions, and a different choice is explained in plan.md. No change. (Founder: "this is good enough.")
+
+## P9 · When the agent may ask before building — RULED 2026-10-27
+- **R9.1** Default: build, don't ask. Where something is missing but a reasonable default exists (a cold reader from an email or ad; the brief's named destination as the action), use it, write the assumption in plan.md and name it in the report.
+- **R9.2** Ask one short question, and build nothing, only when the page cannot be right without the answer and no reasonable default exists — e.g. who the page is for cannot be told from the brief or the person's message; there is no action or destination at all; an event page has no date or place.
+- **R9.3** Never more than one question per turn, and never to approve a plan.
+- **R9.4** Mechanics (step 3/4): give the site agent the scene agent's asking path (a clarification tool and the chat clarification card). Until then, asking means ending the turn with the question in the report and saving nothing.
