@@ -1,4 +1,4 @@
-# Family 4 · Step 3 — one home per rule (draft for founder review)
+# Family 4 · Step 3 — one home per rule (approved 2026-10-28, with S4)
 
 Homes as before (S1): **BASE** · **CASE** · **DESIGN** (the family-4 aspect skill, working name `page-design`:
 rhythm, the hero, composition, type across the page — small; see C) · **IMAGERY** (family 3) · **REVIEW**
@@ -49,11 +49,9 @@ founder asked (V1), rewritten in our own words.
 
 ## C. What this does to the skill set
 
-- **DESIGN** (working name `page-design`): a new, small aspect skill — the seller's cadence and how to follow
-  it, the hero choice and adaptation, composition variety, headings across the page. About 300–400 words.
-  **One decision for the founder:** keep it as its own small skill, or fold these few rules into the imagery
-  skill (making it "imagery, media and page design") to avoid one more file. Under on-demand reading (S2),
-  a separate skill costs nothing until it is read; folding keeps the visual guidance in one place.
+- **DESIGN** = the new small aspect skill **`page-design`** (S4): the seller's cadence and how to follow it, the hero
+  choice and adaptation, composition variety, headings across the page. About 300–400 words. Referenced from the
+  base skill's cadence and hero plan lines, from `building-with-puck`, and from the system prompt's skill list.
 - **BASE** plan format gains two lines: the seller's cadence (V1.1) and one-word compositions (V2.4).
 - **MECH** `building-with-puck` loses its fixed Rhythm rules and the "home page's hero" line.
 - **SYS** rewords the brand-only line.

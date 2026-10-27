@@ -17,7 +17,7 @@ alignment (`docs/design-harness-alignment/`), done **one family at a time**:
    action, the account's identity, header/footer choice, the brief, asking. ← steps 1–3 done 2026-10-27 (P1–P13 ruled; homes approved in HOMES-family1.md)
 2. **Wording and evidence** — sourcing, claim strength, proof, what stays off the page, voice, headlines, copy craft. ← steps 1–3 done 2026-10-28 (W1–W12 ruled; HOMES-family2.md approved)
 3. **Imagery and media** — composition, choosing images, generation, logos, product screenshots, video and motion. ← steps 1–2 done 2026-10-28 (M1–M7 ruled); step 3 approved (HOMES-family3.md)
-4. **Visual design and brand fidelity** — rhythm, hero, looking like the seller, type, brand-only styling, contrast. ← steps 1–2 done 2026-10-28 (V1–V6 ruled); step 3 drafted (HOMES-family4.md)
+4. **Visual design and brand fidelity** — rhythm, hero, looking like the seller, type, brand-only styling, contrast. ← steps 1–2 done 2026-10-28 (V1–V6 ruled); step 3 approved (HOMES-family4.md, S4: separate page-design skill)
 5. Review — the self-check after render.
 6. Mechanics — only where a mechanics skill repeats or contradicts a judgement rule.
 
@@ -89,3 +89,4 @@ Legacy: L7 conversion-copywriting · L7a copy-craft · L7b website-copy-brief ·
 - 2026-10-28: founder approved the family 2 and 3 home tables ("rest sounds good", replying to the message presenting both); M2.8 narrowed to the seller's logo and product only.
 - 2026-10-28: family 4 ledgered (57 rows: 29 site, 28 legacy; 436 in all); 6 conflict groups V1–V6.
 - 2026-10-28: V1–V6 ruled (V3, V6: no change; V5: one reword); family 4 step 2 complete; HOMES-family4.md drafted with one open choice (separate page-design skill or fold into imagery).
+- 2026-10-28: S4 ruled (page-design as its own small skill, well referenced); family 4 homes approved.

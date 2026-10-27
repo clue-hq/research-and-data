@@ -302,3 +302,8 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **V6** Keep as is, no addition: the kit's automatic button and card readability and each surface's "text on it" colour (`brand/brand.md`); the header-over-a-photo rule (`building-with-puck`); M2.7 for text over a generated image.
 
 **Family 4 step 2 complete (V1–V6 ruled, 2026-10-28).**
+
+## S4 · Where family 4's rules live — RULED 2026-10-28
+- **S4.1** A separate, small aspect skill **`page-design`** (working name; ~300–400 words): the seller's cadence and how to follow it (V1), the hero choice and adaptation (V2), composition variety, headings across the page (V4.2–V4.3).
+- **S4.2** Referenced so it is not missed: the base planning skill's cadence and hero plan lines point to it; `building-with-puck` drops its old rhythm rules and points to it (so adding or rebuilding a section reaches it under R12.1); the system prompt's skill list names it with its "when to use".
+- **S4.3** Not in the system prompt (S2.1, R12.1), not in the base planning skill (one job per skill; edits need it without the planning skill), not folded into the imagery skill.
