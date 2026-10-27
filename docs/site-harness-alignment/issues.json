@@ -819,7 +819,7 @@
   "family": 3,
   "topic": "MOTION",
   "severity": "high",
-  "status": "open",
+  "status": "RULED 2026-10-28 (M1.1–M1.6)",
   "title": "The seller's moving parts: copy them, rebuild them, or leave them still?",
   "what": "brand/brand.md tells the agent that the seller's videos, canvas and scripted animations 'need a script… Do not imitate them', and that nothing moves except the kit's buttons, links and cards ('write no transition or animation of your own'). That text predates two changes: published sites now run JavaScript (founder 2026-10-15), and R11.1 keeps the seller's ambient video. The live-site skill now lets a section run React effects (tabs, carousels, scroll reveals). Clone cards list images but not videos, so the agent cannot see a clone's video. The legacy motion skill uses a ladder: reuse the source's own CSS and media when it works; else a supported equivalent (tabs, carousel, accordion); else a custom-built component; else a compact still version with no dead space or dead controls — and every moving region needs a usable reduced-motion state.",
   "why": "This is half of why the 10-26 Pallet page lost all its motion; R11 decided what may stay, this decides how.",

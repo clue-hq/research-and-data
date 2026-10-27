@@ -200,3 +200,17 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **W12** No rule: the skills say nothing about it. (Founder: "no need to mention anything about it.")
 
 **Family 2 step 2 complete (W1–W12 ruled, 2026-10-28).**
+
+---
+# Family 3 · Imagery and media
+
+*(Founder 2026-10-28: Ploy is not consulted for family 3.)*
+
+## M1 · The seller's moving parts — RULED 2026-10-28
+- **M1.1** The motion text in `brand/brand.md` changes: "Do not imitate them" goes; the seller's motion is something to keep — in clones as captured, and in rebuilt sections.
+- **M1.2** A site-sized ladder: (1) keep the clone's own motion as captured — videos, loops, CSS animations; (2) when a section is rebuilt or the motion did not survive capture, rebuild it as an interactive section (live sites) that moves the way the seller's does — a switcher, carousel, tabs or scroll reveal; a switcher is one linked component, each control changing its own image and text; (3) otherwise a clean still version — no dead space, no controls that do nothing, nothing left hidden.
+- **M1.3** No invented motion: brand sections and the agent's own sections move only through the brand's motion classes, or to rebuild something the seller's site actually does.
+- **M1.4** Every moving part has a still state with all content visible for visitors who ask for less motion; no sound plays on its own.
+- **M1.5** Honest reporting: `render_page` gives still pictures, so the agent never claims motion works from a screenshot; it says what it could not check (the check itself: family 5).
+- **M1.6** Mechanics (code): clone cards list a section's videos and motion (as R11.4); the motion section of `brand/brand.md` is rewritten in `site-kit/src/catalog.ts`.
+- Per case: every case; product and general campaign pages usually carry the most of the seller's motion.
