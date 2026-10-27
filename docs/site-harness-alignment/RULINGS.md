@@ -293,3 +293,7 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **V4.1** The site's type system stays as it is (type roles from the seller, sizes that change with the window, heading sizes by name, words fit their space).
 - **V4.2** Headings are judged across the whole page: the hero's headline is the largest on the page unless the seller's own pages do otherwise; a brand section picks its heading size so it sits correctly against the clones around it.
 - **V4.3** Never shrink type to fit more words; edit the words (with R4.7).
+
+## V5 · Brand-only styling, buttons and styling by hand — RULED 2026-10-28
+- **V5.1** No new rules. The system prompt's "Style comes only from the brand…" stays, reworded so it covers the header and footer's style copied from the seller's own page (R7.5) and motion rebuilt from the seller's own site (M1.2).
+- **V5.2** Everything else stays as it is: the button choice in `brand/brand.md`, the `_edits` rules, and write_section's checks.

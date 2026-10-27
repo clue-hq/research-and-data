@@ -1174,7 +1174,7 @@
   "family": 4,
   "topic": "BRAND",
   "severity": "medium",
-  "status": "open",
+  "status": "RULED 2026-10-28 (V5.1–V5.2)",
   "title": "Brand-only styling, buttons and styling by hand",
   "what": "The site styles only by the brand's names ('never write a colour, a size, a class or a style'), checked by write_section; R7.5 now copies the header and footer's CSS style from the seller's page. Buttons follow the seller's own main-ask style, with outline or text styles for quieter actions. Styling a marketer did by hand (_edits) is kept unless the request changes the look. The legacy skills agree and add: keep the seller's observed button geometry, padding and border; recolour only when contrast needs it, within the brand's own system; use generic defaults only where the seller shows no evidence.",
   "why": "Mostly agreement; the question is what to add.",
