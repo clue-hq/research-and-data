@@ -297,3 +297,8 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 ## V5 · Brand-only styling, buttons and styling by hand — RULED 2026-10-28
 - **V5.1** No new rules. The system prompt's "Style comes only from the brand…" stays, reworded so it covers the header and footer's style copied from the seller's own page (R7.5) and motion rebuilt from the seller's own site (M1.2).
 - **V5.2** Everything else stays as it is: the button choice in `brand/brand.md`, the `_edits` rules, and write_section's checks.
+
+## V6 · Readable text on surfaces and images — RULED 2026-10-28
+- **V6** Keep as is, no addition: the kit's automatic button and card readability and each surface's "text on it" colour (`brand/brand.md`); the header-over-a-photo rule (`building-with-puck`); M2.7 for text over a generated image.
+
+**Family 4 step 2 complete (V1–V6 ruled, 2026-10-28).**

@@ -480,7 +480,7 @@ ISSUES = [
      ("D2", "When you rewrite a section, keep its `_edits`"), ("D2", "When you add styling yourself")]},
    {"label": "Legacy", "refs": [("L12", "Preserve observed button geometry"), ("L12", "Use generic design defaults only")]}]},
 
- {"id": "V6", "family": 4, "topic": "CONTRAST", "severity": "low", "status": "open",
+ {"id": "V6", "family": 4, "topic": "CONTRAST", "severity": "low", "status": "RULED 2026-10-28 (V6: no change)",
   "title": "Readable text on surfaces and images",
   "what": "The site makes buttons and cards readable automatically and tells the agent to give a header over a photo a semi-opaque fill. The legacy skill (scene-ad era) adds: judge a colour by how light it is, not by its name; at least 4.5:1 for body text and button labels; over a photo, check the actual area behind each line of text; when two strong colours fight, soften one or add space. (Text over a generated image: M2.7.)",
   "why": "Brand sections and agent-written sections over images.",
