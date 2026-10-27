@@ -312,7 +312,7 @@ ISSUES = [
    {"label": "Site", "refs": [("D1", "Generic CTA"), ("D1", "Form creep"), ("D1", "Every button says what happens")]},
    {"label": "Legacy", "refs": [("L7a", "Prefer a label describing **what the reader receives**"), ("L7a", "Field labels are plain nouns"), ("L7", "Never promise form delivery")]}]},
 
- {"id": "W11", "family": 2, "topic": "VOICE", "severity": "low", "status": "open",
+ {"id": "W11", "family": 2, "topic": "VOICE", "severity": "low", "status": "RULED 2026-10-28 (W11.1–W11.5)",
   "title": "Talking about the prospect",
   "what": "Both say: frame toward what improves, never tell them their setup is broken. The legacy skills add: never show buying-committee labels, and never describe the prospect's own product negatively (the Head of ABM's brief template already says this).",
   "why": "Small additions.",

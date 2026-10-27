@@ -187,3 +187,11 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **W10.4** Never promise what nobody established: a response time, consent handling, a delivery or a follow-up.
 - **W10.5** Our own forms stay out for now — a later addition. The skills say nothing about form fields or form copy.
 - **W10.6** Per case: event pages use register wording next to the real date, time and place; product campaign pages word the offer as the ad or email worded it.
+
+## W11 · Talking about the prospect — RULED 2026-10-28
+- **W11.1** Positive framing everywhere: lead with the operating state the buyer gains, never scold them about their current setup; real problems are named plainly, pointed toward the desired state.
+- **W11.2** Never describe the prospect's own product negatively; say what the seller adds.
+- **W11.3** No buying-committee labels; people are never named, except on contact pages (R10.2).
+- **W11.4** Relationship words: never, about the account, without evidence — partner, customer, working together, joint solution, "our work with <account>", "<account> uses <seller>", "trusted by <account>", "<seller> × <account> partnership". Safer framing: "Prepared for <account>", "A proposal for <account>", "<seller> for <account>", "A tailored … proposal". "Trusted by" and "customer" apply only to real customers. (Ploy's lists, for discussion.)
+- **W11.5** W11.4 applies to the header too: the header's account line and any lockup wording follow the same safe/unsafe lists (home: the header parts of the mechanics skills as well as the copy skill). (Founder: "include these for headers skills as well.")
+- Per case: W11.2–W11.4 matter mainly on one-to-one, one-to-few and contact pages; W11.1 applies everywhere.
