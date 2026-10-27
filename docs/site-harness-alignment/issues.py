@@ -49,7 +49,7 @@ ISSUES = [
      ("L3a", "Write one compact chain in the plan"), ("L2", "Write the supported account context → seller mechanism"),
      ("L1", "Establish the arriving audience and traffic context")]}]},
 
- {"id": "P3", "family": 1, "topic": "STRUCTURE", "severity": "high", "status": "open",
+ {"id": "P3", "family": 1, "topic": "STRUCTURE", "severity": "high", "status": "RULED 2026-10-27 (R3.1–R3.4)",
   "title": "Five sections and 600 words, or as long as the decision needs?",
   "what": "The site sets a ceiling: up to five sections, usually five, rarely more than 600 words, each with a word budget. The legacy skills say length follows the decision: seven sections for a considered enterprise purchase, three for a giveaway, never pad and never cut what the decision needs; their five questions are 'responsibilities, not mandatory sections'.",
   "why": "The 10-26 Pallet production page stopped at 5 sections and about 440 words, and read as shallow.",
