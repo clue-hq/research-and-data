@@ -121,3 +121,14 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **W1.3** Web search results (R1.3a) shape the argument; a fact from one reaches the page only after its page is opened with `fetch_page`. A search snippet is never evidence.
 - **W1.4** Never a source: the agent's own memory of a company, or the examples written into skills.
 - **W1.5** Per case: one-to-one and contact pages lean on the research; general campaign, event and product pages lean on the seller's files and clones; event pages take dates, times, places and speakers only from the brief or the seller's own event page.
+
+## W2 · What the page may say about this reader — RULED 2026-10-28
+- **W2.1** The claim ladder stays: product fact → capability → named customer's result → audience implication → forecast (never).
+- **W2.2** Audience implication is allowed as a conditional, qualitative statement joining the seller's documented capability to the reader's sourced context ("could help…", "could give… a clearer…"), written as an inference, never as a fact. (Model: Ploy's copywrite skill §12 level 4.)
+- **W2.3** Never for this reader: a number, percentage, money amount or time saved, "will" on an outcome, or any certainty about their result. Numeric results appear only as named customers' results.
+- **W2.4** Verbs used deliberately: will (guaranteed operations only), can (capability), could (this reader's possible benefit), supports (architecture), helps (contributes, not sole cause).
+- **W2.5** Transformation words ("unlock", "supercharge", "best-in-class") are made concrete, or cut.
+- Per case: W2.2–W2.3 apply to one-to-one, one-to-few and contact pages; general, event and product pages use "could" about the audience the same way.
+
+## S3 · Ploy as a reference — RULED 2026-10-28
+- **S3.1** Ploy's skills (`copywrite`, `campaign-landing-page`, `plan-design`, `brand-adherence`, `build-site-page`, `redactor-and-code`, and the Stripe-for-Cursor conversation; founder's zip `~/Documents/ploy-inspiration 2.zip`) are a reference source **for discussion only**: brought beside the site and legacy rules when a group is discussed, never quoted or referenced in any skill. Not copied into the repo.

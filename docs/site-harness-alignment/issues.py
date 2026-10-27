@@ -201,7 +201,7 @@ ISSUES = [
      ("L6", "Never invent named customers"), ("L1b", "Supplied facts can be used as supplied assertions"),
      ("L3c", "Use source scope faithfully")]}]},
 
- {"id": "W2", "family": 2, "topic": "CLAIMS", "severity": "high", "status": "open",
+ {"id": "W2", "family": 2, "topic": "CLAIMS", "severity": "high", "status": "RULED 2026-10-28 (W2.1–W2.5)",
   "title": "May the page say what the product 'could' do for this reader?",
   "what": "Both sides use a claim ladder from product fact to forecast, and both forbid a forecast. They differ on the step below it. The site allows 'what it could mean for this account (\"could\")'. The legacy one-account shape uses 'would'. The legacy copy skill says could, may and helps still assert an outcome and supply no evidence; its fourth step is an invitation such as 'Explore how usage-based billing fits your expansion plans', a capability joined to the reader's task with no invented outcome.",
   "why": "This decides how every benefit sentence on a personalised page is phrased.",
