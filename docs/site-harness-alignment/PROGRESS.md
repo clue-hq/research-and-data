@@ -16,12 +16,18 @@ alignment (`docs/design-harness-alignment/`), done **one family at a time**:
 1. **The page's argument** — page kind, reader, message plan, structure and length, decision material,
    action, the account's identity, header/footer choice, the brief, asking. ← steps 1–3 done 2026-10-27 (P1–P13 ruled; homes approved in HOMES-family1.md)
 2. **Wording and evidence** — sourcing, claim strength, proof, what stays off the page, voice, headlines, copy craft. ← steps 1–2 done 2026-10-28 (W1–W12 ruled); step 3 next
-3. Imagery and media — brand images, product screenshots, generation, logos, video and motion.
+3. **Imagery and media** — composition, choosing images, generation, logos, product screenshots, video and motion. ← step 1 done 2026-10-28 (M1–M7)
 4. Visual design and brand fidelity — hero, rhythm, type, source fidelity, contrast.
 5. Review — the self-check after render.
 6. Mechanics — only where a mechanics skill repeats or contradicts a judgement rule.
 
 Organisation (S1, 2026-10-27): base planning skill → case direction per page kind → aspect skills (the how). Every family's rulings also record per-case direction.
+
+## Sources — family 3
+Site: D3 images-and-logos · D2 image lines · D4 image checks · D6 image/logo lines · D7 making-a-section-interactive · B1 view_asset, search_assets, generate_image ·
+H4 brand/brand.md (logos, assets, motion; account logo section) · H3 clone card images · D1 "keep its layout, images and rhythm".
+Legacy: L8 web-media-composition (+ asset-selection, composition-and-identity) · L9 web-product-story · L10 web-motion-fidelity (+ inventory-and-reconstruction, playback-verification, rich-card-controls) · L11 generative-imagery (ad-era).
+Ploy (discussion only, S3): brand-adherence, plan-design, build-site-page image and motion parts.
 
 ## Row schema
 `id, src, loc, topic, applies, strength, text, note` (as the scene-ad ledger).
@@ -74,3 +80,4 @@ Legacy: L7 conversion-copywriting · L7a copy-craft · L7b website-copy-brief ·
 - 2026-10-28: family 2 ledgered (106 rows: 47 site, 59 legacy; ledger 302 rows in all); 12 conflict groups W1–W12, each with its case-specific note (S1.3). add_rows.py gained --append. Page shows family 2 open, family 1 ruled.
 - 2026-10-28: W1, W2 ruled. S3: Ploy's skills are a discussion-only reference (not in the repo, never cited in a skill); brought into each later group's discussion.
 - 2026-10-28: W3–W12 ruled; family 2 step 2 complete. R5.2 amended (W10.3), R5.5 form clause deferred (W10.5), W4.2 exception removed (W12).
+- 2026-10-28: family 2 home table drafted (HOMES-family2.md); founder moved on to family 3 without changes to it. Family 3 ledgered (73 rows: 32 site, 41 legacy; 377 in all); 7 conflict groups M1–M7.

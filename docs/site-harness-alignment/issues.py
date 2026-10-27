@@ -328,6 +328,96 @@ ISSUES = [
   "cases": "",
   "groups": [
    {"label": "Legacy", "refs": [("L7a", "The one exception is wording the user asked for exactly"), ("L7a", "Preserve supported exact copy")]}]},
+ {"id": "M1", "family": 3, "topic": "MOTION", "severity": "high", "status": "open",
+  "title": "The seller's moving parts: copy them, rebuild them, or leave them still?",
+  "what": "brand/brand.md tells the agent that the seller's videos, canvas and scripted animations 'need a script… Do not imitate them', and that nothing moves except the kit's buttons, links and cards ('write no transition or animation of your own'). That text predates two changes: published sites now run JavaScript (founder 2026-10-15), and R11.1 keeps the seller's ambient video. The live-site skill now lets a section run React effects (tabs, carousels, scroll reveals). Clone cards list images but not videos, so the agent cannot see a clone's video. The legacy motion skill uses a ladder: reuse the source's own CSS and media when it works; else a supported equivalent (tabs, carousel, accordion); else a custom-built component; else a compact still version with no dead space or dead controls — and every moving region needs a usable reduced-motion state.",
+  "why": "This is half of why the 10-26 Pallet page lost all its motion; R11 decided what may stay, this decides how.",
+  "cases": "Product and general campaign pages lean on the seller's motion most; one-to-one pages keep it as part of the seller's look.",
+  "groups": [
+   {"label": "Site data: brand.md motion text", "refs": [
+     ("H4", "Do not imitate them"), ("H4", "write no transition or animation of your own"), ("H4", "nothing moves except the kit's buttons")]},
+   {"label": "Site: what the agent can see and do", "refs": [
+     ("H3", "each `<img src>` with its slot"), ("D7", "This site's published pages run your section's React code"),
+     ("D7", "tabs, an accordion, a carousel"), ("D5", "If the original shows a video")]},
+   {"label": "Legacy: the motion ladder", "refs": [
+     ("L10", "Reuse supported source CSS/media when it survives custody"), ("L10", "1. Supported source reuse"),
+     ("L10", "Choose a visible, usable reduced-motion state"), ("L10", "Do not introduce sound autoplay"),
+     ("L10", "Never replay arbitrary source scripts")]}]},
+
+ {"id": "M2", "family": 3, "topic": "GENERATE", "severity": "high", "status": "open",
+  "title": "When to generate an image, and how well",
+  "what": "The site generates only as a last resort ('only when a section needs one and none of the brand's images fits'), only a scene or a mood, never anything presented as real, styled from one to three brand photos, one retry, else no image. The legacy web media skill agrees ('generation is optional… authentic reused imagery is a complete valid outcome'). The legacy generative-imagery skill, written mainly for ads, says the opposite: generation 'is not a fallback… it is one of your two hands' for atmosphere — and it carries real craft the site lacks: a five-question prompt (what, style, exact brand colours, composition with a calm area, what must not appear), describing the brand's own imagery in plain words, the test 'would the brand's own design team have made this?', and text on an image only over a calm area or a scrim.",
+  "why": "Decides how often site pages carry generated imagery, and how good it is when they do.",
+  "cases": "Pages with no account (general, event, product) have fewer authentic images to draw on.",
+  "groups": [
+   {"label": "Site: last resort, scene or mood only", "refs": [
+     ("D3", "Generate an image only when a section needs one"), ("D3", "A generated image may show a scene or a mood"),
+     ("D3", "To keep it in the brand's style"), ("D3", "Anything real comes only from these images"), ("D3", "If nothing fits and a generated image")]},
+   {"label": "Legacy web: generation is optional", "refs": [
+     ("L8", "Choose existing source imagery, a justified generated derivative"), ("L8", "Use **reuse** when an existing asset"),
+     ("L8", "Never claim it was captured")]},
+   {"label": "Legacy (ads): one of two hands, with prompt craft", "refs": [
+     ("L11", "It is not a fallback for missing assets"), ("L11", "A strong prompt answers five questions"),
+     ("L11", "The brand's existing imagery"), ("L11", "Text over any generated image gets a scrim"), ("L11", "That placeholder is not real imagery")]}]},
+
+ {"id": "M3", "family": 3, "topic": "IMAGERY", "severity": "medium", "status": "open",
+  "title": "Keeping the seller's image composition",
+  "what": "The site says keep a clone's layout, images and rhythm. The legacy skills spell out what that means for images: keep crop, focal point, transparency, corners already baked into the image, and layer order; separate what is inside an image from what the page adds (double rounding cuts controls; a panel behind a cut-out destroys it); never replace characteristic scenery or a photographic background with a flat colour because finding the asset was inconvenient.",
+  "why": "Rebuilt sections and brand sections are where images get flattened or re-cropped.",
+  "cases": "",
+  "groups": [
+   {"label": "Site", "refs": [("D1", "Keep its layout, images and rhythm")]},
+   {"label": "Legacy", "refs": [
+     ("L8", "Preserve what the source image means"), ("L8", "Reuse a suitable original. Preserve crop"),
+     ("L8", "Separate what is **inside the image**"), ("L8", "A landscape hero replaced with a flat color")]}]},
+
+ {"id": "M4", "family": 3, "topic": "PRODUCTUI", "severity": "medium", "status": "open",
+  "title": "Product screenshots that carry the story",
+  "what": "The site has two lines: a screenshot must show what the copy says, and product screens are never generated. The legacy product-story skill adds: pair each screenshot with the task it shows and the explanation beside it; keep the brand background behind the interface and never cover the interface; keep the interface readable on a phone ('a surviving background with no UI is failure'); never edit its numbers or crop out the feature the copy describes; a product switcher is one linked component.",
+  "why": "W8.3 (explain the actual product) depends on product visuals doing their job.",
+  "cases": "Product and general campaign pages carry the most product imagery.",
+  "groups": [
+   {"label": "Site", "refs": [("D3", "Check that the image fits the words beside it"), ("D3", "Anything real comes only from these images")]},
+   {"label": "Legacy", "refs": [
+     ("L9", "For each demonstration write one short internal row"), ("L9", "branded background behind"),
+     ("L9", "On phone, confirm the interface itself"), ("L8", "Keep product UI readable and recognizable"),
+     ("L10", "Treat a product switcher as one linked component")]}]},
+
+ {"id": "M5", "family": 3, "topic": "ASSETS", "severity": "medium", "status": "open",
+  "title": "Which images a page may use, and finding them",
+  "what": "Three site texts say images come only from brand/brand.md or generation ('the only images and logos a page may use'), while the images skill and two tool descriptions also allow the seller's uploads and earlier pages' images found with search_assets. The legacy skills add: state each image's role before using it; one empty search does not mean the brand has no imagery (try other words); if nothing fits, a smaller honest placement or no image.",
+  "why": "An internal inconsistency in what the agent is told.",
+  "cases": "",
+  "groups": [
+   {"label": "Site: brand.md or generated only", "refs": [
+     ("D2", "Images come only from `brand/brand.md` or from `generate_image`"), ("D2", "An image slot takes a file"),
+     ("H4", "the only images and logos a page may use"), ("D6", "images from brand/brand.md")]},
+   {"label": "Site: search_assets images too", "refs": [
+     ("D3", "The seller's other images (uploads"), ("B1", "files from brand/brand.md, images you generated, or images search_assets found"),
+     ("B1", "Search the seller's images by what they show")]},
+   {"label": "Legacy", "refs": [
+     ("L8", "State each asset's role"), ("L8", "A failed semantic query may reflect poor labels"), ("L8", "If inadequate, choose in order")]}]},
+
+ {"id": "M6", "family": 3, "topic": "ASSETS", "severity": "low", "status": "open",
+  "title": "Image sharpness",
+  "what": "The site has no rule beyond 'no broken image'. The legacy skill gives the arithmetic: an image painted 600 × 400 on a 2× screen needs 1200 × 800 real pixels; a better same-role source, a smaller honest placement, or no image beats a blurry one.",
+  "why": "A gap.",
+  "cases": "",
+  "groups": [
+   {"label": "Site", "refs": [("D4", "no broken image")]},
+   {"label": "Legacy", "refs": [("L8", "For a raster painted at W by H")]}]},
+
+ {"id": "M7", "family": 3, "topic": "LOGOS", "severity": "low", "status": "open",
+  "title": "Logos",
+  "what": "Mostly agreement: the site fetches the account's logo by domain, looks before placing, hides it when none is found, skips look-alike companies, and shows logos whole. The legacy skills add: tell a full lockup from a bare mark; pick the light or dark version for its background; when identity is unclear leave the logo out; never draw, recolour or generate a logo; don't repeat the seller's wordmark as proof.",
+  "why": "Small additions; placement was ruled in R6.",
+  "cases": "One-to-one, one-to-few and contact pages place the account's logo; others don't (R6.3).",
+  "groups": [
+   {"label": "Site", "refs": [
+     ("D3", "If `brand/brand.md` has no logo for the account"), ("D3", "Leave out a logo of a company with the same"),
+     ("H4", "shows a logo whole"), ("H4", "## The account's logo (header only)")]},
+   {"label": "Legacy", "refs": [
+     ("L8", "Distinguish a full wordmark/lockup"), ("L8", "returns proven family cells"), ("L8", "If identity is ambiguous")]}]},
 ]
 
 out = []

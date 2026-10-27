@@ -56,3 +56,4 @@
 {"id": "D1-56", "src": "skill account-page-copy (site)", "loc": "6.", "topic": "HEADLINE", "applies": "always", "strength": "must-not", "text": "Redundant subheadline: the supporting line repeats the headline.", "note": ""}
 {"id": "D1-57", "src": "skill account-page-copy (site)", "loc": "6.", "topic": "COPY", "applies": "always", "strength": "must-not", "text": "Generic CTA: a button says \"Learn more\" instead of what happens.", "note": ""}
 {"id": "D1-58", "src": "skill account-page-copy (site)", "loc": "6.", "topic": "COPY", "applies": "always", "strength": "must-not", "text": "Form creep: the form asks for more than the next step needs.", "note": ""}
+{"id": "D1-59", "src": "skill account-page-copy (site)", "loc": "4. Build from the cloned sections", "topic": "IMAGERY", "applies": "always", "strength": "must", "text": "Start every section from the closest cloned section of the seller's site. Keep its layout, images and rhythm.", "note": ""}
