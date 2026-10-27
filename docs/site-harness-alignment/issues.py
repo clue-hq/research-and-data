@@ -383,7 +383,7 @@ ISSUES = [
      ("L9", "On phone, confirm the interface itself"), ("L8", "Keep product UI readable and recognizable"),
      ("L10", "Treat a product switcher as one linked component")]}]},
 
- {"id": "M5", "family": 3, "topic": "ASSETS", "severity": "medium", "status": "open",
+ {"id": "M5", "family": 3, "topic": "ASSETS", "severity": "medium", "status": "RULED 2026-10-28 (M5.1–M5.5)",
   "title": "Which images a page may use, and finding them",
   "what": "Three site texts say images come only from brand/brand.md or generation ('the only images and logos a page may use'), while the images skill and two tool descriptions also allow the seller's uploads and earlier pages' images found with search_assets. The legacy skills add: state each image's role before using it; one empty search does not mean the brand has no imagery (try other words); if nothing fits, a smaller honest placement or no image.",
   "why": "An internal inconsistency in what the agent is told.",

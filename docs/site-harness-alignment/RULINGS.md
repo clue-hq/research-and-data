@@ -204,7 +204,7 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 ---
 # Family 3 · Imagery and media
 
-*(Founder 2026-10-28: Ploy is not consulted for family 3.)*
+*(Founder 2026-10-28: Ploy is not consulted for family 3, except where the founder asks — M5.)*
 
 ## M1 · The seller's moving parts — RULED 2026-10-28
 - **M1.1** The motion text in `brand/brand.md` changes: "Do not imitate them" goes; the seller's motion is something to keep — in clones as captured, and in rebuilt sections.
@@ -241,3 +241,11 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **M4.4** No staging rule: the agent follows how the seller's own site stages its product imagery.
 - **M4.6** On a phone, the product interface stays visible and readable; a background with no interface left is a failure. (Founder: "this you can add.")
 - *(M4.5 — "screenshots never forced, never blocked on one-to-one" — removed by the founder.)*
+
+## M5 · Which images a page may use — RULED 2026-10-28
+- **M5.1** One list, said the same way everywhere: the clone's own images; `brand/brand.md`'s images; the seller's other images found with `search_assets`; images generated for this site (M2); the account's logo from `fetch_logo`, in the header only. The agent looks at any image (`view_asset`) before using it. The three "only brand/brand.md" texts are corrected, including the heading in `brand/brand.md` (code: `site-kit/src/catalog.ts`).
+- **M5.2** The most authoritative source first: the seller's own image in the clone beats a search result, which beats a generated one; a strong native image is kept, not replaced.
+- **M5.3** An image only for a real job: no image added just to fill a section; no generic stock-style imagery.
+- **M5.4** A diagram instead of a fake screen: when a section must show how the product fits together and no real screenshot fits, the agent draws it as a diagram in the brand's styles (its own section), never a generated fake screen (M2.8).
+- **M5.5** Searching well: one empty search does not mean there is no image — try other words; if nothing fits, a smaller honest placement or no image.
+- (Points M5.2–M5.4 from Ploy, for discussion; written in our own words.)
