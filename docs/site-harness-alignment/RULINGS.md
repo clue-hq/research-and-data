@@ -330,3 +330,12 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - (Shape from Ploy's finished-page summary, honesty from legacy review-website; our own words.)
 
 **Family 5 step 2 complete (Q1–Q3 ruled, 2026-10-28).**
+
+---
+# Family 6 · Mechanics overlaps
+
+## X1 · When the agent rebuilds a seller section or writes its own — RULED 2026-10-28
+- **X1.1** `rebuilding-a-section`'s "when to use": use when a seller section is right for the page but its slots cannot carry what the page needs (more words or items, a changed layout), when its motion or video must be carried into an editable section, or when the person asks.
+- **X1.2** `writing-a-section`'s "when to use": use when neither a clone (as it is, or rebuilt) nor a brand section can carry what the page needs. "You have been asked" goes.
+- **X1.3** "Reuse first" in `building-with-puck` becomes R4.3's four steps, said once there; the `account-page-copy` line goes with that skill's retirement.
+- **X1.4** "Leave the point out" stays as the last resort after all four.

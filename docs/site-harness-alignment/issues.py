@@ -528,7 +528,7 @@ ISSUES = [
    {"label": "Legacy", "refs": [
      ("L16", "Distinguish tool completion from request satisfaction"), ("L16", "Completed with warnings"),
      ("L16", "Evidence gaps are not observed pixel defects"), ("L16", "Use a short final report")]}]},
- {"id": "X1", "family": 6, "topic": "MECHANICS", "severity": "high", "status": "open",
+ {"id": "X1", "family": 6, "topic": "MECHANICS", "severity": "high", "status": "RULED 2026-10-28 (X1.1–X1.4)",
   "title": "When the agent rebuilds a seller section or writes its own",
   "what": "R4.3 set the order: the clone's slots, then the clone rebuilt as a component, then a brand section, then a section of the agent's own — and the agent decides when the material needs more room. The mechanics text still says otherwise: rebuilding-a-section is 'Use when you are asked to rebuild…'; writing-a-section is 'Use when you have been asked to add something that no clone and no brand section can carry'; building-with-puck's 'Reuse first' and account-page-copy go clone → brand section → leave the point out, with no rebuilt clone and no own section.",
   "why": "With these descriptions the agent may never rebuild a clone on its own, which is what R4.3 and M1.2 rely on.",
