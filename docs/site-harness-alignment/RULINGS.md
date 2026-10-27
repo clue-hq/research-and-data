@@ -111,3 +111,13 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **S2.4** (founder refinement) The reading rule: on a **new document**, read the base planning skill first, then the case skill that fits the person's request and requirements, then aspect skills when the deeper how is needed. Reading from scratch happens **only when starting a new document**; on follow-up edits and improvements the agent reads only what that request needs.
 - **S1.2 RULED (A):** six separate case skills — one-to-one, contact, one-to-few, general campaign, event, product campaign — each one read for its case.
 - **R4.2 home RULED:** the decision-material method (what to show for each reader question) is its own small aspect skill, pointed to by the one-to-one, one-to-few and contact case skills.
+
+---
+# Family 2 · Wording and evidence
+
+## W1 · Which facts may the page use? — RULED 2026-10-28
+- **W1.1** Five sources, each used at its own strength (home: the evidence skill, with a one-line pointer in the system prompt): the seller's files (`seller/`, including the ICP and personas); pages fetched with `fetch_page` (the seller's published case studies, the account's own site — numbers and quotes only from that page); the account's research (`research/` and `claims.md`, claim by claim); the brief's facts, at the strength the brief gives them and with their source when it names one, never made stronger, a number checked against the research or seller's files when they hold it; and the seller's own captured sections (clones).
+- **W1.2** The clones' words, stats, customer names and quotes are the **last preference**. They are the seller's own published claims, but before using one — especially on a one-to-one page — the agent decides while writing the copy whether that fact fits this page as it is or needs rewording. (Founder: "before we use it, especially for one-to-one case, the agent needs to think during copy-write, is it okay to put this fact as is, or we need to do some re-wording.") A number moved into new copy keeps the clone's figure and whose result it is.
+- **W1.3** Web search results (R1.3a) shape the argument; a fact from one reaches the page only after its page is opened with `fetch_page`. A search snippet is never evidence.
+- **W1.4** Never a source: the agent's own memory of a company, or the examples written into skills.
+- **W1.5** Per case: one-to-one and contact pages lean on the research; general campaign, event and product pages lean on the seller's files and clones; event pages take dates, times, places and speakers only from the brief or the seller's own event page.

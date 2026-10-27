@@ -434,7 +434,7 @@
   "family": 2,
   "topic": "SOURCING",
   "severity": "high",
-  "status": "open",
+  "status": "RULED 2026-10-28 (W1.1–W1.5)",
   "title": "Which words and facts may the page use?",
   "what": "The site allows only three sources for a number or a quote: the research, the seller's files, a page the agent fetched. It does not name the seller's own captured sections, although every clone keeps the seller's published words, stats, customer names and quotes unless changed; nor the brief's facts, which the Head of ABM sends with their sources; nor the audience context R1.3a now allows from web searches. The legacy skills treat the clone's own copy and proof strips as captured evidence, and supplied facts as usable at their stated scope without upgrading them to verified.",
   "why": "Under the site rule, keeping a clone's stat strip or testimonial is technically unsupported, and so is a fact the brief carries.",
