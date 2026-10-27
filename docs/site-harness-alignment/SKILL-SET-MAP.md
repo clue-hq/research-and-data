@@ -252,3 +252,47 @@ numbers trace to the plan, W6.3), buttons, looks like the seller's (V1.4–V1.5,
 5. `imagery-and-media`, `page-design`, `page-review`. 6. The four mechanics skills and the tool descriptions.
 Each piece is shown in full before anything is written into the repo; skill text stays uncommitted until the trials
 (step 5); the code items in §7 get their own plans, the ⚑ ones with the founder first.
+
+## 10. Cross-references (founder 2026-10-28: proper, mature inter-referencing at each stage)
+
+How a reference is written: the exact skill name and, where it helps, the part — e.g. "read `page-copy` (Claims)".
+A reference appears at the moment the agent needs it, says why in a few words, and never repeats the other skill's
+rule. Every named skill and part must exist (checked by hand until the S2 contract test exists).
+
+| From | At this point | Points to |
+|---|---|---|
+| System prompt | a new document starts | `planning-a-page` (always first) |
+| System prompt | "Who this page is for" is decided | the matching case skill |
+| System prompt | building `page.json` / `shell.json` | `building-with-puck` |
+| System prompt | a section needs a new or rebuilt component | `writing-a-section`, `rebuilding-a-section` (and `making-a-section-interactive` on live sites) |
+| System prompt | the five sources line; the off-page line | `evidence`; `page-copy` |
+| System prompt | after `render_page` | `page-review` |
+| System prompt | a follow-up edit | only the skill the change touches (S2.4, R12.1) |
+| `planning-a-page` | step 2, who and at what scale | the six case skills, one line each on when each applies |
+| `planning-a-page` | evidence needed and available | `evidence` |
+| `planning-a-page` | the argument, on personalised pages | `decision-material` |
+| `planning-a-page` | sections: cadence, hero, composition | `page-design` |
+| `planning-a-page` | sections: reuse order, header and footer | `building-with-puck` |
+| `planning-a-page` | sections: images and motion | `imagery-and-media` |
+| `planning-a-page` | writing the words | `page-copy` |
+| `planning-a-page` | the "done" lines | `page-review` (checks them) |
+| Each case skill | its decision material (one-to-one, one-to-few, contact) | `decision-material` |
+| Each case skill | its claims, voice, headline, proof line | `page-copy`; `evidence` (research key, sources) |
+| Each case skill | its hero | `page-design` |
+| Each case skill | its header and footer | `building-with-puck` (header section) |
+| Each case skill | its logos and screenshots | `imagery-and-media` |
+| Each case skill | its account checks | `page-review` |
+| `contact-page` | everything not stated | `one-to-one-page` |
+| `decision-material` | wording the exhibit; product screenshots; what may be stated | `page-copy`; `imagery-and-media`; `evidence` |
+| `page-copy` ↔ `evidence` | a number or a quote: what may be used vs how it is written | each other |
+| `page-review` | group 2, the words | `page-copy` (Final check) |
+| `page-review` | group 4, looks like the seller's | `page-design` |
+| `page-review` | the report | the system prompt's report shape |
+| `imagery-and-media` | motion step 2, rebuilding motion | `rebuilding-a-section`, `making-a-section-interactive` |
+| `imagery-and-media` | image slots | `building-with-puck` |
+| `page-design` | surfaces by name | `building-with-puck`, `brand/brand.md` |
+| `building-with-puck` | reuse steps 2 and 4 | `rebuilding-a-section`, `writing-a-section` |
+| `building-with-puck` | rhythm; images; button words | `page-design`; `imagery-and-media`; `page-copy` |
+| `writing-a-section` | look and motion | `page-design`, `imagery-and-media`, `making-a-section-interactive` |
+| `rebuilding-a-section` | the original's video | `imagery-and-media` (Motion and video) |
+| `making-a-section-interactive` | which motion to rebuild | `imagery-and-media` (Motion and video) |
