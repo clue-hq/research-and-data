@@ -119,7 +119,7 @@ ISSUES = [
      ("L1b", "the native shell almost always stays"), ("L1b", "Account-personalized (ABM) pages get no automatic answer"),
      ("L3b", "Follow product purpose, traffic and buyer questions")]}]},
 
- {"id": "P8", "family": 1, "topic": "PLAN", "severity": "medium", "status": "open",
+ {"id": "P8", "family": 1, "topic": "PLAN", "severity": "medium", "status": "RULED 2026-10-27 (R8: no change)",
   "title": "Is the brief binding, or an agent's summary to read critically?",
   "what": "The site treats the brief's goal, reader and offer as fixed and its facts, proof and structure as suggestions. The legacy skills say a delegation brief is an agent-authored summary: quote the person's actual words, keep user requirements apart from working choices, and do not read a pilot, demo or section count into a short request. The site agent does receive the person's own message (last, after the brief and the session history), and the brief's wrapper already calls it 'an agent-authored summary' — which contradicts the system prompt's 'keep to those'.",
   "why": "When the brief picks a weak offer or the wrong page kind, the site agent has no permission to question it.",
