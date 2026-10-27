@@ -174,7 +174,7 @@ ISSUES = [
      ("L1", "changing an existing page's audience, offer or argument"), ("L1b", "When a whole-page campaign adaptation authorizes"),
      ("L1", "Adding account markers is not a reason")]}]},
 
- {"id": "P13", "family": 1, "topic": "STRUCTURE", "severity": "low", "status": "open",
+ {"id": "P13", "family": 1, "topic": "STRUCTURE", "severity": "low", "status": "RULED 2026-10-27 (R13.1–R13.4)",
   "title": "Several directions for the same page",
   "what": "The site has no rule for a request for several concepts or layouts. The legacy skill plans one row per direction, keeps brand invariants fixed, says three centred heroes with different headlines are still one composition, and reports honestly when only one page is finished.",
   "why": "A gap, not a conflict.",

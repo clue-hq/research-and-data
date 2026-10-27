@@ -86,3 +86,11 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **R12.2** A re-aim (the person asks the page to serve a new audience, offer or page kind) is the only case that re-plans, and only after the person confirms. Once confirmed: re-run the planning skill for the new aim; keep sections that still answer a question for the new reader; rewrite what the aim changes; remove what no longer answers anything; keep the person's own edits unless the new aim needs them changed; report what changed. Same document (saved versions keep the old one); a copy only if the person asks. *(The details after confirmation: suggestion, no objection raised.)*
   - This confirmation is an exception to R9.3 ("never ask to approve a plan").
 - **R12.3** When it is unclear whether a request is a small edit or a re-aim, make the small edit, then ask the person whether they want a complete revamp in a new direction or whether a few small changes or additions to the existing page are enough. The agent never re-aims on its own. (Founder refinement 2026-10-27.)
+
+## P13 · Several directions for the same page — RULED 2026-10-27
+- **R13.1** Several directions stay separate documents, opened by the Head of ABM, one per direction; the site agent builds only its assigned one (the leg wrapper's assignment block already says so).
+- **R13.2** In the base planning skill: when the artifact's note names a direction, the plan states in one line what makes this direction different — its reader or decision, opening message, decision material, section order or visual emphasis.
+- **R13.3** Argument alternatives make a genuinely different case, not synonyms; layout alternatives keep the agreed copy and vary composition (hero arrangement, what each section does, visual weight, media). The brand stays fixed either way; reshuffled sections, recolouring or new icons are not a new direction.
+- **R13.4** Several directions as pages inside one document only when the person asks for that.
+
+**Family 1 step 2 complete (P1–P13 ruled, 2026-10-27).**
