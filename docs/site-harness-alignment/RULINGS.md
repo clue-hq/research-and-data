@@ -173,3 +173,9 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **W8.2** Positive specificity in three tiers: too vague ("Improve monetization flexibility"), too technical for the hero ("Configure multidimensional meters, event aggregation, entitlements…"), right for the hero (specific, not technical: "Bring seats, included model usage, enterprise contracts, and expansion revenue onto one flexible foundation"); the technical detail comes later on the page.
 - **W8.3** Explain the actual product — what it does and how it fits together — not the buying process ("Meet our experts → Discover your needs → Build a roadmap" says nothing about the product).
 - **W8.4** State the claim, don't narrate the reasoning (R4.6); a line that names no product action, system or result, or would fit any company, is a slogan — make it specific or cut it. No puffery (W2.5).
+
+## W9 · Headlines — RULED 2026-10-28
+- **W9.1** Six tests: understood in one read; about something the buyer owns; specific (names the system, job or result); the page can back it; fits its space (no much-worse wrapping, no lone word on a line); the subheadline expands it, never repeats it.
+- **W9.2** Formula: outcome or system + buyer context + a meaningful qualifier.
+- **W9.3** On one-to-one, one-to-few and contact pages the hero describes the proposed system, not a result (W2.3); on other pages a result in the headline needs attributed proof further down.
+- **W9.4** No category slogans, forced puns or repeated account names.

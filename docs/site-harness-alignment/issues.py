@@ -294,7 +294,7 @@ ISSUES = [
      ("L7a", "Prefer specific, evidence-backed statements to platitudes"), ("L7a", "Short paragraphs, meaningful headings"),
      ("L7a", "the transformation-word test")]}]},
 
- {"id": "W9", "family": 2, "topic": "HEADLINE", "severity": "low", "status": "open",
+ {"id": "W9", "family": 2, "topic": "HEADLINE", "severity": "low", "status": "RULED 2026-10-28 (W9.1–W9.4)",
   "title": "Headlines",
   "what": "The site's hero rule and two checks (mystery box, redundant subheadline) agree with the legacy skills, which add five tests (one-read meaning, reader ownership, specificity, evidence, fit), a formula (outcome or system + reader context + qualifier), and 'product nouns and verbs, not category slogans, forced puns or repeated account names'.",
   "why": "Agreement; the question is how much of the legacy craft to bring over.",
