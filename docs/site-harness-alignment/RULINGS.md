@@ -346,3 +346,12 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **X2.3** The live-site condition stays (`LUMEN_SITE_LIVE_WORKSPACES`; it depends on what the workspace can publish, not the page kind): `making-a-section-interactive` is listed only on live workspaces (all of production).
 - **X2.4** Kept as is: "Read `brief.md`, the research and `catalog/index.md`. Open clone files and seller files when you need them, not all at once."
 - Context recorded with X1/X2: pages built so far are almost entirely frozen clones plus brand sections; agent sections appear in two trials, one Garner page and one Conduit footer; the 10-26 Pallet run wrote no section.
+
+## X3 · Section writing strong enough to rebuild the seller's sections and motion (M1.8) — RULED 2026-10-28
+- **X3.1** Add a video piece to the kit (code): `kit.Video` — plays the seller's own video as captured, muted and looping where the seller's site does that, with a poster frame; a still frame for visitors who ask for less motion and while the marketer edits; never sound on its own. Goes with R11.4 (clone cards list videos; Safari playback).
+- **X3.2** `writing-a-section`'s motion line follows M1.3: move only through the brand's motion classes, or rebuild motion the seller's own site actually has.
+- **X3.3** `making-a-section-interactive` gains a short part on rebuilding the seller's motion — a switcher as one linked component (each control changes its own image and text), a carousel or scroll reveal moving the way the seller's does, a still state for less motion with nothing hidden — and one small worked switcher example beside the accordion.
+- **X3.4** `rebuilding-a-section` keeps the original's video through `kit.Video` (R11.1), and its compare-up-to-three-times check.
+- **X3.5** The trials (step 5) include one rebuild with motion (e.g. Pallet's hero, rebuilt as an editable section that keeps its video).
+
+**Family 6 step 2 complete (X1–X3 ruled, 2026-10-28). All six families ruled.**

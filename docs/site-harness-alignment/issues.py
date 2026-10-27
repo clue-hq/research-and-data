@@ -548,7 +548,7 @@ ISSUES = [
      ("A1", "Your skills are below this prompt"), ("A1", "Open clone files and seller files when you need them"),
      ("H7", "folders = ")]}]},
 
- {"id": "X3", "family": 6, "topic": "MECHANICS", "severity": "medium", "status": "open",
+ {"id": "X3", "family": 6, "topic": "MECHANICS", "severity": "medium", "status": "RULED 2026-10-28 (X3.1–X3.5)",
   "title": "Section writing strong enough to rebuild the seller's sections and motion (M1.8)",
   "what": "M1.8 asks the agent's own section writing to be strong enough to rebuild the seller's motion. Today: the kit has no video piece, so a rebuilt section cannot carry the seller's video; writing-a-section still says 'write no transition or animation of your own'; making-a-section-interactive has an accordion example but nothing on rebuilding the seller's own motion or on a still state for visitors who ask for less motion; rebuilding-a-section still swaps video for an image (already ruled out by R11.1).",
   "why": "R11.1, M1.2 and M1.4 depend on these mechanics.",
