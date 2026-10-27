@@ -27,3 +27,13 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
   - Note for step 4: a logo wall is proof that sits beside the argument, never a substitute for it (legacy L3b), and on a one-account page it must not suggest the account is a customer (site D3).
 - **R3.3** A word budget per section stays as a planning aid, set by what the section has to explain, not by the clone's original slot (slot length: P4).
 - **R3.4** "Short beats complete" goes. "Clear beats clever" stays and moves to the copy skill.
+
+## P4 · How much a page explains, and slot length — RULED 2026-10-27
+- **R4.1** Substance before container: the plan writes what each section must explain, then picks the section that can carry it (base skill). *(Suggestion item 1; no objection raised.)*
+- **R4.2** Decision material lives in the case skills — mainly one-to-one and one-to-few (walkthrough, criterion → mechanism → proof, worksheet only as an optional later aid, attributed proof); a lighter version in general and product campaign skills (the product doing its job, not a feature list). *(Item 2; no objection raised.)*
+- **R4.3** Slot length: a rewritten clone line keeps roughly its length. When the material needs more room, never cut the material — and prefer, strongly, the clone's own slots or the clone rebuilt as a component; a brand section or a section of the agent's own only when neither can carry it.
+- **R4.4** Checks kept/added: swap test, feature dumping, the utility test, and "explain before asking the reader to evaluate". *(Item 4; no objection raised.)*
+- **R4.5** "Research is input, not prose" stays in the base skill; turning research into page prose follows the copy skill (family 2). What may never appear on the page is family 2.
+- **R4.6** Depth, never over-explaining: write statements that appeal to the reader; do not spell out the logic or inference behind them. (Founder: LLMs tend to over-explain.)
+- **R4.7** In drafted page copy, no paragraph runs over 20 words: clear and concise. Home: the copy skill (family 2).
+  - Note for family 2: the legacy line "Do not shrink copy into slogans" must be reconciled with R4.6–R4.7 (concise statements, not slogans).

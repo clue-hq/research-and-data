@@ -64,7 +64,7 @@ ISSUES = [
    {"label": "Both agree: one question per section", "refs": [
      ("D1", "**Hero:**"), ("L1b", "Each section must answer exactly one visitor question"), ("L1b", "Order the survivors by the awareness stage")]}]},
 
- {"id": "P4", "family": 1, "topic": "SUBSTANCE", "severity": "high", "status": "open",
+ {"id": "P4", "family": 1, "topic": "SUBSTANCE", "severity": "high", "status": "RULED 2026-10-27 (R4.1–R4.7)",
   "title": "How much must a page explain, and may substance outgrow a clone's slots?",
   "what": "The site asks for short, clear pages and rewrites that match the original slot ('a slot that held six words wants about six words back'). Its only substance checks are 'feature dumping' and the swap test. The legacy decision-material skill asks for a concrete worked application (trigger, product action, handoff), a decision map whose every item shows up visibly on the page, and says a shortage of slots is never a reason to drop the substance.",
   "why": "This is the 'thin page' problem: the site agent fills slots at the original length, so the page carries little the buyer can use.",
