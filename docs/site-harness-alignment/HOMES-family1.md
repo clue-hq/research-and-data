@@ -8,6 +8,8 @@ skills (`building-with-puck`, `writing-a-section`, `rebuilding-a-section`, `maki
 
 A rule homed in a later family's aspect skill is only *placed* here; its wording is ruled with that family.
 
+Founder review 2026-10-27: sections A and B approved.
+
 ## A. Each ruling's home
 
 | Ruling | Home | Notes |
@@ -16,7 +18,7 @@ A rule homed in a later family's aspect skill is only *placed* here; its wording
 | R1 every kind | SYS | Line 1 rewritten: a seller's landing pages for every kind, not "one named account". |
 | R1.1 kind by judgement, "Who this page is for" | BASE | First step of the sequence. |
 | R1.2 brief opens with who the page is for | HOA | `manual-siblings` new version + Head of ABM re-mint. |
-| R1.3 untagged workspace honest; context names | CODE + BASE | CODE: `site_workspace_view.py:401` stops using the title as `account_name`; `workspace.py` README wording. BASE: the agent names the page (root title, headings) for its context. |
+| R1.3 untagged workspace honest; context names; R1.3a/R2.5 ICP, personas and a few web searches for context | CODE + BASE + CASE (general, one-to-few) + SYS (`web_search` and `seller/` lines widen) | CODE: `site_workspace_view.py:401` stops using the title as `account_name`; `workspace.py` README wording. BASE: the agent names the page (root title, headings) for its context. |
 | R1.4, R2.5, R10.1 the page kinds | BASE (list) + CASE (one entry each) | |
 | R2.1, R2.3 the eight-step sequence | BASE | |
 | R2.2, R2.4 case direction from Shashank's skills | CASE | |
@@ -26,7 +28,7 @@ A rule homed in a later family's aspect skill is only *placed* here; its wording
 | R3.4 "Clear beats clever" | COPY | "Short beats complete" deleted. |
 | R4.1 substance before container | BASE | |
 | R4.2 decision material | DECISION (method, its own aspect skill) + CASE (how much, per case) | Ruled: own aspect skill, pointed to by one-to-one, one-to-few and contact. |
-| R4.3 slot length and the reuse order | MECH (`building-with-puck` "Reuse first") + COPY (keep a rewritten line's length) | |
+| R4.3 slot length and the reuse order | MECH (`building-with-puck` "Reuse first") + COPY (a rewritten line is not overly verbose; light rule) | |
 | R4.4 swap test, feature dumping, utility test, explain before evaluating | REVIEW (checks) + BASE (explain before evaluating) | |
 | R4.5 research is input; prose via the copy skill | BASE + COPY | |
 | R4.6 no over-explaining; R4.7 ≤20-word paragraphs | COPY | |
@@ -75,7 +77,7 @@ A rule homed in a later family's aspect skill is only *placed* here; its wording
 | D1-22 | Every button says what happens, same link | Split: "says what happens" → COPY; "same link" → BASE primary action. |
 | D1-23 | Never imply a customer; never name people | Delete (duplicate of A1-05). |
 | D1-24…D1-29 | Final check (word budget, dilution, CTA competition, feature dumping, buried proposition, swap test) | → REVIEW (family 5); "audience dilution" and "swap test" become case-aware. |
-| D1-30 | Keep the original wording's length | → COPY, with R4.3's exception. |
+| D1-30 | Keep the original wording's length | → COPY, softened to "not overly verbose" (R4.3); the six-words rule goes. |
 | D2-01 | Reuse first | Keep (MECH), R4.3 order. |
 | D2-02 | The home page's hero usually opens the page | → VISUAL (family 4: the centred-hero question). |
 | D2-03 | Leave out clones that do not help | Merge with D1-14 into BASE; MECH keeps only the clone mechanics. |

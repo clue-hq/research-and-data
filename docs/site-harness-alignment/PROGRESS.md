@@ -14,7 +14,7 @@ alignment (`docs/design-harness-alignment/`), done **one family at a time**:
 
 ## Families
 1. **The page's argument** — page kind, reader, message plan, structure and length, decision material,
-   action, the account's identity, header/footer choice, the brief, asking. ← steps 1–2 done 2026-10-27 (P1–P13 ruled); step 3 (homes) next
+   action, the account's identity, header/footer choice, the brief, asking. ← steps 1–3 done 2026-10-27 (P1–P13 ruled; homes approved in HOMES-family1.md)
 2. Wording and evidence — copy, claims, proof, numbers.
 3. Imagery and media — brand images, product screenshots, generation, logos, video and motion.
 4. Visual design and brand fidelity — hero, rhythm, type, source fidelity, contrast.
@@ -64,3 +64,4 @@ Out of scope: the Head of ABM's brief content (another agent), the exit judge.
 - 2026-10-27: P1 ruled (R1.1–R1.4): judgement + honest inputs, no field; Head of ABM brief opens with who the page is for; untagged pages named for their context; kinds = one account, segment, event, product/offer (not several named accounts).
 - 2026-10-27: P2–P7 ruled (see RULINGS.md). Correction: the site agent DOES receive the person's own message (last, after the brief); G1 added and P8 corrected.
 - 2026-10-27: P8–P13 ruled; family 1 step 2 complete. Next: step 3 (one home per rule) for family 1.
+- 2026-10-27: S1 (three layers), S2 (skills read on demand, reverses the 2026-10-08 inline ruling), S1.2 = six case skills, decision-material its own aspect skill. Founder edits folded in: R1.3a/R2.5 (ICP/personas + a few web searches without a tagged account), R4.3 softened. Family 1 step 3 approved. Next: family 2 (wording and evidence) ledger.
