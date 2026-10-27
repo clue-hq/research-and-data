@@ -900,7 +900,7 @@
   "family": 3,
   "topic": "IMAGERY",
   "severity": "medium",
-  "status": "open",
+  "status": "RULED 2026-10-28 (M3.1–M3.3)",
   "title": "Keeping the seller's image composition",
   "what": "The site says keep a clone's layout, images and rhythm. The legacy skills spell out what that means for images: keep crop, focal point, transparency, corners already baked into the image, and layer order; separate what is inside an image from what the page adds (double rounding cuts controls; a panel behind a cut-out destroys it); never replace characteristic scenery or a photographic background with a flat colour because finding the asset was inconvenient.",
   "why": "Rebuilt sections and brand sections are where images get flattened or re-cropped.",

@@ -225,3 +225,10 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **M2.5** How: the five-question prompt (what it is; the style; the brand's exact colours; the composition — where the weight sits and where it stays calm; what must not appear); the brand's own imagery described in plain words; one to three brand photos as style references; the test "would the brand's own design team have made this?"
 - **M2.6** Then look: if wrong, change the prompt rather than repeat it; one retry, then leave the image out; a failed or placeholder image is never shipped.
 - **M2.7** Text over a generated image sits on its calm area or on a scrim; one atmosphere per section.
+- **M2.8** (founder chose a) "Anything real comes only from these images… Never generate them" is kept, narrowed to *presented as real*: the agent never generates an image that pretends to be the seller's actual product screen or a real customer; a generated image may still contain screen-like or people-like elements when that matches the seller's imagery style.
+
+## M3 · Keeping the seller's image composition — RULED 2026-10-28
+- **M3.1** In rebuilt sections, brand sections and the agent's own sections, keep how the seller stages its images: crop, focal point, proportions and layer order (background behind, then the image, then any frame).
+- **M3.2** Know what is already inside the image: if it already has rounded corners, a shadow, a frame or a see-through edge, don't add another, and don't put an opaque box behind a cut-out.
+- **M3.3** Never swap a photographic or illustrated background for a flat colour because the right image was hard to find: find it with `search_assets`, rebuild it with a generated image of the same type (M2.2), or use the clone as it is.
+- Per case: every case. Home: the imagery skill.
