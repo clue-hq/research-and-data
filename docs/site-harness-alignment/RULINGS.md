@@ -237,7 +237,7 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **M4.0** The site's two existing lines are enough for this aspect ("Check that the image fits the words beside it. A product screenshot must show what the copy says."; nothing generated as real, M2.8); no extra lines beyond those below.
 - **M4.1** A screenshot shows the product, not a result: it never stands in for a claim about integrations or outcomes (the W rules decide those).
 - **M4.2** (important) Never alter a screenshot: never redraw a dashboard, edit its metrics, paint in account data, stretch it, or crop out the feature the copy describes.
-- **M4.3** Pairing each screenshot with what it shows (one plan line: task → what the product does → what is visible → the sentence beside it, after looking at it) applies **primarily to product campaign pages**, not every case.
+- **M4.3** Pairing each screenshot with what it shows (one plan line: task → what the product does → what is visible → the sentence beside it, after looking at it) applies **primarily to product campaign pages**, not every case — included, in the product campaign page skill (founder confirmed).
 - **M4.4** No staging rule: the agent follows how the seller's own site stages its product imagery.
-- **M4.5** Screenshots are never forced on any case: they sit within the page's overall flow. On one-to-one pages a screenshot of the feature that answers the account's priority is neither forced nor blocked.
-- Not carried: the legacy "on a phone the interface stays readable" line (may return as a family 5 review check).
+- **M4.6** On a phone, the product interface stays visible and readable; a background with no interface left is a failure. (Founder: "this you can add.")
+- *(M4.5 — "screenshots never forced, never blocked on one-to-one" — removed by the founder.)*
