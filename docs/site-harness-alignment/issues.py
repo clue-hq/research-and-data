@@ -303,7 +303,7 @@ ISSUES = [
    {"label": "Site", "refs": [("D1", "**Hero:**"), ("D1", "Mystery-box headline"), ("D1", "Redundant subheadline")]},
    {"label": "Legacy", "refs": [("L7a", "Judge every headline on five things"), ("L7a", "A working headline formula"), ("L7b", "a concrete idea followed by mechanism/scope")]}]},
 
- {"id": "W10", "family": 2, "topic": "COPY", "severity": "low", "status": "open",
+ {"id": "W10", "family": 2, "topic": "COPY", "severity": "low", "status": "RULED 2026-10-28 (W10.1–W10.6)",
   "title": "Buttons, forms and promises",
   "what": "Both say a button names what happens. The legacy skills add: two to five words, field labels as plain nouns, success and error copy, and never promise a response time, consent handling or delivery the page does not actually provide.",
   "why": "Small additions.",

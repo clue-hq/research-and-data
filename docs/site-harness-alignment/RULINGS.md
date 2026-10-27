@@ -42,10 +42,10 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 
 ## P5 · Where buttons go — RULED 2026-10-27
 - **R5.1** The action is chosen from the reader's decision (base skill step 5), never from the seller's homepage button or an available booking link. Case skills give the usual action: one-to-one and one-to-few — the next step the brief names (meeting, assessment, proposal) at its real scope; general campaign — the demo, trial, contact or resource the brief names; event — register; product campaign — the offer the ad or email made.
-- **R5.2** One primary action, same label and destination everywhere it appears (header button included), placed at decision points (after the promise, after the explanation, at the close), not in every section.
+- **R5.2** One primary action, same label and destination everywhere it appears (header button included), placed at decision points (after the promise, after the explanation, at the close), not in every section. *(Amended by W10.3: the wording may vary slightly by context while every button leads to the same offer and destination.)*
 - **R5.3** Secondary links: one-account and one-to-few pages carry no links that take the reader away (a cited case study may open in a new tab); general, event and product pages may carry a few relevant secondary links (product page, pricing, agenda).
 - **R5.4** Every inherited clone button is decided on purpose: kept with its real purpose, label and destination changed together, or removed. A label never promises what its destination does not deliver.
-- **R5.5** The final check's "CTA competition" becomes "more than one primary offer"; "forms ask only what the next step needs" is added.
+- **R5.5** The final check's "CTA competition" becomes "more than one primary offer"; "forms ask only what the next step needs" is added. *(Form part deferred by W10.5: forms are left out of the skills for now.)*
 
 ## P6 · Where the account's name and logo go — RULED 2026-10-27
 - **R6.1** One-to-one: the header lockup is the account's place — "Prepared for <account>" with the account's logo beside the seller's; the logo appears nowhere else. The hero names the account in words. No second logo, no account bar.
@@ -179,3 +179,11 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **W9.2** Formula: outcome or system + buyer context + a meaningful qualifier.
 - **W9.3** On one-to-one, one-to-few and contact pages the hero describes the proposed system, not a result (W2.3); on other pages a result in the headline needs attributed proof further down.
 - **W9.4** No category slogans, forced puns or repeated account names.
+
+## W10 · Buttons, the offer and forms — RULED 2026-10-28
+- **W10.1** A button names what the buyer receives or what happens, in 2–5 words; never "Submit", "Learn more", "Explore", "Get started" or "Talk to sales". The sentence above the button carries the value. Ploy's contrast stands as the guide: weak "Submit / Learn more / Explore / Get started"; stronger "Request the session / Get the assessment / Review the architecture"; "Talk to sales" describes the seller's process, "Plan the strategy session" describes what the buyer receives.
+- **W10.2** The offer section answers five questions, in short pieces (W8): what will happen, who it is for, what will be covered, what the visitor leaves with, and how much information is needed to begin.
+- **W10.3** Wording may vary slightly by context while every button leads to the same offer and destination (Ploy: header "Plan the session", hero "Plan the strategy session", form "Request the session"). Amends R5.2's "same label".
+- **W10.4** Never promise what nobody established: a response time, consent handling, a delivery or a follow-up.
+- **W10.5** Our own forms stay out for now — a later addition. The skills say nothing about form fields or form copy.
+- **W10.6** Per case: event pages use register wording next to the real date, time and place; product campaign pages word the offer as the ad or email worded it.
