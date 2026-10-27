@@ -74,3 +74,9 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **R10.3** The one-to-one skill also covers a page aimed at a role at the account (shaped by the brief's committee notes), never naming the person.
 - **R10.4** Mechanics are part of this work: a page tagged to a contact; that contact's research read into the workspace; the identity-binding and allowed-use gates applied before any personal fact reaches the page. The design of these (how the tag travels, which reads, where the gates sit) is an architecture decision to bring to the founder before building.
   - Note: this brings the contact-page part of the privacy/use gates forward from the deferred privacy sprint (2026-10-14 ruling).
+
+## P11 · Video sections — RULED 2026-10-27
+- **R11.1** Ambient video that is part of the seller's design — background loops, animated heroes, GIFs and motion used for the look (Pallet, Garner Health) — is kept as the clone carries it. It is never removed deliberately and never swapped for a still image, including in a rebuilt section. `rebuilding-a-section`'s "use the closest brand image" goes.
+- **R11.2** Embedded press-play videos (a YouTube/Vimeo-style player, a brand film) are removed — except a short demo player that directly shows what the page argues, which stays.
+- **R11.3** When a video stays, the headline still states the promise and the page reads fully without pressing play.
+- **R11.4** Mechanics to family 3: clone cards list a section's videos; rebuilt sections can carry video; Safari playback (byte-range serving).

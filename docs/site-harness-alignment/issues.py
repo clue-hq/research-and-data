@@ -156,7 +156,7 @@ ISSUES = [
      ("L4", "something substantive must change"), ("L4", "Their name need not be the headline"),
      ("L3a", "Read **contacts**"), ("L3b", "Tie the account argument to that person's"), ("L4", "Do not use private or sensitive interests")]}]},
 
- {"id": "P11", "family": 1, "topic": "STRUCTURE", "severity": "low", "status": "open",
+ {"id": "P11", "family": 1, "topic": "STRUCTURE", "severity": "low", "status": "RULED 2026-10-27 (R11.1–R11.4)",
   "title": "Video sections: remove them, or lead with them?",
   "what": "The site lists brand videos among the sections to remove. The legacy argument patterns include a video-led page, as long as the headline states the promise and the page works without pressing play.",
   "why": "Pallet's homepage leads with video; the 10-26 page dropped all of it. How the video is carried belongs to the imagery family; whether it may stay is decided here.",
