@@ -269,7 +269,7 @@ ISSUES = [
      ("L7", "Before you write a prominent fact or outcome"), ("L7b", "pair each material factual sentence"),
      ("L3c", "For each factual claim keep the actual value"), ("L6", "Record accessible values/excerpts")]}]},
 
- {"id": "W7", "family": 2, "topic": "VOICE", "severity": "medium", "status": "open",
+ {"id": "W7", "family": 2, "topic": "VOICE", "severity": "medium", "status": "RULED 2026-10-28 (W7.1–W7.5)",
   "title": "Whose voice, and whose words?",
   "what": "The site asks the agent to write like the clone's author and in the reader's words, with at most one or two of the account's own figures. The legacy skills rank voice sources — a brand voice or style guide when one exists, then the brand card, then the clone's own copy — and allow the reader's own phrases verbatim ('recognition is persuasion'). The site has no rule for a voice document in seller/.",
   "why": "The seller's pinned documents may hold a voice guide the agent never consults.",

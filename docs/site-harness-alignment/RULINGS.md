@@ -160,3 +160,10 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **W6.2** On one-to-one, one-to-few and contact pages, each benefit statement gets one bridge line: the account's priority [source] → the seller's capability [source] → the sentence (Ploy's claim ledger, for discussion). Makes W2 and W4.6 checkable.
 - **W6.3** Final check: every number and quote on the page traces to a line in the plan.
 - **W6.4** The planning skill shows the format with one short example; it is not a schema to fill.
+
+## W7 · Whose voice, and whose words — RULED 2026-10-28
+- **W7.1** Voice comes from, in order: a brand voice or messaging document in `seller/` when there is one; the seller's own site copy as the clones carry it (cadence, register, sentence length); the brief's tone notes.
+- **W7.2** With good emphasis: the agent then tunes tone and vocabulary to the seller's buyer. Ploy's finance-versus-consumer contrast (finance leaders: precise, calm, slightly conservative, operational, numerically disciplined, free of hype; consumer: warmer) is an example to reason from when deciding the tone for this buyer, not a fixed pair of settings.
+- **W7.3** The buyer's words: the agent uses the vocabulary the buyer already uses — the account's quoted words, its own site, the ICP and persona documents — and turns the seller's internal terms into the buyer's operational ones. Customer pitch, not investor pitch. A product name is explained the first time; jargon is never stacked.
+- **W7.4** The account's own figures are used sparingly, only when a figure sharpens the insight (replaces "at most one or two"). Figures about their future are already forbidden (W2.3).
+- **W7.5** Per case: one-to-one and contact pages use the account's own phrases verbatim where the research quotes them; product and event pages echo the wording of the ad, email or invite the buyer clicked, when the brief supplies it; general campaign pages use the segment's vocabulary from the ICP and persona documents.
