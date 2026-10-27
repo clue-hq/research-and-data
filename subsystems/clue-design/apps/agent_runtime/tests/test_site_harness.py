@@ -448,3 +448,40 @@ def test_a_read_without_a_limit_gets_the_whole_file(tmp_path: Path) -> None:
     ])
     (tools.workspace / "research" / "long.md").write_text("\n".join(f"line {n}" for n in range(1, 251)))
     assert "line 250" in _results(_invoke(agent))["call_1"]
+
+
+QUESTION = {"id": "audience", "question": "Who is this page for?", "why_it_matters": "It decides the page's whole angle.",
+            "default": "I'll write it for freight brokers."}
+
+
+def test_a_turn_that_asks_saves_nothing_and_returns_the_questions(tmp_path: Path) -> None:
+    # Ruling R9.4 (2026-10-27): the site agent may ask before building; asking ends the turn.
+    content = json.dumps(SITE["pages"]["/"]["content"])
+    result = _run(tmp_path, [
+        AIMessage(content="", tool_calls=[call("request_clarification", {"questions": [QUESTION]}, 1)]),
+        AIMessage(content="", tool_calls=[call("edit_file", {"file_path": "/page.json", "old_string": '"content": []',
+                                                             "new_string": f'"content": {content}'}, 2)]),
+        AIMessage(content="Built it anyway."),
+    ], site=_empty_site())
+    assert result.status == "clarification_requested" and result.stop_reason == "clarification_requested"
+    assert result.clarification == {"questions": [{**QUESTION, "options": [], "allow_freeform": True}]}
+    assert result.site == _empty_site()
+    assert "Who is this page for?" in result.summary and "freight brokers" in result.summary
+
+
+def test_a_question_without_a_default_gets_an_error_the_agent_can_fix(tmp_path: Path) -> None:
+    agent, guard, _, tools = _agent(tmp_path, [
+        AIMessage(content="", tool_calls=[call("request_clarification", {"questions": [{**QUESTION, "default": ""}]}, 1)]),
+        AIMessage(content="Done."),
+    ])
+    results = _results(_invoke(agent))
+    assert "default" in results["call_1"] and tools.clarification is None
+
+
+def test_the_ask_tool_is_withheld_after_a_turn_that_asked(tmp_path: Path) -> None:
+    # One question round: the turn that answers the questions designs, it does not ask again.
+    from lumen_agent.site.tools import site_tool_set
+    workspace = tmp_path / "workspace"
+    names = lambda inputs: {t.name for t in site_tool_set(SiteTools(workspace=workspace, inputs=inputs, base_site=garner_site()))}  # noqa: E731
+    assert "request_clarification" in names(inputs_for())
+    assert "request_clarification" not in names(inputs_for(clarification_already_requested=True))

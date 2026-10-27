@@ -608,6 +608,7 @@ def build_site_agent(
         WholeFileReads(),
         OrderedToolCalls(),
         RoundShape(limit=limits.max_calls_per_round),
+        StopWhenAsked(tools),
         turn_limits,
         guard,
     ]
@@ -624,13 +625,36 @@ def build_site_agent(
 
 @dataclass(frozen=True)
 class SiteTurnResult:
-    #: "applied" (the site is valid or untouched) or "failed".
+    #: "applied" (the site is valid or untouched), "clarification_requested" (it asked, R9.4) or "failed".
     status: str
     summary: str
     site: dict
     stop_reason: str | None
     errors: list[str]
     model_calls: list[dict]
+    #: The question it asked, {"questions": [...]}, when status is "clarification_requested".
+    clarification: dict | None = None
+
+
+def clarification_summary(clarification: dict) -> str:
+    """The turn's reply when it stopped to ask: the question, why it matters, and the default."""
+
+    lines = ["Before I build this, one question:"]
+    for item in clarification.get("questions") or []:
+        lines.append(f"- {item['question']} ({item['why_it_matters']}) If you don't answer, {item['default']}")
+    return "\n".join(lines)
+
+
+class StopWhenAsked(AgentMiddleware):
+    """Asking ends the turn (ruling R9.4): once request_clarification has run, no further model call."""
+
+    def __init__(self, tools: SiteTools) -> None:
+        super().__init__()
+        self._site_tools = tools
+
+    @hook_config(can_jump_to=["end"])
+    def before_model(self, state, runtime):
+        return {"jump_to": "end"} if self._site_tools.clarification is not None else None
 
 
 def _final_text(messages: list) -> str:
@@ -766,6 +790,10 @@ def run_site_turn(
         tools._record("crashed", error=detail)
         return SiteTurnResult("failed", CRASHED_SUMMARY, dict(site), "crashed", [detail], calls())
 
+    if tools.clarification is not None:
+        tools._record("asked")
+        return SiteTurnResult("clarification_requested", clarification_summary(tools.clarification), dict(site),
+                              "clarification_requested", [], calls(), clarification=tools.clarification)
     summary = _final_text((state or {}).get("messages") or [])
     if guard.status == "completed with errors":
         first = guard.errors[0] if guard.errors else ""

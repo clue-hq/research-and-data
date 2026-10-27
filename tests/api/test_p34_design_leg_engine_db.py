@@ -486,6 +486,15 @@ async def _pin_document(
     document_id = f"doc_p34e_{doc_kind}_{uuid4().hex[:8]}"
     scene: dict[str, Any] = (
         {
+            "id": document_id,
+            "title": "Harbor & Sage",
+            "theme": {},
+            "pages": {"/": {"root": {"props": {"title": "Harbor & Sage"}}, "content": []}},
+            "shell": None,
+            "agent_sections": {},
+        }
+        if doc_kind == "site"
+        else {
             "schema_version": 1,
             "id": document_id,
             "title": "Harbor & Sage",
@@ -1429,6 +1438,64 @@ def test_a_clarifying_run_rides_the_turn_as_a_part_and_arms_the_next_turns_guard
             # The first turn had nothing behind it to derive from — the guard is armed by the
             # ASKING run, not by every turn on a leg.
             assert lane.envelopes[0].config["request"]["previous_turn_outcome"] is None
+
+    run_async(scenario())
+
+
+def test_a_site_turn_after_a_question_is_told_so(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Ruling R9.3–R9.4 (2026-10-27): a site turn may stop to ask, and the one-round guard is derived
+    for site documents exactly as for scenes. The first site request stays byte-identical (no
+    ``previous_turn_outcome`` key); the follow-up carries ``"clarification_requested"``."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="site-clarify")
+            await _pin_document(conn, seeds, doc_kind="site", version=1)
+            lane = _ClarifyingFakeLane(conn_factory=seeds["conn_factory"])
+            with hermetic_flag_env():
+                registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            asked = await _submit_message(conn, seeds, label="site-clarify-1", message="Build the campaign page.")
+            await _run_turn(conn, seeds, registry, lane, asked)
+
+            async def judge(**kwargs: Any) -> ExitJudgment:
+                return ExitJudgment(close_this_session=False, addressed_artifacts=[1], reasoning="Work on this page.")
+
+            async def finisher(**kwargs: Any) -> dict[str, Any]:
+                raise AssertionError("a staying judgment never closes the leg")
+
+            runner = DesignLegTurnRunner(
+                profiles=registry,
+                artifacts=seeds["artifacts"],
+                turns=DbAgentTurnJournal(conn_factory=seeds["conn_factory"]),
+                history=DbAgentHistoryStore(conn_factory=seeds["conn_factory"]),
+                lane=lane,
+                exit_judge=judge,
+                finisher=finisher,
+                conn_factory=seeds["conn_factory"],
+            )
+            answer = await _submit_message(conn, seeds, label="site-clarify-2", message="Freight brokers.")
+            leg = await design_legs.get_open_leg_for_thread(
+                conn, workspace_id=seeds["workspace_id"], thread_id=seeds["thread_id"]
+            )
+            assert leg is not None
+            await runner.run_leg_turn(
+                submission=answer,
+                leg=leg,
+                user_message_ref=await message_artifact_ref(conn, answer),
+                focus_refs=(),
+                card_payload=_card_payload(seeds),
+                stream=None,
+            )
+
+            assert [envelope.kind for envelope in lane.envelopes] == ["site_turn", "site_turn"]
+            assert "previous_turn_outcome" not in lane.envelopes[0].config["request"]
+            assert lane.envelopes[1].config["request"]["previous_turn_outcome"] == "clarification_requested"
 
     run_async(scenario())
 

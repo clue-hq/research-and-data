@@ -52,11 +52,12 @@ def _host(app, runner):
 
 
 def _envelope(document_id: str, workspace_id: str, *, prompt: str = "Make the hero warmer.",
-              bundle: dict | None = None, targets: list | None = None):
+              bundle: dict | None = None, targets: list | None = None, previous_turn_outcome: str | None = None):
     from clue_design.envelopes import DesignTurnEnvelope
 
     run_id = f"run_{uuid4().hex[:12]}"
-    request = {"prompt": prompt, "base_version": 0, **({"targets": targets} if targets else {})}
+    request = {"prompt": prompt, "base_version": 0, **({"targets": targets} if targets else {}),
+               **({"previous_turn_outcome": previous_turn_outcome} if previous_turn_outcome else {})}
     return DesignTurnEnvelope(kind="site_turn", work_id=uuid4(), workspace_id=workspace_id, run_id=run_id,
                               checkpoint_thread_id=run_id, document_id=document_id,
                               config={"request": request,
@@ -431,3 +432,62 @@ def test_a_live_workspace_turn_is_live_through_inputs_renderer_and_section_port(
     assert inputs.live_sites is listed
     assert inputs.renderer.live is listed
     assert inputs.sections.interactive is listed
+
+
+ASKED = {"questions": [{"id": "audience", "question": "Who is this page for?", "why_it_matters": "It sets the angle.",
+                        "options": [], "default": "I'll write it for freight brokers.", "allow_freeform": True}]}
+
+
+def test_a_site_turn_that_asks_saves_nothing_and_hands_back_the_question(
+    tmp_path, design_storage, _agent_workspace_in_tmp
+) -> None:
+    """Ruling R9.4: a site turn may stop to ask; the run finishes, nothing is saved, and the result
+    carries the question in the scene agent's shape, which the chat card and thread line read."""
+
+    app = create_app(tmp_path / "engine-cache", storage=design_storage)
+    store = HybridRepository()
+    document = store.create_document(_site(f"doc_site_{uuid4().hex[:10]}"), doc_kind="site")
+
+    def runner(prompt, *, document, workspace, run_id, callbacks):
+        return SiteTurnResult("clarification_requested", "Before I build this, one question: …", document["scene"],
+                              "clarification_requested", [], [], clarification=ASKED)
+
+    events: list = []
+    (status, response, _, _), _ = _run(app, store, document, runner, events)
+    assert status == "succeeded"
+    assert response["status"] == "clarification_requested" and response["clarification"] == ASKED
+    assert response["doc_kind"] == "site" and response["saved_version"] is None and response["operations"] == []
+    assert store.require_document(document["id"])["current_version"] == 0 and events == []
+    history = (_workspace(_agent_workspace_in_tmp, store, document["id"]) / "history.md").read_text()
+    assert "- Saved: nothing, it asked a question first\n" in history
+
+
+def test_the_turn_after_a_question_is_told_so(tmp_path, design_storage, monkeypatch) -> None:
+    """Ruling R9.3: the request's previous_turn_outcome reaches the runtime, which then withholds the tool."""
+
+    from lumen_agent.site.inputs import SiteTurnInputs
+    from lumen_api import main as api_main
+    from lumen_api.main import execute_site_turn_job
+
+    app = create_app(tmp_path / "engine-cache", storage=design_storage)
+    store = HybridRepository()
+    seen: list = []
+
+    def built_inputs(**kwargs):
+        return SiteTurnInputs(document_id="d", workspace_id=store.workspace_id, brief="B", account_name="Acme",
+                              seller="Seller", brand={"assets": {}, "clones": {}}, catalog={}, renderer=kwargs["renderer"])
+
+    def run_turn(doc, prompt, *, inputs, **_kwargs):
+        seen.append(inputs.clarification_already_requested)
+        return {"status": "applied", "summary": "No change."}
+
+    monkeypatch.setattr(api_main, "resolve_web_turn_brand_kit", lambda scene, blobs: (None, None, {}, None))
+    monkeypatch.setattr(api_main, "build_site_turn_inputs", built_inputs)
+    monkeypatch.setattr(api_main, "run_site_agent_turn", run_turn)
+    for previous in (None, "clarification_requested"):
+        document = store.create_document(_site(f"doc_site_{uuid4().hex[:10]}"), doc_kind="site")
+        envelope = _envelope(document["id"], store.workspace_id, previous_turn_outcome=previous)
+        store.create_run(envelope.run_id, document["id"], kind="site_turn", payload={})
+        outcome = execute_site_turn_job(envelope, store=store, host=_host(app, None), event_sink=lambda *_: None)
+        store.complete_run(envelope.run_id, *outcome)
+    assert seen == [False, True]
