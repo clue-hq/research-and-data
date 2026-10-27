@@ -339,3 +339,10 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **X1.2** `writing-a-section`'s "when to use": use when neither a clone (as it is, or rebuilt) nor a brand section can carry what the page needs. "You have been asked" goes.
 - **X1.3** "Reuse first" in `building-with-puck` becomes R4.3's four steps, said once there; the `account-page-copy` line goes with that skill's retirement.
 - **X1.4** "Leave the point out" stays as the last resort after all four.
+
+## X2 · How the system prompt lists and delivers skills — RULED 2026-10-28
+- **X2.1** The system prompt's skill section is rewritten to S2: one list — each skill's name, when to use it, its path — followed by the S2.4 reading rule. "Your skills are below this prompt" and "Follow them" go.
+- **X2.2** The new-sections condition is dropped (always on for the agent): `writing-a-section` and `rebuilding-a-section` are part of the fixed list.
+- **X2.3** The live-site condition stays (`LUMEN_SITE_LIVE_WORKSPACES`; it depends on what the workspace can publish, not the page kind): `making-a-section-interactive` is listed only on live workspaces (all of production).
+- **X2.4** Kept as is: "Read `brief.md`, the research and `catalog/index.md`. Open clone files and seller files when you need them, not all at once."
+- Context recorded with X1/X2: pages built so far are almost entirely frozen clones plus brand sections; agent sections appear in two trials, one Garner page and one Conduit footer; the 10-26 Pallet run wrote no section.
