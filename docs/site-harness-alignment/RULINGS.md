@@ -284,3 +284,7 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **V2.4** The plan names each section's composition in one word (split, centred statement, editorial stack, proof strip…) and varies it where the content varies.
 - Per case: product campaign — usually the product page's hero; event — an event or webinar page's hero when one exists; one-to-one and general — usually the home page's hero, adapted.
 - (Ploy consulted for discussion; our own words.)
+
+## V3 · New and rebuilt sections that look like the seller's — RULED 2026-10-28
+- **V3.1** The site's existing rules stay as they are and are enough: `writing-a-section` ("Make it look like the seller's sections around it. Render and compare."; an own header "must look like the seller's site, never like a generic header with their logo dropped in") and `rebuilding-a-section` (keep the original's layout — columns, order, alignment, where images sit, rhythm of spacing; compare; stop when it reads as the same section or after three comparisons). Rebuilding keeps what the section does.
+- Not carried: a recognizability line in the plan, naming each new section's model, a list of generic patterns to avoid, and a logo-removed review test.

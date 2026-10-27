@@ -442,7 +442,7 @@ ISSUES = [
      ("L14", "Retrieve in task order, not catalog order"), ("L14", "**Composition menu.**"),
      ("L6", "Hero archetype"), ("L1c", "Three centered heroes")]}]},
 
- {"id": "V3", "family": 4, "topic": "FIDELITY", "severity": "high", "status": "open",
+ {"id": "V3", "family": 4, "topic": "FIDELITY", "severity": "high", "status": "RULED 2026-10-28 (V3.1: existing rules stay)",
   "title": "New and rebuilt sections that look like the seller's",
   "what": "The site asks a new section to 'look like the seller's sections around it — render and compare', a rebuilt one to keep the original's layout and compare up to three times, and an own header never to look generic. The legacy skills add method: name the seller section each new band descends from; learn the seller's grammar (containers, type hierarchy, density, surface changes, image purpose, button shape, how it rearranges on a phone) — 'a palette is not a grammar'; the logo-swap test (if swapping the logo would let a section fit any company, it isn't showing the brand); no decorative blobs, orbs or gradient meshes unless the brand uses them, restraint by default; and when rebuilding, rebuild what the band does, not tidy how it was written.",
   "why": "Brand sections and agent-written sections are where pages drift into generic.",
