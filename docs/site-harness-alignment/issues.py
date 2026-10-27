@@ -490,6 +490,44 @@ ISSUES = [
    {"label": "Legacy", "refs": [
      ("L13", "Inspect the kit's real foreground and background"), ("L13", "Body copy and CTA labels need at least 4.5:1"),
      ("L13", "For a photograph or generated image"), ("L13", "When two saturated areas fight")]}]},
+ {"id": "Q1", "family": 5, "topic": "CHECKLIST", "severity": "high", "status": "open",
+  "title": "What the self-check after a render covers",
+  "what": "The site's page-review has six items (first screen, nothing broken, no repeats, words fit, rhythm, then account-page-copy's final check on the words). Families 1–4 have since sent it new checks: every number and quote traces to the plan (W6.3), honest reporting on motion (M1.5), the product interface readable on a phone (M4.6), a brand section not foreign next to the clones (V1.5), headings judged across the page (V4.2), more than one primary offer (R5.5), the swap and utility tests (R4.4), the final-check wording items reworded to the W rulings; and some old items are gone (no two dark sections in a row, form creep). The legacy review adds: read the page as an argument (what each section contributes), a thin page is a defect even when everything renders, check each button's label against where it actually goes, check overflow and the contrast of text and logos at both widths, and an image's role and crop.",
+  "why": "The checklist has to be rebuilt from the four families' rulings; the question is what else, if anything, it should carry.",
+  "cases": "One-to-one, one-to-few and contact pages add the account checks (swap test, proof line, no named people except contact pages).",
+  "groups": [
+   {"label": "Site: page-review today", "refs": [
+     ("D4", "`render_page` gives you two pictures"), ("D4", "It says what this is and who it is for"), ("D4", "no broken image"),
+     ("D4", "two sections do not make the same point"), ("D4", "A rewritten headline should not wrap much worse"),
+     ("D4", "No two dark sections in a row"), ("D4", "Run the final check in")]},
+   {"label": "Site: account-page-copy's final check", "refs": [("D1", "Read the page as the reader would, then go through each line below")]},
+   {"label": "Legacy", "refs": [
+     ("L16", "Review three responsibilities"), ("L16", "identify the first read and what the next section contributes"),
+     ("L16", "Green geometry checks do not make a thin"), ("L16", "compare visible label, actual href"),
+     ("L16", "For every returned width, inspect horizontal overflow"), ("L16", "Critical findings include")]}]},
+
+ {"id": "Q2", "family": 5, "topic": "LOOP", "severity": "medium", "status": "open",
+  "title": "How many render-and-fix rounds, and what triggers one",
+  "what": "The site: validate until valid (after the same error three times, change approach or leave the part out); render and fix only what fails, all in one go, up to three renders; no re-render to compare small differences; on an edit, validate, render only if the change is visible; render each page that changed; the harness will not let a turn end on an invalid page (two reminders, then 'completed with errors'). The legacy review agrees and adds: on a small edit, check only that change and its neighbours, never re-plan or regenerate the page. Length is no longer capped (R3.1), so pages may be longer than the three-render budget was set for.",
+  "why": "Mostly agreement; one question is whether three renders still fits longer pages.",
+  "cases": "",
+  "groups": [
+   {"label": "Site", "refs": [
+     ("A1", "Call `render_page`, and look as the reader would"), ("A1", "If the same error comes back a third time"),
+     ("D4", "Then fix only what failed, all in one go"), ("A1", "Validate, render if the change is visible"),
+     ("H6", "The page is still invalid, so this turn cannot finish yet")]},
+   {"label": "Legacy", "refs": [("L16", "For a scoped edit, resolve the relevant gaps")]}]},
+
+ {"id": "Q3", "family": 5, "topic": "VERDICT", "severity": "medium", "status": "open",
+  "title": "The final report and an honest status",
+  "what": "The site ends with 'a short report: what you built, what you left out and why, and anything still open', and page-review asks to 'say what you checked and anything you could not fix'. The legacy review sets three outcomes (accepted; completed with warnings — a usable page with a named unmet requirement; failed), says to name unmet requirements prominently rather than as polish, to call something unverified rather than invent a defect, and to keep the report short: result and scope, changes, what was checked, what is open.",
+  "why": "The report is what the person reads; it should say plainly what is done and what is not.",
+  "cases": "",
+  "groups": [
+   {"label": "Site", "refs": [("A1", "Finish with a short report"), ("D4", "In your report, say what you checked")]},
+   {"label": "Legacy", "refs": [
+     ("L16", "Distinguish tool completion from request satisfaction"), ("L16", "Completed with warnings"),
+     ("L16", "Evidence gaps are not observed pixel defects"), ("L16", "Use a short final report")]}]},
 ]
 
 out = []
