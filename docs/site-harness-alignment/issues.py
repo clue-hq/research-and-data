@@ -245,7 +245,7 @@ ISSUES = [
      ("L7b", "Retain genuine product limits and proof conditions"), ("L3a", "Keep material proof conditions and genuine product limits visible"),
      ("L5", "retain material product limitations")]}]},
 
- {"id": "W5", "family": 2, "topic": "EVIDENCE", "severity": "medium", "status": "open",
+ {"id": "W5", "family": 2, "topic": "EVIDENCE", "severity": "medium", "status": "RULED 2026-10-28 (W5.1–W5.4)",
   "title": "Reading research: facts, inferences and the research lane's own arguments",
   "what": "The research files tag statements as (inference), (quote), (qualified) or (gap), with notes, and claims.md includes value-narrative claims that are the research lane's own argument for a persona. The site prompt never says what these mean. The legacy skills say: separate sourced facts from analyst interpretations — job openings do not prove a staffing problem, an initiative does not prove budget, a technology fingerprint does not prove an integration; a report saying 'verified' does not make it so.",
   "why": "An inference written up as a fact is the fastest way to a false claim about the account.",
