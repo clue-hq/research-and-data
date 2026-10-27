@@ -506,7 +506,7 @@ ISSUES = [
      ("L16", "Green geometry checks do not make a thin"), ("L16", "compare visible label, actual href"),
      ("L16", "For every returned width, inspect horizontal overflow"), ("L16", "Critical findings include")]}]},
 
- {"id": "Q2", "family": 5, "topic": "LOOP", "severity": "medium", "status": "open",
+ {"id": "Q2", "family": 5, "topic": "LOOP", "severity": "medium", "status": "RULED 2026-10-28 (Q2.1–Q2.3)",
   "title": "How many render-and-fix rounds, and what triggers one",
   "what": "The site: validate until valid (after the same error three times, change approach or leave the part out); render and fix only what fails, all in one go, up to three renders; no re-render to compare small differences; on an edit, validate, render only if the change is visible; render each page that changed; the harness will not let a turn end on an invalid page (two reminders, then 'completed with errors'). The legacy review agrees and adds: on a small edit, check only that change and its neighbours, never re-plan or regenerate the page. Length is no longer capped (R3.1), so pages may be longer than the three-render budget was set for.",
   "why": "Mostly agreement; one question is whether three renders still fits longer pages.",

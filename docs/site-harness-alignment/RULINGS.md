@@ -316,3 +316,8 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **Q1.2** The plan writes two or three "done" lines for this page before building (e.g. "hero from the product page; proof beside its claims; one dark band"); the review checks them, so criteria are not invented afterwards. (From Ploy, for discussion; legacy plan-design agrees.)
 - **Q1.3** Motion: the report says what could not be checked (M1.5).
 - Per case: one-to-one, one-to-few and contact pages add the account checks (swap test, the proof line, naming people only on contact pages).
+
+## Q2 · Render-and-fix rounds — RULED 2026-10-28
+- **Q2.1** The loop stays: validate until valid (after the same error three times, change approach or leave that part out and say why); fix every failure in one go; re-render only when something visible changed, never to compare small differences.
+- **Q2.2** "Up to 3 renders in all" becomes "up to 3 renders **per page**"; a multi-page site gets three for each page it changes. Length alone does not change the count.
+- **Q2.3** On an edit, review only the change and its neighbouring sections (with R12.1); no render when nothing visible changed.
