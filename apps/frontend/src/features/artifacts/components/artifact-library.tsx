@@ -1,5 +1,8 @@
 "use client";
 
+import { MaterialsBrowser } from "@/features/account-materials/components/materials-browser";
+import { useMaterialsEnabled } from "@/features/account-materials/hooks/use-materials-enabled";
+import type { ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -39,7 +42,12 @@ import styles from "./artifact-library.module.css";
  * every write goes through `useArtifactActions`, which refreshes this server
  * component so the screen shows what was actually recorded.
  */
-export function ArtifactLibrary({ data }: { data: ArtifactLibraryData }) {
+export function ArtifactLibrary({data}:{data:ArtifactLibraryData}) {
+ const enabled=useMaterialsEnabled();
+ return enabled ? <ApplicationShell activeHref="/artifacts"><MaterialsBrowser title="Artifacts" designFiles={<NativeArtifactLibrary data={data} embedded/>}/></ApplicationShell> : <NativeArtifactLibrary data={data}/>;
+}
+function LibraryFrame({embedded,children}:{embedded:boolean;children:ReactNode}) {return embedded ? children : <ApplicationShell activeHref="/artifacts">{children}</ApplicationShell>;}
+function NativeArtifactLibrary({ data, embedded=false }: { data: ArtifactLibraryData; embedded?:boolean }) {
   const actions = useArtifactActions();
   const [collection, setCollection] = useState<"all" | "saved" | "archived">(
     "all",
@@ -75,7 +83,7 @@ export function ArtifactLibrary({ data }: { data: ArtifactLibraryData }) {
   }
 
   return (
-    <ApplicationShell activeHref="/artifacts">
+    <LibraryFrame embedded={embedded}>
       <main className={styles.library}>
         <header className={styles.pageHeader}>
           <div>
@@ -365,6 +373,6 @@ export function ArtifactLibrary({ data }: { data: ArtifactLibraryData }) {
           />
         ) : null}
       </main>
-    </ApplicationShell>
+    </LibraryFrame>
   );
 }

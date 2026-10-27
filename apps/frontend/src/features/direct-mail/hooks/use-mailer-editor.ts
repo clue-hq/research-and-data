@@ -5,12 +5,12 @@ import { estimate, readiness, type Mailer, type MailerPatch } from "../model/dir
 import type { DirectMailController } from "./use-direct-mail";
 import { readPendingDraft, writePendingDraft } from "../data/direct-mail.drafts";
 
-export function useMailerEditor(c: DirectMailController, saved: Mailer) {
+export function useMailerEditor(c: DirectMailController, saved: Mailer, initialStep = 0) {
   const [draft, setDraft] = useState(() => readPendingDraft(saved.id));
   const draftRef = useRef(draft);
   const saving = useRef(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(initialStep);
   const [approval, setApproval] = useState<Mailer | null>(null);
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [request, setRequest] = useState<"gifts" | "insight" | null>(null);

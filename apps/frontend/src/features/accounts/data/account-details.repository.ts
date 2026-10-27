@@ -1,3 +1,5 @@
+import { isFrontendPreviewMode } from "@/features/preview/data/preview-mode";
+import { materialAccountDetail } from "@/features/account-materials/data/account-preview.fixture";
 import { withResearchContext, type ResearchContextQuery } from "../model/research-context";
 import {
   AccountDetailResponseSchema,
@@ -18,7 +20,7 @@ export const fixtureAccountDetailsRepository: AccountDetailsRepository = {
       openAiAccountDetailFixture,
       zafranAccountDetailFixture,
     ].find((candidate) => candidate.id === accountId);
-    if (!account) return null;
+    if (!account) return isFrontendPreviewMode() ? materialAccountDetail(accountId) : null;
 
     return AccountDetailResponseSchema.parse({
       data: account,

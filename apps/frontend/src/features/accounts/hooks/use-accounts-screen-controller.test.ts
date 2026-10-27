@@ -616,7 +616,7 @@ test("a project-scoped controller reads only that project's rows", () => {
   // is read from source — the convention this file already uses. What the
   // scoping actually computes is `accountsForProject`'s predicate, asserted
   // against real rows in `model/project-accounts.test.ts`.
-  assert.match(controller, /options\?: \{ project\?: AccountProject \}/);
+  assert.match(controller, /options\?: \{ project\?: AccountProject; additionalColumns\?:AccountColumnDefinition\[\] \}/);
   assert.match(controller, /const project = options\?\.project;/);
   assert.match(
     controller,
@@ -626,13 +626,13 @@ test("a project-scoped controller reads only that project's rows", () => {
   assert.match(controller, /const searched = scopedAccounts\.filter\(/);
   assert.match(
     controller,
-    /createAccountColumnDefinitions\(scopedAccounts\),\s*\n\s*\[scopedAccounts\],/,
+    /createAccountColumnDefinitions\(scopedAccounts\)/,
   );
   assert.match(controller, /accounts: scopedAccounts,/);
   // Omitted, the workspace-wide screen is unscoped as before.
   assert.match(
     projectScreen,
-    /useAccountsScreenController\(accounts, data\.bulkCapabilities, undefined, \{ project \}\)/,
+    /useAccountsScreenController\(accounts, data\.bulkCapabilities, undefined, \{ project, additionalColumns:/,
   );
   assert.match(screen, /useAccountsScreenController\(accounts, bulkCapabilities\)/);
 });

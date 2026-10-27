@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useWorkspace } from "@/features/orchestration/hooks/use-workspace";
+import { useDirectMail } from "@/features/direct-mail/hooks/use-direct-mail";
+import { buildMaterials } from "@/features/account-materials/model/materials";
+import type { AccountColumnDefinition } from "../model/account-table-view";
 import { WorkspaceProfileProvider } from "@/components/shell/workspace-profile-context";
 import { Button } from "@/components/ui/button";
 import { ProjectIcon } from "@/features/projects/components/project-icon";
@@ -29,16 +33,28 @@ function ProjectAccountsBreadcrumb({ count, projectTitle }: { count?: number; pr
 
 type AddToChat = (contextRefs: readonly ChatContextRef[]) => Promise<boolean>;
 
-function ProjectAccountsTable({ data, onAddToChat, onReread, projectId, projectTitle }: {
+const materialColumns:AccountColumnDefinition[]=[{key:"artifacts",kind:"core",label:"Artifacts",icon:"variable",width:195,minWidth:150,maxWidth:360}];
+
+function ProjectAccountsTable({ data, onAddToChat, onReread, projectId, projectTitle, onOpenMaterials }: {
   data: ProjectAccountsResponse;
+  onOpenMaterials?: (accountId:string)=>void;
   onAddToChat?: AddToChat;
   onReread: () => void;
   projectId: string;
   projectTitle: string;
 }) {
+  const workspace=useWorkspace(), mail=useDirectMail();
+  const materialIndex=useMemo(()=>{
+    const map=new Map<string,{count:number;review:number}>();
+    if(workspace.data && mail.data) for(const row of buildMaterials(workspace.data,mail.data)) {
+      if(row.projectId!==projectId) continue;
+      const value=map.get(row.accountId) ?? {count:0,review:0};value.count++;if(["Needs review","Ready to approve"].includes(row.status))value.review++;map.set(row.accountId,value);
+    }
+    return map;
+  },[workspace.data,mail.data,projectId]);
   const project = useMemo(() => ({ id: projectId, name: projectTitle }), [projectId, projectTitle]);
-  const accounts = useMemo(() => accountsForProject(data.accounts, projectId), [data.accounts, projectId]);
-  const controller = useAccountsScreenController(accounts, data.bulkCapabilities, undefined, { project });
+  const accounts = useMemo(() => {const plans=new Map(workspace.data?.accounts.map(a=>[a.id,a]));return accountsForProject(data.accounts, projectId).map(a=>{const plan=plans.get(a.id),owner=plan && workspace.data?.people.find(p=>p.id===plan.ownerId);return owner?{...a,owner}:a;});}, [data.accounts, projectId, workspace.data]);
+  const controller = useAccountsScreenController(accounts, data.bulkCapabilities, undefined, { project, additionalColumns:onOpenMaterials ? materialColumns : undefined });
   const [pageSize, setPageSize] = useState<AccountPageSize>(25);
   const [pageRequest, setPageRequest] = useState({ key: "", page: 1 });
   const [adding, setAdding] = useState(false);
@@ -145,6 +161,7 @@ function ProjectAccountsTable({ data, onAddToChat, onReread, projectId, projectT
       <div className={`${tableStyles.viewport} ${styles.viewport}`} ref={viewportRef}>
         {pagination.total ? (
           <AccountsTable
+            renderArtifacts={onOpenMaterials ? (account)=>{const value=materialIndex.get(account.id);return <button className="text-left hover:underline" onClick={()=>onOpenMaterials(account.id)} aria-label={`View artifacts for ${account.name}`}><span>{!workspace.data || !mail.data ? "Loading…" : value ? `${value.count} ${value.count===1 ? "material" : "materials"}` : "No materials yet"}</span>{value?.review ? <span className="block text-xs text-[var(--clue-content-subtle)]">{value.review} to review</span> : null}</button>;} : undefined}
             accounts={pagination.accounts}
             columnDefinitions={controller.columnDefinitions}
             columnOrder={controller.columnOrder}
@@ -187,7 +204,7 @@ function ProjectAccountsTable({ data, onAddToChat, onReread, projectId, projectT
   );
 }
 
-export function ProjectTargetAccounts({ active, onAddToChat, projectId, projectTitle, refreshToken }: { active: boolean; onAddToChat?: AddToChat; projectId: string; projectTitle: string; refreshToken?: number }) {
+export function ProjectTargetAccounts({ active, onAddToChat, projectId, projectTitle, refreshToken, onOpenMaterials }: { onOpenMaterials?:(accountId:string)=>void; active: boolean; onAddToChat?: AddToChat; projectId: string; projectTitle: string; refreshToken?: number }) {
   const [data, setData] = useState<ProjectAccountsResponse | null>(null);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -223,7 +240,7 @@ export function ProjectTargetAccounts({ active, onAddToChat, projectId, projectT
 
   if (data) return (
     <WorkspaceProfileProvider profile={data.profile}>
-      <ProjectAccountsTable data={data} onAddToChat={onAddToChat} onReread={() => { void reread(); }} projectId={projectId} projectTitle={projectTitle} />
+      <ProjectAccountsTable onOpenMaterials={onOpenMaterials} data={data} onAddToChat={onAddToChat} onReread={() => { void reread(); }} projectId={projectId} projectTitle={projectTitle} />
     </WorkspaceProfileProvider>
   );
   return (

@@ -196,6 +196,7 @@ function AccountTableRow({
   density,
   onToggle,
   onOpenAccount,
+  renderArtifacts,
   selectable,
   visibleColumns,
 }: {
@@ -207,6 +208,7 @@ function AccountTableRow({
   density: AccountTableDensity;
   onToggle: () => void;
   onOpenAccount?: (account: Account) => void;
+  renderArtifacts?: (account: Account) => React.ReactNode;
   selectable: boolean;
   visibleColumns: AccountColumnVisibility;
 }) {
@@ -304,6 +306,7 @@ function AccountTableRow({
 
         let content: React.ReactNode = null;
         switch (definition.key) {
+          case "artifacts": content = renderArtifacts?.(account) ?? "—"; break;
           case "owner": {
             const owner = resolveAccountOwner(account);
             content = owner ? (
@@ -463,6 +466,7 @@ function AccountTableRow({
 interface AccountsTableProps {
   /** Given, a row opens a contextual preview instead of navigating. */
   onOpenAccount?: (account: Account) => void;
+  renderArtifacts?: (account: Account) => React.ReactNode;
   label?: string;
   accounts: AccountRow[];
   columnDefinitions?: AccountColumnDefinition[];
@@ -481,6 +485,7 @@ interface AccountsTableProps {
 
 export function AccountsTable({
   onOpenAccount,
+  renderArtifacts,
   label = "Accounts",
   accounts,
   columnDefinitions = coreAccountColumnDefinitions,
@@ -577,6 +582,7 @@ export function AccountsTable({
             key={account.id}
             onToggle={() => onToggleAccount(account.id)}
             onOpenAccount={onOpenAccount}
+            renderArtifacts={renderArtifacts}
             selectable={isSelectable(account)}
             visibleColumns={visibleColumns}
           />

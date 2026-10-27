@@ -49,6 +49,8 @@ import type {
   WebTheme,
 } from "@/features/design-editor/engine/webDocuments";
 import { useState, type ReactNode, type RefObject } from "react";
+import { useSearchParams } from "next/navigation";
+import { useMaterialsEnabled } from "@/features/account-materials/hooks/use-materials-enabled";
 import { ProjectGallery } from "@/features/gallery/components/project-gallery";
 import type { useProjectDocumentTabs } from "@/features/projects/hooks/use-project-document-tabs";
 import { ProjectDocumentSurface } from "@/features/projects/components/project-document-surface";
@@ -370,6 +372,10 @@ export function ArtifactStage({
   targetAccountsRefreshToken?: number;
   undoDisabled?: boolean;
 }) {
+  const materialsEnabled=useMaterialsEnabled();
+  const materialParams=useSearchParams();
+  const materialRouteKey=`${materialParams.get("materialsAccount") ?? ""}:${materialParams.get("material") ?? ""}`;
+  const [materialsSelection,setMaterialsSelection]=useState<{accountId:string;token:number;routeKey:string}|null>(null);
   const showingArtifact = surface === "artifact" && artifactKind !== null;
   // A site shows the PERSISTENT site stage below instead of the ordinary output stage, so its
   // editor frame is never remounted by a tab or surface switch.
@@ -461,7 +467,7 @@ export function ArtifactStage({
       />
       {projectId ? (
         <div className={styles.workspaceSurface} hidden={surface !== "target-accounts"}>
-          <ProjectTargetAccounts active={surface === "target-accounts"} key={projectId} onAddToChat={onAddAccountsToChat} projectId={projectId} projectTitle={projectTitle ?? "Project"} refreshToken={targetAccountsRefreshToken} />
+          <ProjectTargetAccounts onOpenMaterials={materialsEnabled ? (accountId)=>{setMaterialsSelection(current=>({accountId,token:(current?.token ?? 0)+1,routeKey:materialRouteKey}));onOpenGallery();} : undefined} active={surface === "target-accounts"} key={projectId} onAddToChat={onAddAccountsToChat} projectId={projectId} projectTitle={projectTitle ?? "Project"} refreshToken={targetAccountsRefreshToken} />
         </div>
       ) : null}
       {projectId && documentTabs ? documentTabs.visited.map((path) => (
@@ -626,6 +632,9 @@ export function ArtifactStage({
         hidden={showingArtifact || surface === "target-accounts" || surface === "plan"}
       >
         <ProjectGallery
+          key={`${materialsSelection?.token ?? 0}:${materialRouteKey}`}
+          materialsAccount={materialsSelection?.routeKey===materialRouteKey?materialsSelection.accountId:undefined}
+          onBackToAccounts={materialsEnabled ? onOpenTargetAccounts : undefined}
           artifacts={artifacts}
           documents={documentTabs?.list.documents}
           documentsLoading={documentTabs?.list.loading || documentTabs?.opening}

@@ -1,6 +1,7 @@
 import type { Account } from "./account";
 
 export type CoreAccountColumnKey =
+  | "artifacts"
   | "company"
   | "owner"
   | "industry"

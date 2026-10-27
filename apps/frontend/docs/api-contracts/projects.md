@@ -2942,3 +2942,14 @@ product-set version tagged with the change), and the project's chat shows one li
 | `POST` | `/frontend/v1/projects/:projectId/product-notices/:changeId/dismiss` | `204`; per person. |
 
 Shown only in the project's chat, above the transcript (founder answer 2026-10-15).
+
+
+### V2 local materials preview (2026-10-26)
+
+Frontend-only composition under the existing explicit preview gate: the original
+Target Accounts grid exposes an optional Artifacts column. It opens the existing
+chat Gallery pane (`surface=gallery`) with account-scoped material records.
+`materialsAccount` and `material` are preview-only initialization parameters;
+physical gift/note records are not coerced into design documents. No HTTP payload
+contract or live artifact routing changes. See `architecture/direct-mail-v2.md`
+for the read projection and future integration seams.

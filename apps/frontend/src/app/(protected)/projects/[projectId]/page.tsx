@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { isFrontendPreviewMode } from "@/features/preview/data/preview-mode";
-import { PROJECT_ID, projectHref, chatHref } from "@/features/orchestration/model/workspace";
+import { PROJECT_ID, chatHref } from "@/features/orchestration/model/workspace";
 import { ProjectsScreen } from "@/features/projects/components/projects-screen";
 import { ProjectWorkspaceShell } from "@/features/projects/components/project-workspace-shell";
 import { getProjectWorkspace } from "@/features/projects/data/project-workspace.repository";
@@ -38,7 +38,7 @@ export default async function ProjectPage({
 }: ProjectPageProps) {
   const [{ projectId }, query] = await Promise.all([params, searchParams]);
   if (isFrontendPreviewMode() && projectId === PROJECT_ID) {
-    redirect(query.surface === "gallery" ? `${projectHref}?view=artifacts` : query.thread ? chatHref : projectHref);
+    redirect(`${chatHref}?surface=${query.surface === "gallery" ? "gallery" : "target-accounts"}`);
   }
 
   if (query.thread) {

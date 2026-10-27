@@ -1,94 +1,27 @@
-# Project workspace V2
+# Project materials V2
 
-Status: local frontend preview. Revised after the founder rejected the initial
-V2 scope and visual treatment on 2026-10-25.
+Status: local frontend preview, updated 2026-10-26. V1 remains on port 5000; V2 on 5001, branch `feat/direct-mail-infrastructure-v2`. No live orders, payments, agent runs or publishing. Email belongs to the separate email branch.
 
-## Scope
+## Entry and customer flow
 
-This branch owns the project account view and its connection to Direct Mail.
-The previous V2 Email and Analytics screens, email models/actions, scripted chat
-and custom Home are removed. Home, chat, global Artifacts and sidebar use the
-original Clue implementation. Email belongs to the separate email branch.
+Start at `/projects/10m-landing-page-campaign/chats/thread-primary?surface=target-accounts`. The former `/plan` route redirects here. The original Clue Target Accounts grid has an optional Artifacts column. Company names still open account research; Artifacts opens Gallery scoped to that account. The table stays mounted, preserving search, filters, selection, page and scroll.
 
-V1 stays on `feat/direct-mail-infrastructure-ui`, port 5000. V2 stays on
-`feat/direct-mail-infrastructure-v2`, port 5001, in a separate worktree.
+Gallery reuses Direct Mail's table, typography, controls and its actual `MailerReview` and `MailerTracking` components. Choose a recipient, then review the three gifts, card/handwriting, note, address and itemized cost. Explicit confirmation writes the canonical mailer approval; its same view becomes tracking. Actual shipping events are never synthesized by approval.
 
-```sh
-# From this worktree's apps/frontend directory
-npm run dev:preview -- --port 5001
-```
+Account-level ads and separate recipient landing pages sit beside gifts and notes. Scope is explicit in each row. A recipient filter retains account-wide creative and excludes another recipient's material. A page has its own version; editing the note does not increment the page. Pages/ads are previews and are not published/launched. Card QR assignment and verification remain fulfillment work.
 
-Open `/projects/10m-landing-page-campaign/plan`. The launcher enables isolated
-fixture mode and clears live backend configuration. No purchases, messages,
-model calls, publication or fulfillment actions run against live services.
+Project chat has a compact materials handoff. Account Artifacts and global Artifacts use the same browser and canonical records. Existing design files/documents remain accessible through their original viewer/editor. Account owner and actual prepared sender are distinct.
 
-## Customer experience
+## Data seam for Aryan
 
-- Accounts: compact table of account, relationship owner, research, gift status
-  and connected artifacts. Search, status/owner filters, stable sorting and
-  25/50/100-row pages keep rendering bounded.
-- Selection applies only to visible rows on the current page. Filter and page
-  changes clear it. Bulk owner assignment checks every selected revision and
-  commits atomically; it preserves the sender on already prepared items.
-- An account opens one drawer with Overview, Gift, Page, Note and Ad tabs as
-  available. Gift and note previews read the existing mailer and approval
-  snapshot, rather than storing a second copy.
-- The drawer opens the existing Direct Mail review for gift selection, the card,
-  the note and itemized cost approval. Approved gifts open existing tracking.
-  A recorded approval alone does not create order/shipping events.
-- Project Artifacts is a searchable, paginated list. It opens the same account
-  drawer. Page/ad previews contain recipient-facing fictional copy. Pages remain
-  unpublished; QR assignment and public destinations are not simulated.
-- Chat opens the original Clue project chat. No custom agent simulator is added.
+`features/account-materials/model/materials.ts` is a pure UI read projection over workspace creative and Direct Mail state. It never copies note bodies or writes approvals. Material identity is `gift:<mailerId>`, `note:<mailerId>` or the creative ID, with project/account/contact scoping. `queryMaterials` filters and renders at most 25 rows. Existing Target Accounts retains its 25/50/100 paging.
 
-Project = overall account motion; campaign = channel program within it. Project
-owner, account owner and prepared sender stay distinct. Territory is context;
-automatic territory routing is not implemented.
+`features/account-materials/data/materials.fixture.ts` adds one existing Snowflake identity, two fictional recipients and their assets to saved V2 data without replacing original drafts/approvals. Other catalog rows include research-pending scale fixtures, with no invented findings. `account-preview.fixture.ts` provides honest blank/sample account details for preview navigation. No training corpus copied.
 
-## Scale fixture and repository handoff
+Preview is enabled only by the existing fail-closed `isFrontendPreviewMode` gate and providers. Live account and design HTTP contracts are unchanged. The optional Accounts column is enabled only by the V2 composition. Browser IndexedDB stores remain `clue-orchestration-preview-v2` and `clue-direct-mail-preview-v2`; transactions and cross-tab notifications are unchanged.
 
-`features/orchestration/data/workspace.fixture.ts` generates 1,000 fictional
-accounts at runtime: six prepared examples plus 994 research-pending accounts.
-Pending accounts have no invented research, fit score, contacts or artifacts.
-No private training corpus or real pilot contacts are copied into the project.
+For integration, provide account/contact-scoped creative reads and a real Direct Mail repository behind these seams. Keep presentation transport-free. Review API contracts before enabling this for live workspaces. Server pagination, creative approvals/publication, real fulfillment events, territory routing and agent execution are not claimed by this preview.
 
-`model/account-list.ts` handles local filtering, stable sorting, pagination and
-selection boundaries. Only the visible page is rendered. The full fixture is
-still loaded in browser memory: this proves the frontend list behavior, not live
-server pagination or production throughput.
+## Preview links
 
-`data/workspace.repository.ts` is the ownership/persistence seam. The preview
-adapter uses atomic IndexedDB transactions and revision checks, with cross-tab
-notifications. Storage version 4 migrates earlier V2 fixtures, preserving owner
-assignments while removing retired email records and replacing preview copy.
-The separate `clue-direct-mail-preview-v2` store retains existing gift edits and
-approvals; V1 browser storage is untouched.
-
-For live integration, review contracts with the founder first. Aryan should
-replace fixture reads with scoped account projections and server pagination,
-filter/sort queries and batch owner assignment. Preserve stable account,
-contact, mailer and artifact IDs, authorization, revision conflicts and approved
-snapshots on the server. Components must not embed transport logic.
-
-Required services outside this frontend slice include actual research claim
-references, authenticated owner identities, creative generation/versioning,
-publication/QR routing, gift ordering, fulfillment events and cost settlement.
-
-## Validation and limits
-
-The scale-model tests cover page boundaries, search/filter/sort, page-only
-selection, unchanged off-page accounts, stale-batch rejection and sender
-preservation. Cross-domain tests cover account/contact/mailer joins and existing
-gift-approval gates. Browser checks cover the table, local bulk assignment,
-previews and original navigation.
-
-The isolated preview is not a live workspace or deployed backend integration.
-The previous V2 research report remains background material, not authorization
-to build the removed email or analytics infrastructure.
-
-Final checks: design-token generation and production build passed; lint has zero
-errors and 11 inherited warnings. The full suite passed 3,672 tests with 5 skips;
-an additional prepared-mailer scale test passed in the final four-test scale run.
-Browser QA confirmed 25 rendered rows out of 1,000, bounded page selection,
-preview-to-tracking navigation and the restored chat controls. Desktop layouts
-were inspected at 1159px and 2511px; mobile-device verification was not performed.
+Canonical pane remains `?surface=gallery`. Optional frontend-preview query parameters `materialsAccount=<accountId>` and `material=<materialId>` initialize the shared browser; they do not change the design artifact URL contract, use `?artifact=`, or authorize backend integration. Unknown/out-of-scope materials show an unavailable state.

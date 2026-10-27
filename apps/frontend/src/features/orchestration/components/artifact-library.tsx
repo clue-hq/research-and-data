@@ -37,7 +37,7 @@ export function ProjectArtifacts({ data, mail, open }: {
         return <tr key={asset.id}>
           <td><button className={s.accountButton} onClick={() => open(asset.accountId, asset.kind)}>{asset.title}</button></td>
           <td><button className={s.textButton} onClick={() => open(account.id, "overview")}>{account.name}</button></td>
-          <td>{kindNames[asset.kind]}</td><td className={s.muted}>{asset.kind === "note" && mailer?.approval ? "Approved" : "Draft"}</td><td className={s.muted}>v{artifactVersion(asset, mail)}</td>
+          <td>{kindNames[asset.kind]}</td><td className={s.muted}>{asset.kind === "note" && mailer?.approval ? "Approved" : asset.status === "review" ? "Needs review" : asset.status === "approved" ? "Approved" : "Draft"}</td><td className={s.muted}>v{artifactVersion(asset, mail)}</td>
         </tr>;
       })}</tbody>
     </table>{!visible.length ? <div className={s.empty}>No artifacts match these filters.</div> : null}</div>
@@ -51,11 +51,11 @@ export function ArtifactPreview({ asset, data, mail }: { asset: CampaignArtifact
   const card = mailer?.approval?.card ?? mail?.cards.find((item) => item.id === mailer?.cardId);
   const style = mailer?.approval?.style ?? mail?.styles.find((item) => item.id === mailer?.styleId);
   return <>
-    <div className={s.previewMeta}><span>{kindNames[asset.kind]} · v{artifactVersion(asset, mail)}</span><span>{asset.kind === "note" && mailer?.approval ? "Approved" : "Draft"}</span></div>
+    <div className={s.previewMeta}><span>{kindNames[asset.kind]} · v{artifactVersion(asset, mail)}</span><span>{asset.kind === "note" && mailer?.approval ? "Approved" : asset.status === "review" ? "Needs review" : asset.status === "approved" ? "Approved" : "Draft"}</span></div>
     {asset.kind === "page" ? <>
       <div className={s.pagePreview}>
         <header><strong>clue</strong><span>For {account.name}</span></header>
-        <div className={s.pageHero}><span className={s.pageEyebrow}>An account brief for {account.contact.split(" ")[0]}</span><h2>{asset.headline}</h2><p>{asset.body}</p><span className={s.previewCta}>{asset.cta}</span></div>
+        <div className={s.pageHero}><span className={s.pageEyebrow}>An account brief for {(mailer?.recipient.name ?? account.contact).split(" ")[0]}</span><h2>{asset.headline}</h2><p>{asset.body}</p><span className={s.previewCta}>{asset.cta}</span></div>
         <section><h3>{asset.sectionTitle}</h3><p>{asset.sectionBody}</p></section>
       </div>
       <p className={s.previewFootnote}>Not published. A live destination is needed before this page can be linked from the gift’s QR code.</p>

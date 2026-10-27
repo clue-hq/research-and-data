@@ -17,6 +17,7 @@ import {
   createAccountColumnVisibility,
   createAccountColumnWidths,
   type AccountColumnKey,
+  type AccountColumnDefinition,
   type AccountSort,
   type AccountTableDensity,
 } from "../model/account-table-view";
@@ -39,16 +40,16 @@ export function useAccountsScreenController(
   initialAccounts: Account[],
   bulkCapabilities: AccountBulkCapabilities,
   submitAddToProject: typeof addSelectedAccountsToProject = addSelectedAccountsToProject,
-  options?: { project?: AccountProject },
+  options?: { project?: AccountProject; additionalColumns?:AccountColumnDefinition[] },
 ) {
   const project = options?.project;
   const workspaceOwner = useAccountWorkspaceOwner();
   // The chat handoff exists only against the real backend: in fixture mode the
   // projects transport has nowhere to prepare a composer draft.
   const chatHandoffAvailable = useChatTransport().mode === "http";
-  const initialColumnDefinitions = createAccountColumnDefinitions(
-    initialAccounts,
-  );
+  const additionalColumns=options?.additionalColumns;
+  const withAdditional=(definitions:AccountColumnDefinition[]) => additionalColumns?.length ? [definitions[0],...additionalColumns,...definitions.slice(1)] : definitions;
+  const initialColumnDefinitions = withAdditional(createAccountColumnDefinitions(initialAccounts));
   const [search, setSearch] = useState("");
   const [accountRows, setAccountRows] = useState<AccountRow[]>(initialAccounts);
   const [receivedAccounts, setReceivedAccounts] = useState(initialAccounts);
@@ -112,8 +113,8 @@ export function useAccountsScreenController(
   }, [scopedAccounts, filters, search, sort]);
 
   const columnDefinitions = useMemo(
-    () => createAccountColumnDefinitions(scopedAccounts),
-    [scopedAccounts],
+    () => { const definitions=createAccountColumnDefinitions(scopedAccounts); return additionalColumns?.length ? [definitions[0],...additionalColumns,...definitions.slice(1)] : definitions; },
+    [scopedAccounts, additionalColumns],
   );
 
   // The research-status filter's vocabulary is the served `researchStatusLabel`

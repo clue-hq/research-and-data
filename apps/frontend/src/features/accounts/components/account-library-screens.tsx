@@ -1,4 +1,7 @@
 "use client";
+import { MaterialsBrowser } from "@/features/account-materials/components/materials-browser";
+import { useMaterialsEnabled } from "@/features/account-materials/hooks/use-materials-enabled";
+import type { ReactNode } from "react";
 import motion from "./account-motion.module.css";
 
 import Image from "next/image";
@@ -38,12 +41,17 @@ function ArtifactUpdated({ artifact }: { artifact: AccountArtifact }) {
     : <span>{artifact.lastEditedLabel.replace(/^Last edited\s+/i, "")}</span>;
 }
 
-export function AccountArtifactsScreen({ account, workspace }: ScreenProps) {
+export function AccountArtifactsScreen(props:ScreenProps) {
+ const enabled=useMaterialsEnabled();
+ return enabled ? <AccountWorkspaceShell account={props.account} activeTab="artifacts"><MaterialsBrowser title="Artifacts" accountId={props.account.id} designFiles={<NativeAccountArtifacts {...props} embedded/>}/></AccountWorkspaceShell> : <NativeAccountArtifacts {...props}/>;
+}
+function AccountArtifactsFrame({account,embedded,children}:{account:ScreenProps["account"];embedded:boolean;children:ReactNode}) {return embedded ? children : <AccountWorkspaceShell account={account} activeTab="artifacts">{children}</AccountWorkspaceShell>;}
+function NativeAccountArtifacts({ account, workspace, embedded=false }: ScreenProps & {embedded?:boolean}) {
   const controller = useAccountArtifactsController(workspace.accountId === account.id ? workspace.artifacts : [], account.id);
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
 
   return (
-    <AccountWorkspaceShell account={account} activeTab="artifacts">
+    <AccountArtifactsFrame account={account} embedded={embedded}>
       <div className={`${motion.pageEntry} ${research.documentPage}`}>
         <section className={styles.libraryCanvas}>
           <header>
@@ -133,7 +141,7 @@ export function AccountArtifactsScreen({ account, workspace }: ScreenProps) {
           </Dialog.Popup>
         </Dialog.Portal>
       </Dialog.Root>
-    </AccountWorkspaceShell>
+    </AccountArtifactsFrame>
   );
 }
 

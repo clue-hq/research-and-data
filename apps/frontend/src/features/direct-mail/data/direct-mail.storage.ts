@@ -8,6 +8,6 @@ export interface DirectMailStore {
 }
 
 /** One atomic workspace record: concurrent tabs cannot approve an outdated draft. */
-export function createBrowserDirectMailStore(seed = createDirectMailFixture, name = "clue-direct-mail-preview-v1"): DirectMailStore {
-  return createBrowserRecordStore(name, (value) => StateSchema.parse(value), seed);
+export function createBrowserDirectMailStore(seed = createDirectMailFixture, name = "clue-direct-mail-preview-v1", parse: (value:unknown) => DirectMailState = (value) => StateSchema.parse(value)): DirectMailStore {
+  return createBrowserRecordStore(name, parse, seed);
 }

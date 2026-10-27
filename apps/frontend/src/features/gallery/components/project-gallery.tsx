@@ -1,5 +1,7 @@
 "use client";
 
+import { useMaterialsEnabled } from "@/features/account-materials/hooks/use-materials-enabled";
+import { MaterialsBrowser } from "@/features/account-materials/components/materials-browser";
 import type { ProjectDocument } from "@/features/projects/model/project-documents";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
 import { useProjectGalleryController } from "../hooks/use-project-gallery-controller";
@@ -16,6 +18,8 @@ export function ProjectGallery({
   projectTitle,
   projectId,
   showSkeletons = false,
+  materialsAccount,
+  onBackToAccounts,
 }: {
   artifacts: ProjectArtifact[];
   documents?: ProjectDocument[];
@@ -26,9 +30,12 @@ export function ProjectGallery({
   projectTitle?: string;
   projectId?: string;
   showSkeletons?: boolean;
+  materialsAccount?:string;
+  onBackToAccounts?:()=>void;
 }) {
   const controller = useProjectGalleryController(artifacts, documents);
-  return (
+  const enabled=useMaterialsEnabled();
+  const designFiles=(
     <ProjectGalleryView
       controller={controller}
       documentsLoading={documentsLoading}
@@ -40,4 +47,5 @@ export function ProjectGallery({
       showSkeletons={showSkeletons}
     />
   );
+  return enabled ? <MaterialsBrowser initialAccount={materialsAccount} projectId={projectId} onBackToAccounts={onBackToAccounts} designFiles={designFiles}/> : designFiles;
 }

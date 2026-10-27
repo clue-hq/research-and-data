@@ -1,3 +1,5 @@
+import { isFrontendPreviewMode } from "@/features/preview/data/preview-mode";
+import { materialAccountWorkspace } from "@/features/account-materials/data/account-preview.fixture";
 import { withResearchContext, type ResearchContextQuery } from "../model/research-context";
 import {
   AccountWorkspaceResponseSchema,
@@ -17,7 +19,7 @@ export const fixtureAccountWorkspaceRepository: AccountWorkspaceRepository = {
     const workspace = [openAiWorkspaceFixture, zafranWorkspaceFixture].find(
       (candidate) => candidate.accountId === accountId,
     );
-    if (!workspace) return null;
+    if (!workspace) return isFrontendPreviewMode() ? materialAccountWorkspace(accountId) : null;
     return AccountWorkspaceResponseSchema.parse({
       data: workspace,
     }).data;

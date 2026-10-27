@@ -11,7 +11,7 @@ import { MailBadge, MailerConnections } from "./mail-context";
 import styles from "./direct-mail.module.css";
 
 const nextSteps: Partial<Record<Mailer["stage"], string>> = { approved: "Your mailer is approved. Next, the selected gift will be ordered to Clue.", ordered: "The merchant is preparing your gift for delivery to Clue.", inbound: "Your gift is on its way to Clue. We’ll inspect it when it arrives.", received: "Your gift has arrived at Clue and is awaiting inspection.", quality_check: "We’re checking the item and its condition before preparing your package.", preparing: "Your card is being written and the gift is being repackaged.", ready_to_ship: "Your package has passed its quality check and is ready for carrier collection.", shipped: "Your finished package is with the carrier, on its way to the recipient.", delivered: "The carrier has confirmed delivery at the receiving address. Personal receipt is not yet confirmed.", canceled: "This mailer was canceled before the merchant order was confirmed." };
-export function MailerTracking({ mailer: m, controller: c }: { mailer: Mailer; controller: DirectMailController }) {
+export function MailerTracking({ mailer: m, controller: c, onOpenPage }: { mailer: Mailer; controller: DirectMailController; onOpenPage?:()=>void }) {
   const [cancel, setCancel] = useState(false);
   const a = m.approval;
   return <><div className={styles.heading}><div><div className={`${styles.row} mb-1`}><h1 className={styles.title}>{m.recipient.name}</h1><MailStatus stage={m.stage} /></div><p className={`${styles.small} ${styles.subtle}`}>{m.recipient.company} · {m.campaign}</p></div>{m.stage === "approved" ? <Button variant="transparent" size="md" onClick={() => setCancel(true)}>Cancel mailer</Button> : null}</div>
@@ -22,7 +22,7 @@ export function MailerTracking({ mailer: m, controller: c }: { mailer: Mailer; c
       <section className={styles.section}><h2>Package photos</h2>{m.photos.length ? <div className="mt-4">{m.photos.map((photo) => <figure key={photo.id}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img className={styles.photo} src={photo.url} alt={photo.caption} /><figcaption className={`${styles.caption} mt-2`}>{photo.caption} · <time dateTime={photo.at}>{new Date(photo.at).toLocaleString()}</time></figcaption></figure>)}</div> : <p className={`${styles.small} ${styles.subtle}`}>Photos will appear after inspection and preparation. Your package ships after Clue’s quality check.</p>}</section>
-      <MailerConnections mailer={m} />
+      <MailerConnections mailer={m} onOpenPage={onOpenPage} />
       <section className={styles.section}><h2 className="mb-5!">Activity</h2>{m.events.length ? <ol className={styles.timeline}>{m.events.slice().reverse().map((event) => <li key={event.id}><span className={styles.timelineDot} /><div><p>{event.title}</p><p className={`${styles.small} ${styles.subtle} mt-1`}>{event.detail}</p></div><time className={styles.caption} dateTime={event.at}>{new Date(event.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</time></li>)}</ol> : <p className={styles.subtle}>Updates will appear here.</p>}</section>
     </div><aside className={styles.previewRail}>{a ? <><div className={styles.panel}><h2>Approved mailer</h2>
       {/* eslint-disable-next-line @next/next/no-img-element */}
