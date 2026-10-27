@@ -1,8 +1,8 @@
 # Family 1 · Step 3 — one home per rule (draft for founder review)
 
-Layers (S1): **BASE** `planning-a-page` · **CASE** direction per page kind (1:1, contact, 1:few, general
-campaign, event, product campaign; packaged as six skills or one "page kinds" skill, S1.2) · **ASPECT** skills
-(COPY and EVIDENCE = family 2, IMAGERY = family 3, VISUAL = family 4, REVIEW = family 5) · **MECH** mechanics
+Layers (S1): **BASE** `planning-a-page` · **CASE** six case skills (one-to-one, contact, one-to-few, general
+campaign, event, product campaign; S1.2 ruled A) · **ASPECT** skills (DECISION = `decision-material`, family 1;
+COPY and EVIDENCE = family 2, IMAGERY = family 3, VISUAL = family 4, REVIEW = family 5) · **MECH** mechanics
 skills (`building-with-puck`, `writing-a-section`, `rebuilding-a-section`, `making-a-section-interactive`) ·
 **SYS** system prompt · **HOA** Head of ABM brief template (`manual-siblings`) · **CODE** workspace/harness code.
 
@@ -12,7 +12,7 @@ A rule homed in a later family's aspect skill is only *placed* here; its wording
 
 | Ruling | Home | Notes |
 |---|---|---|
-| R0.1 fixed set; S2 on-demand reading | SYS + CODE | The system prompt lists the skills and the reading rule (S2.2); `system_prompt_with_skills` stops pasting skill content; skills middleware or an equivalent list; contract test for named paths. |
+| R0.1 fixed set; S2 on-demand reading | SYS + CODE | The system prompt lists the skills and the reading rule (S2.2, S2.4: full read only on a new document; follow-ups read what they need); `system_prompt_with_skills` stops pasting skill content; skills middleware or an equivalent list; contract test for named paths. |
 | R1 every kind | SYS | Line 1 rewritten: a seller's landing pages for every kind, not "one named account". |
 | R1.1 kind by judgement, "Who this page is for" | BASE | First step of the sequence. |
 | R1.2 brief opens with who the page is for | HOA | `manual-siblings` new version + Head of ABM re-mint. |
@@ -25,7 +25,7 @@ A rule homed in a later family's aspect skill is only *placed* here; its wording
 | R3.3 word budget as a planning aid | BASE | |
 | R3.4 "Clear beats clever" | COPY | "Short beats complete" deleted. |
 | R4.1 substance before container | BASE | |
-| R4.2 decision material | BASE (method) + CASE (how much, per case) | **Open:** the exhibit table is method; BASE holds it unless the founder wants a separate aspect skill. |
+| R4.2 decision material | DECISION (method, its own aspect skill) + CASE (how much, per case) | Ruled: own aspect skill, pointed to by one-to-one, one-to-few and contact. |
 | R4.3 slot length and the reuse order | MECH (`building-with-puck` "Reuse first") + COPY (keep a rewritten line's length) | |
 | R4.4 swap test, feature dumping, utility test, explain before evaluating | REVIEW (checks) + BASE (explain before evaluating) | |
 | R4.5 research is input; prose via the copy skill | BASE + COPY | |
@@ -103,9 +103,6 @@ A rule homed in a later family's aspect skill is only *placed* here; its wording
 - `writing-a-section` — the own-header bullets follow R5.2 and R6.
 - `making-a-section-interactive` — no family-1 change.
 
-## D. Packaging estimate (for S1.2)
+## D. Packaging
 
-Case direction from family 1 alone comes to roughly 150–250 words per case (six cases ≈ 1,000–1,500
-words). Families 2–5 will each add a few lines per case; a fair guess is 400–600 words per case at the end,
-≈ 2,400–3,600 in all — around the ~2,000-word line where one "page kinds" skill stops being clearly better.
-Decide now on the guess, or after family 2 when the real growth per family is visible.
+Ruled 2026-10-27 (S1.2 = A): six separate case skills, each read on its own under on-demand reading (S2).
