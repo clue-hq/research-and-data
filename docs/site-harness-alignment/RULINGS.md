@@ -80,3 +80,9 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **R11.2** Embedded press-play videos (a YouTube/Vimeo-style player, a brand film) are removed — except a short demo player that directly shows what the page argues, which stays.
 - **R11.3** When a video stays, the headline still states the promise and the page reads fully without pressing play.
 - **R11.4** Mechanics to family 3: clone cards list a section's videos; rebuilt sections can carry video; Safari playback (byte-range serving).
+
+## P12 · Changing an existing page — RULED 2026-10-27
+- **R12.1** Small edits — including "add more depth" or "add a section" — keep the current rule: start with site.md and history.md, change only what was asked, ask before adding something the request names that is not on the page. No full re-plan and no rewriting plan.md beyond the change; the agent consults only the skills and guidance relevant to the request, never a forced read of every skill.
+- **R12.2** A re-aim (the person asks the page to serve a new audience, offer or page kind) is the only case that re-plans, and only after the person confirms. Once confirmed: re-run the planning skill for the new aim; keep sections that still answer a question for the new reader; rewrite what the aim changes; remove what no longer answers anything; keep the person's own edits unless the new aim needs them changed; report what changed. Same document (saved versions keep the old one); a copy only if the person asks. *(The details after confirmation: suggestion, no objection raised.)*
+  - This confirmation is an exception to R9.3 ("never ask to approve a plan").
+- **R12.3** When it is unclear whether a request is a small edit or a re-aim, treat it as a small edit and offer the re-aim in the report; the agent never re-aims on its own.

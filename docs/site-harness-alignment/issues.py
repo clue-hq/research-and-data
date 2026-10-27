@@ -164,7 +164,7 @@ ISSUES = [
    {"label": "Site", "refs": [("D1", "Remove sections that do not help this reader decide"), ("D5", "If the original shows a video")]},
    {"label": "Legacy candidates", "refs": [("L1b", "**Video-led**")]}]},
 
- {"id": "P12", "family": 1, "topic": "SCOPE", "severity": "low", "status": "open",
+ {"id": "P12", "family": 1, "topic": "SCOPE", "severity": "low", "status": "RULED 2026-10-27 (R12.1–R12.3)",
   "title": "Re-aiming an existing page at a new audience or offer",
   "what": "On an existing page the site changes only what was asked. The legacy skills cover changing a page's audience, offer or argument as its own case, where sections that no longer answer a question may be removed, while a scoped edit keeps everything else.",
   "why": "'Make this page work for the logistics segment' is neither a small edit nor a new page.",
