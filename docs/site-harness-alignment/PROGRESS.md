@@ -21,6 +21,8 @@ alignment (`docs/design-harness-alignment/`), done **one family at a time**:
 5. Review — the self-check after render.
 6. Mechanics — only where a mechanics skill repeats or contradicts a judgement rule.
 
+Organisation (S1, 2026-10-27): base planning skill → case direction per page kind → aspect skills (the how). Every family's rulings also record per-case direction.
+
 ## Row schema
 `id, src, loc, topic, applies, strength, text, note` (as the scene-ad ledger).
 - **topic**, family 1: KIND · ARGUMENT · STRUCTURE · SUBSTANCE · ACTION · PEOPLE · IDENTITY · SHELL · PLAN · SCOPE · ASK;

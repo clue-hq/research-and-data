@@ -94,3 +94,8 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **R13.4** Several directions as pages inside one document only when the person asks for that.
 
 **Family 1 step 2 complete (P1–P13 ruled, 2026-10-27).**
+
+## S1 · How the skill set is organised — RULED 2026-10-27
+- **S1.1** Three layers: a **base** planning skill (always first; names the case); **case direction** for each page kind (one-to-one, contact, one-to-few, general campaign, event, product campaign) — what to aim for in that case across every aspect, pointing to the aspect skills; **aspect skills** that teach the deeper how (copy, evidence, imagery and media, visual design and brand fidelity, review, plus the mechanics skills). Case direction never teaches method; aspect skills never hold case direction. Refines R2.2–R2.3.
+- **S1.2** Packaging is open until family 1 step 3: six case skills (A) or one "page kinds" skill with a comparison table and a section per case (B), decided on the real sizes.
+- **S1.3** Work continues aspect by aspect; each family also records its per-case direction (each conflict group is asked "anything specific to a case?"), so the case direction fills up as the families are ruled.
