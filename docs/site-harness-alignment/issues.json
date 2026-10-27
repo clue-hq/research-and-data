@@ -1143,7 +1143,7 @@
   "family": 4,
   "topic": "TYPE",
   "severity": "medium",
-  "status": "open",
+  "status": "RULED 2026-10-28 (V4.1–V4.3)",
   "title": "Type hierarchy across the page",
   "what": "The site gives the agent the brand's type roles (measured from the seller's site or derived), heading sizes chosen by name (display, headline, title), sizes that change with the window as on the seller's site, and 'words fit their space'. The legacy skills add: judge the whole page, not each band — 'an accidentally tiny opening headline beside a much larger ordinary product heading is a mismatch'; keep the seller's deliberate scale contrast; never shrink type to fit an over-long argument (edit the copy); one main headline per page.",
   "why": "Mixed clones and brand sections can leave the hero smaller than a later heading.",

@@ -288,3 +288,8 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 ## V3 · New and rebuilt sections that look like the seller's — RULED 2026-10-28
 - **V3.1** The site's existing rules stay as they are and are enough: `writing-a-section` ("Make it look like the seller's sections around it. Render and compare."; an own header "must look like the seller's site, never like a generic header with their logo dropped in") and `rebuilding-a-section` (keep the original's layout — columns, order, alignment, where images sit, rhythm of spacing; compare; stop when it reads as the same section or after three comparisons). Rebuilding keeps what the section does.
 - Not carried: a recognizability line in the plan, naming each new section's model, a list of generic patterns to avoid, and a logo-removed review test.
+
+## V4 · Type hierarchy across the page — RULED 2026-10-28
+- **V4.1** The site's type system stays as it is (type roles from the seller, sizes that change with the window, heading sizes by name, words fit their space).
+- **V4.2** Headings are judged across the whole page: the hero's headline is the largest on the page unless the seller's own pages do otherwise; a brand section picks its heading size so it sits correctly against the clones around it.
+- **V4.3** Never shrink type to fit more words; edit the words (with R4.7).
