@@ -33,8 +33,9 @@ ISSUES = [
      ("L3b", "Explain the real event's value"), ("L3b", "Follow product purpose, traffic and buyer questions"),
      ("L3b", "For every mode, state the visitor's job")]}]},
 
- {"id": "P2", "family": 1, "topic": "ARGUMENT", "severity": "high", "status": "open",
+ {"id": "P2", "family": 1, "topic": "ARGUMENT", "severity": "high", "status": "RULED 2026-10-27 (R2.1–R2.4)",
   "title": "The message plan only fits a researched account",
+  "ruled": "R2.1–R2.4",
   "what": "The site's plan block asks for one insight 'in the account's own words' and two or three priorities 'tied to the research'. A campaign page, an event or a page with no research has nothing to put there. The legacy skills plan from the visitor instead: where they arrive from, what they already know (awareness stage), what single action closes the decision, which argument pattern fits, and a reader → context → mechanism → application → proof → action chain.",
   "why": "This decides what the agent writes in plan.md before anything else, for every page kind.",
   "groups": [
