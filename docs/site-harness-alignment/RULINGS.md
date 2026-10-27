@@ -321,3 +321,12 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **Q2.1** The loop stays: validate until valid (after the same error three times, change approach or leave that part out and say why); fix every failure in one go; re-render only when something visible changed, never to compare small differences.
 - **Q2.2** "Up to 3 renders in all" becomes "up to 3 renders **per page**"; a multi-page site gets three for each page it changes. Length alone does not change the count.
 - **Q2.3** On an edit, review only the change and its neighbouring sections (with R12.1); no render when nothing visible changed.
+
+## Q3 · The final report and an honest status — RULED 2026-10-28
+- **Q3.1** The report opens with the result and its status in plain words: "done"; "done, with one thing open: …"; "not done: …, and what was kept".
+- **Q3.2** Then three to six short bullets: who the page is for and the one action; what proof it uses; what was left out and why (briefly); what is still open or could not be checked, named plainly — never buried as polish.
+- **Q3.3** Unverified, not invented: what could not be checked is said so; never a problem not seen, never a claim that something works that was not seen.
+- **Q3.4** Written for the person: no claim ids, tool names or process narration (the plan holds those).
+- (Shape from Ploy's finished-page summary, honesty from legacy review-website; our own words.)
+
+**Family 5 step 2 complete (Q1–Q3 ruled, 2026-10-28).**

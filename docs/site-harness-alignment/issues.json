@@ -1304,7 +1304,7 @@
   "family": 5,
   "topic": "VERDICT",
   "severity": "medium",
-  "status": "open",
+  "status": "RULED 2026-10-28 (Q3.1–Q3.4)",
   "title": "The final report and an honest status",
   "what": "The site ends with 'a short report: what you built, what you left out and why, and anything still open', and page-review asks to 'say what you checked and anything you could not fix'. The legacy review sets three outcomes (accepted; completed with warnings — a usable page with a named unmet requirement; failed), says to name unmet requirements prominently rather than as polish, to call something unverified rather than invent a defect, and to keep the report short: result and scope, changes, what was checked, what is open.",
   "why": "The report is what the person reads; it should say plainly what is done and what is not.",
