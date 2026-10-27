@@ -37,3 +37,10 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **R4.6** Depth, never over-explaining: write statements that appeal to the reader; do not spell out the logic or inference behind them. (Founder: LLMs tend to over-explain.)
 - **R4.7** In drafted page copy, no paragraph runs over 20 words: clear and concise. Home: the copy skill (family 2).
   - Note for family 2: the legacy line "Do not shrink copy into slogans" must be reconciled with R4.6–R4.7 (concise statements, not slogans).
+
+## P5 · Where buttons go — RULED 2026-10-27
+- **R5.1** The action is chosen from the reader's decision (base skill step 5), never from the seller's homepage button or an available booking link. Case skills give the usual action: one-to-one and one-to-few — the next step the brief names (meeting, assessment, proposal) at its real scope; general campaign — the demo, trial, contact or resource the brief names; event — register; product campaign — the offer the ad or email made.
+- **R5.2** One primary action, same label and destination everywhere it appears (header button included), placed at decision points (after the promise, after the explanation, at the close), not in every section.
+- **R5.3** Secondary links: one-account and one-to-few pages carry no links that take the reader away (a cited case study may open in a new tab); general, event and product pages may carry a few relevant secondary links (product page, pricing, agenda).
+- **R5.4** Every inherited clone button is decided on purpose: kept with its real purpose, label and destination changed together, or removed. A label never promises what its destination does not deliver.
+- **R5.5** The final check's "CTA competition" becomes "more than one primary offer"; "forms ask only what the next step needs" is added.

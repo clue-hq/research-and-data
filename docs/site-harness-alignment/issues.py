@@ -78,7 +78,7 @@ ISSUES = [
      ("L3a", "For each retained insight, record the visible explanation"), ("L3a", "Why this is relevant here"),
      ("L1b", "research must change the visible explanation"), ("L3", "Without target research, write an invitation")]}]},
 
- {"id": "P5", "family": 1, "topic": "ACTION", "severity": "high", "status": "open",
+ {"id": "P5", "family": 1, "topic": "ACTION", "severity": "high", "status": "RULED 2026-10-27 (R5.1–R5.5)",
   "title": "One destination for every button, or one primary action plus useful secondary links?",
   "what": "The site sends every button, including the header's, to the one destination the brief names, and flags any second destination as 'CTA competition'. The legacy skills choose the action from the reader's decision (explore, compare, register, buy), allow relevant secondary resources, place actions at decision points rather than in every band, and warn that a booking link or the seller's homepage button does not decide the page's purpose.",
   "why": "Founder 2026-10-18: the one-destination rule is guidance only. The question is what the guidance should say, especially for segment, event and product pages.",
