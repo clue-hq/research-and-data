@@ -551,7 +551,7 @@
   "family": 2,
   "topic": "OFFPAGE",
   "severity": "medium",
-  "status": "open",
+  "status": "RULED 2026-10-28 (W4.1–W4.6)",
   "title": "What never reaches the page, and do product limits count as caveats?",
   "what": "Both sides keep notes off the page: the brief's Notes for Design, the research's Watch-outs and Context only, approach notes, claim ids, caveats and strategy. The legacy skills add three things: never lift the brief's or research's sentences onto the page (write your own); a test for a leaked note ('a sentence that says what the page is not… is almost always a note that leaked'); and an exception — genuine product limits and proof conditions that affect the reader's choice stay visible. The site says caveats go to plan.md, never the page.",
   "why": "The rule is repeated in eight places today; the product-limits exception is the one real disagreement.",
