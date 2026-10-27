@@ -232,3 +232,12 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **M3.2** Know what is already inside the image: if it already has rounded corners, a shadow, a frame or a see-through edge, don't add another, and don't put an opaque box behind a cut-out.
 - **M3.3** Never swap a photographic or illustrated background for a flat colour because the right image was hard to find: find it with `search_assets`, rebuild it with a generated image of the same type (M2.2), or use the clone as it is.
 - Per case: every case. Home: the imagery skill.
+
+## M4 · Product screenshots — RULED 2026-10-28
+- **M4.0** The site's two existing lines are enough for this aspect ("Check that the image fits the words beside it. A product screenshot must show what the copy says."; nothing generated as real, M2.8); no extra lines beyond those below.
+- **M4.1** A screenshot shows the product, not a result: it never stands in for a claim about integrations or outcomes (the W rules decide those).
+- **M4.2** (important) Never alter a screenshot: never redraw a dashboard, edit its metrics, paint in account data, stretch it, or crop out the feature the copy describes.
+- **M4.3** Pairing each screenshot with what it shows (one plan line: task → what the product does → what is visible → the sentence beside it, after looking at it) applies **primarily to product campaign pages**, not every case.
+- **M4.4** No staging rule: the agent follows how the seller's own site stages its product imagery.
+- **M4.5** Screenshots are never forced on any case: they sit within the page's overall flow. On one-to-one pages a screenshot of the feature that answers the account's priority is neither forced nor blocked.
+- Not carried: the legacy "on a phone the interface stays readable" line (may return as a family 5 review check).

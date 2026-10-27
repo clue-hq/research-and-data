@@ -371,7 +371,7 @@ ISSUES = [
      ("L8", "Preserve what the source image means"), ("L8", "Reuse a suitable original. Preserve crop"),
      ("L8", "Separate what is **inside the image**"), ("L8", "A landscape hero replaced with a flat color")]}]},
 
- {"id": "M4", "family": 3, "topic": "PRODUCTUI", "severity": "medium", "status": "open",
+ {"id": "M4", "family": 3, "topic": "PRODUCTUI", "severity": "medium", "status": "RULED 2026-10-28 (M4.0–M4.5)",
   "title": "Product screenshots that carry the story",
   "what": "The site has two lines: a screenshot must show what the copy says, and product screens are never generated. The legacy product-story skill adds: pair each screenshot with the task it shows and the explanation beside it; keep the brand background behind the interface and never cover the interface; keep the interface readable on a phone ('a surviving background with no UI is failure'); never edit its numbers or crop out the feature the copy describes; a product switcher is one linked component.",
   "why": "W8.3 (explain the actual product) depends on product visuals doing their job.",
