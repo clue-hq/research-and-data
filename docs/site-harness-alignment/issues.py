@@ -258,7 +258,7 @@ ISSUES = [
      ("L7b", "Separate sourced facts from analyst interpretations"), ("L3a", "Separate source facts from analyst interpretations"),
      ("L3a", "Job openings do not establish staffing failure"), ("L3a", "A report's word \"verified\"")]}]},
 
- {"id": "W6", "family": 2, "topic": "SOURCING", "severity": "medium", "status": "open",
+ {"id": "W6", "family": 2, "topic": "SOURCING", "severity": "medium", "status": "RULED 2026-10-28 (W6.1–W6.4)",
   "title": "How much evidence bookkeeping goes into plan.md?",
   "what": "The site's plan lists proof as case studies with links. The legacy skills ask for an evidence map: every prominent factual sentence paired in the plan with its supporting excerpt, subject, units, time window and status, and 'never fill it from memory'.",
   "why": "More bookkeeping catches mutated numbers; it also costs time on every page.",

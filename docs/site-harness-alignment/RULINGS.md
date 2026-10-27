@@ -154,3 +154,9 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **W5.2** The full key lives in the evidence skill: a plain statement `[c4]` is a sourced fact (checked against `claims.md`); **(quote)** is the account's own words, usable verbatim; **(qualified)** + note is true only with its condition (W3.1) or not used (W3.2); **(inference)** is the research lane's interpretation — it shapes the angle, is never stated as fact, at most a "could" implication (W2.2); **(gap)** is unknown and never filled; a value-narrative claim (Says / For / Angle) is the research lane's argument for a persona — input for the angle, never a fact on the page.
 - **W5.3** Said once: facts, interpretations and the page's angle are kept apart; a signal is not a conclusion (a job opening is not a staffing problem, an initiative is not a budget, a technology fingerprint is not an integration).
 - **W5.4** Per case: one-to-one, one-to-few and contact pages use this key; on untagged pages the ICP and persona documents (R1.3a) are the seller's view of an audience — interpretations, never facts about a particular company.
+
+## W6 · Evidence bookkeeping in plan.md — RULED 2026-10-28
+- **W6.1** Each section's plan entry lists the facts it uses, one line each, with where each came from (a claim label, a seller file, a fetched page's address, a clone) and any short condition (W3.1). No freshness or verification-status columns.
+- **W6.2** On one-to-one, one-to-few and contact pages, each benefit statement gets one bridge line: the account's priority [source] → the seller's capability [source] → the sentence (Ploy's claim ledger, for discussion). Makes W2 and W4.6 checkable.
+- **W6.3** Final check: every number and quote on the page traces to a line in the plan.
+- **W6.4** The planning skill shows the format with one short example; it is not a schema to fill.
