@@ -58,3 +58,4 @@ Out of scope: the Head of ABM's brief content (another agent), the exit judge.
 - 2026-10-27: branch `design/site-harness-alignment` from origin/main 166bafd70; capture taken; family 1
   ledgered (A1, B1, D1–D6, H1 site; L1–L6 legacy) = 200 rows; 13 conflict groups P1–P13 in `issues.py`;
   page `rule-ledger.html`. P1 direction already ruled (R1). No prompt/skill/code edits.
+- 2026-10-27: P1 ruled (R1.1–R1.4): judgement + honest inputs, no field; Head of ABM brief opens with who the page is for; untagged pages named for their context; kinds = one account, segment, event, product/offer (not several named accounts).

@@ -14,7 +14,7 @@ def find(sid, sub):
     return hits[0]
 
 ISSUES = [
- {"id": "P1", "family": 1, "topic": "KIND", "severity": "high", "status": "direction ruled 2026-10-27 (R1)",
+ {"id": "P1", "family": 1, "topic": "KIND", "severity": "high", "status": "RULED 2026-10-27 (R1, R1.1–R1.4)",
   "title": "The site agent is told every page is for one named account",
   "what": "The system prompt's first line, the only argument skill and its final check all assume one company and one reader. A campaign page reaches the agent with the artifact's title standing in for the account name and a research file that says 'no written research for this account yet'. Nothing names the page kind; only the Head of ABM's brief can say it. The legacy skills cover six kinds: one account, one person, a few accounts, a whole segment, an event, a product page. The site's own header rules already know about 'a site for several accounts'.",
   "why": "Founder ruling R1 (2026-10-27): the site agent must handle every kind of landing page. Still open: how the page kind reaches the agent, and which kinds it supports (see P10 for pages about one person).",
