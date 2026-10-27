@@ -307,3 +307,12 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **S4.1** A separate, small aspect skill **`page-design`** (working name; ~300–400 words): the seller's cadence and how to follow it (V1), the hero choice and adaptation (V2), composition variety, headings across the page (V4.2–V4.3).
 - **S4.2** Referenced so it is not missed: the base planning skill's cadence and hero plan lines point to it; `building-with-puck` drops its old rhythm rules and points to it (so adding or rebuilding a section reaches it under R12.1); the system prompt's skill list names it with its "when to use".
 - **S4.3** Not in the system prompt (S2.1, R12.1), not in the base planning skill (one job per skill; edits need it without the planning skill), not folded into the imagery skill.
+
+---
+# Family 5 · Review
+
+## Q1 · What the self-check covers — RULED 2026-10-28
+- **Q1.1** `page-review` is rebuilt as one short list in five groups: (1) **the reader's read** — the first screen says what this is and who it is for, button visible; each section adds something, no two make the same point; the page is not thin (the reader can say what the product does — utility test); (2) **words and claims** — the copy skill's final check on the visible words (swap test, one primary offer, leaked notes, naming people), and every number and quote traces to the plan (W6.3); (3) **buttons** — each button's words match where it actually goes; (4) **looks like the seller's** — the hero keeps the seller's archetype, headings sit right across the page (V4.2), the rhythm follows the noted cadence (V1), a brand section is not foreign next to the clones (V1.5), not every section the same card grid (V1.4); (5) **nothing broken at both widths** — no broken image, overflow or sideways scrolling, no clipped or overlapping text, readable text and logos, good wrapping, the product interface readable on a phone (M4.6), the account's name on the mobile header where the page names the account.
+- **Q1.2** The plan writes two or three "done" lines for this page before building (e.g. "hero from the product page; proof beside its claims; one dark band"); the review checks them, so criteria are not invented afterwards. (From Ploy, for discussion; legacy plan-design agrees.)
+- **Q1.3** Motion: the report says what could not be checked (M1.5).
+- Per case: one-to-one, one-to-few and contact pages add the account checks (swap test, the proof line, naming people only on contact pages).

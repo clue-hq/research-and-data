@@ -1233,7 +1233,7 @@
   "family": 5,
   "topic": "CHECKLIST",
   "severity": "high",
-  "status": "open",
+  "status": "RULED 2026-10-28 (Q1.1–Q1.3)",
   "title": "What the self-check after a render covers",
   "what": "The site's page-review has six items (first screen, nothing broken, no repeats, words fit, rhythm, then account-page-copy's final check on the words). Families 1–4 have since sent it new checks: every number and quote traces to the plan (W6.3), honest reporting on motion (M1.5), the product interface readable on a phone (M4.6), a brand section not foreign next to the clones (V1.5), headings judged across the page (V4.2), more than one primary offer (R5.5), the swap and utility tests (R4.4), the final-check wording items reworded to the W rulings; and some old items are gone (no two dark sections in a row, form creep). The legacy review adds: read the page as an argument (what each section contributes), a thin page is a defect even when everything renders, check each button's label against where it actually goes, check overflow and the contrast of text and logos at both widths, and an image's role and crop.",
   "why": "The checklist has to be rebuilt from the four families' rulings; the question is what else, if anything, it should carry.",
