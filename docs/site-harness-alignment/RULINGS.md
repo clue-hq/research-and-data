@@ -214,3 +214,5 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **M1.5** Honest reporting: `render_page` gives still pictures, so the agent never claims motion works from a screenshot; it says what it could not check (the check itself: family 5).
 - **M1.6** Mechanics (code): clone cards list a section's videos and motion (as R11.4); the motion section of `brand/brand.md` is rewritten in `site-kit/src/catalog.ts`.
 - Per case: every case; product and general campaign pages usually carry the most of the seller's motion.
+- **M1.7** Library addition (mechanics, product work): add at least a basic **carousel** brand section; a **tabs** section later (not urgent). When they exist they slot into the ladder between "keep the clone" and "write your own".
+- **M1.8** For now, the agent's own section writing (`write_section`, `writing-a-section`, `making-a-section-interactive`) must be strong enough to rebuild the seller's motion well — a focus for family 6 (mechanics overlaps) and the trials.
