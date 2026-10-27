@@ -49,7 +49,8 @@ def test_the_approved_prompt_and_skill_changes_are_in_place() -> None:
     assert "It saves a version when the page is valid." not in prompt
     assert "brings back an earlier saved version of the site (`site.md` lists them)." in prompt
     assert "- `search_assets`: finds the seller's other images" in prompt
-    assert "and for new sections `writing-a-section` and" in prompt
+    # Ruling S2 (2026-10-27): the prompt points at the listed skills instead of naming them.
+    assert "1. Your skills are listed at the end of this prompt" in prompt
     assert "the site's one header and one footer, each a section like those on a page" in prompt
     assert '"Prepared for …", optional links' not in prompt
     assert "- `fetch_logo`: finds a company's real published logos by its website domain" in prompt

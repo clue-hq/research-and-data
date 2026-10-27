@@ -39,9 +39,10 @@ workspace of plain files with a few tools.
 
 ## How to work
 
-1. Your skills are below this prompt: `account-page-copy`, `building-with-puck`,
-   `images-and-logos` and `page-review`, and for new sections `writing-a-section` and
-   `rebuilding-a-section`. Follow them.
+1. Your skills are listed at the end of this prompt: each one's name, when to use it, and its
+   path. Read a skill with `read_file` when it fits what you are doing, and follow it. On a new
+   site, read the skills for planning and building before you write `plan.md`; on a later
+   request, read only the skills that request touches.
 2. Read `brief.md`, the research and `catalog/index.md`. Open clone files and seller files when
    you need them, not all at once.
 3. Write `plan.md`. Put the message plan first (account-page-copy, part 1). Then list each

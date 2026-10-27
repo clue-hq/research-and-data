@@ -1,6 +1,6 @@
 ---
 name: images-and-logos
-description: Use when a section needs an image: choosing one of the brand's images, generating a new one, or placing the account's logo.
+description: "Use when a section needs an image: choosing one of the brand's images, generating a new one, or placing the account's logo."
 ---
 
 # Images and logos

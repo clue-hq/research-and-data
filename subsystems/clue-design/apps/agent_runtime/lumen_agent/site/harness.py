@@ -363,46 +363,53 @@ LIVE_RENDER_PAGE_LINE = (
     "browser drew a section differently.\n"
 )
 SKILLS_STEP = (
-    "1. Your skills are below this prompt: `account-page-copy`, `building-with-puck`,\n"
-    "   `images-and-logos` and `page-review`, and for new sections `writing-a-section` and\n"
-    "   `rebuilding-a-section`. Follow them.\n"
+    "1. Your skills are listed at the end of this prompt: each one's name, when to use it, and its\n"
+    "   path. Read a skill with `read_file` when it fits what you are doing, and follow it. On a new\n"
+    "   site, read the skills for planning and building before you write `plan.md`; on a later\n"
+    "   request, read only the skills that request touches.\n"
 )
-LIVE_SKILLS_STEP = (
-    "1. Your skills are below this prompt: `account-page-copy`, `building-with-puck`,\n"
-    "   `images-and-logos` and `page-review`, and for new sections `writing-a-section` and\n"
-    "   `rebuilding-a-section`, and, on this site, `making-a-section-interactive` when a section needs\n"
-    "   to respond to the visitor. Follow them.\n"
-)
+
+#: The skills section the skills middleware appends to the system prompt (ruling S2, 2026-10-27):
+#: each skill's name, when to use it, and its path; the agent reads a skill when it needs it. Our
+#: wording, through the library's own option, as the scene agent does (scene alignment I7).
+SITE_SKILLS_SECTION = """## Your skills
+
+Each skill below has its name, when to use it, and its path.
+
+{skills_locations}{skills_load_warnings}
+
+{skills_list}
+
+When a skill fits the work in front of you, read it in one call with
+read_file(file_path=..., limit=1000) and follow it. Read only the skills this request needs."""
+
+
+def site_skill_sources(*, live: bool = False) -> list[tuple[str, str]]:
+    """The workspace folders the skills middleware lists: the site skills and the section-writing
+    skills always (ruling X2.2), the interactive-section skill only where the workspace publishes
+    live sites (X2.3)."""
+
+    return [("/skills/", "Site"), ("/skills-e5/", "Section"), *([("/skills-live/", "Live-site")] if live else [])]
 
 
 def _base_prompt(workspace: Path, *, live: bool = False) -> str:
     text = (SITE_DIR / "system_prompt.md").read_text()
     assert RENDER_PAGE_LINE in text and SKILLS_STEP in text, "system_prompt.md drifted from harness.py"
     if live:
-        text = text.replace(RENDER_PAGE_LINE, LIVE_RENDER_PAGE_LINE).replace(SKILLS_STEP, LIVE_SKILLS_STEP)
+        text = text.replace(RENDER_PAGE_LINE, LIVE_RENDER_PAGE_LINE)
     if (workspace / "research" / "claims.md").exists():
         return text
     assert CLAIMS_RESEARCH_LINE in text and CLAIMS_RULE in text, "system_prompt.md drifted from harness.py"
     return text.replace(CLAIMS_RESEARCH_LINE, PLAIN_RESEARCH_LINE).replace(CLAIMS_RULE, "")
 
 
-def system_prompt_with_skills(workspace: Path, *, allow_new_sections: bool = True, live: bool = False) -> str:
-    """The system prompt with the skills after it, read from the package so every call and every
-    session sends the same text (the spike's, E5 on by default). ``live``: the workspace publishes
-    live sites, so two prompt lines name render_page's hydration notes and the interactive-section
-    skill, and the skills-live/ skills follow, when new sections are allowed."""
+def site_system_prompt(workspace: Path, *, live: bool = False) -> str:
+    """The system prompt, read from the package so every call and every session sends the same text.
+    Skills are not pasted: the skills middleware lists them and the agent reads one when it needs it
+    (ruling S2). ``live``: the workspace publishes live sites, so the render line names
+    render_page's hydration notes."""
 
-    folders = [
-        "skills",
-        *(["skills-e5"] if allow_new_sections else []),
-        *(["skills-live"] if live and allow_new_sections else []),
-    ]
-    skills = [
-        f"### Skill: {path.parent.name} ({'/' + folder + '/' + path.parent.name}/SKILL.md)\n\n{path.read_text().strip()}"
-        for folder in folders
-        for path in sorted((SITE_DIR / folder).glob("*/SKILL.md"))
-    ]
-    return _base_prompt(workspace, live=live).rstrip() + "\n\n## Your skills\n\n" + "\n\n".join(skills) + "\n"
+    return _base_prompt(workspace, live=live)
 
 
 # --- the working copy (site-turn durability, 2026-10-16) -----------------------------------------
@@ -561,7 +568,6 @@ def build_site_agent(
     checkpointer: Any = None,
     limits: TurnLimitsConfig = TurnLimitsConfig(),
     compaction: Any = None,
-    allow_new_sections: bool = True,
     live: bool = False,
     working_copy: WorkingCopy | None = None,
 ):
@@ -573,6 +579,7 @@ def build_site_agent(
     from deepagents.backends import FilesystemBackend
     from deepagents.middleware.filesystem import FilesystemMiddleware
     from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
+    from deepagents.middleware.skills import SkillsMiddleware
     from langchain.agents import create_agent
     from langchain.agents.middleware import ContextEditingMiddleware
     from langgraph.checkpoint.memory import InMemorySaver
@@ -589,6 +596,7 @@ def build_site_agent(
         working_copy.bind(turn_limits=turn_limits, guard=guard)
     middleware = [
         *([working_copy] if working_copy is not None else []),
+        SkillsMiddleware(backend=backend, sources=site_skill_sources(live=live), system_prompt=SITE_SKILLS_SECTION),
         FilesystemMiddleware(
             backend=backend,
             _permissions=[FilesystemPermission(operations=["write"], paths=READ_ONLY, mode="deny")],
@@ -606,7 +614,7 @@ def build_site_agent(
     agent = create_agent(
         model,
         tools=site_tool_set(tools),
-        system_prompt=system_prompt_with_skills(tools.workspace, allow_new_sections=allow_new_sections, live=live),
+        system_prompt=site_system_prompt(tools.workspace, live=live),
         middleware=middleware,
         checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),
         name="clue-site-agent",
