@@ -431,7 +431,7 @@ ISSUES = [
      ("L12", "Record the observed sequence of surfaces"), ("L12", "do not invent a rule such as"),
      ("L14", "What the capture preserved, the repair preserves")]}]},
 
- {"id": "V2", "family": 4, "topic": "HERO", "severity": "high", "status": "open",
+ {"id": "V2", "family": 4, "topic": "HERO", "severity": "high", "status": "RULED 2026-10-28 (V2.1–V2.4)",
   "title": "Which hero opens the page, and how it is composed",
   "what": "The site says only 'The home page's hero usually opens the page' (the 10-26 Pallet page opened with a centred hero copied from a product page). The legacy skills say: retrieve sections by the job they must do and look beyond the homepage for product, use-case or customer-story sources; name each band's composition before building (centred statement, asymmetric split, editorial stack, full-bleed hero…), repeat a composition only where the content is symmetric; and the seller's own hero archetype (split? centred? what carries the weight?) is part of its grammar.",
   "why": "The founder asked whether something pushes the agent to a centred hero every time; nothing in the text does, but nothing guides the choice either.",

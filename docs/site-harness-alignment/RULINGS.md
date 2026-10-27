@@ -276,3 +276,11 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **V1.4** Avoid uniform sections: not every section as three equal cards; no layout with no precedent on the seller's site.
 - **V1.5** The three fixed rules go ("alternate light and dark", "at most one dark brand section", "no two dark in a row"). "Must not look foreign next to the clones" stays. Fallback when the cadence cannot be read: alternate light and dark, and use the strongest surface sparingly.
 - (From Ploy, at the founder's request, written in our own words.)
+
+## V2 · Which hero opens the page — RULED 2026-10-28
+- **V2.1** The agent chooses the hero by deciding **which of the seller's pages' hero section** suits this page's job — a hero section, not any other section: e.g. the home page's hero for a broad one-to-one or general page, a product page's hero for a product campaign, an event or webinar page's hero for an event. (Founder: "choose the hero by deciding which page's hero to use… not any section but hero section.")
+- **V2.2** Adapt that hero rather than replace it: keep its composition and visual and change its words (R4.3); a new hero only when no seller hero fits.
+- **V2.3** The hero's composition follows the seller's own hero archetype (split, centred, full-bleed visual), with the weight where the seller puts it; centred only when the seller's heroes are centred.
+- **V2.4** The plan names each section's composition in one word (split, centred statement, editorial stack, proof strip…) and varies it where the content varies.
+- Per case: product campaign — usually the product page's hero; event — an event or webinar page's hero when one exists; one-to-one and general — usually the home page's hero, adapted.
+- (Ploy consulted for discussion; our own words.)
