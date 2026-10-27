@@ -32,9 +32,9 @@ specifications from becoming competing sources of truth.
   isolated mock adapter, versioned approvals and backend handoff for Aryan.
 - [`architecture/direct-mail.md`](architecture/direct-mail.md) — customer
   flow, confirmed scope, pilot lessons, fixture boundaries and backend handoff.
-- [`architecture/direct-mail-v2.md`](architecture/direct-mail-v2.md) — separate
-  port-5001 preview connecting account plans, ownership, gifting, email, creative
-  and results; V1 stays available on port 5000.
+- [`architecture/direct-mail-v2.md`](architecture/direct-mail-v2.md) — port-5001
+  implementation, product/visual audit and proposed recipient-first review model.
+  V1 stays on port 5000; email belongs to the separate workstream.
 - [`architecture/site-editor.md`](architecture/site-editor.md) — the Puck site
   editor: the app/editor-domain split, the frame protocol and where the code lives.
 - [`architecture/ai-elements-and-reasoning.md`](architecture/ai-elements-and-reasoning.md)
@@ -64,9 +64,6 @@ specifications from becoming competing sources of truth.
   plan connecting ownership, agents, channels, artifacts and outcomes; research,
   not an implemented integration contract.
 
-- [`architecture/direct-mail-v2.md`](architecture/direct-mail-v2.md) — isolated
-  project workspace on port 5001: bounded account table, contextual previews and
-  Direct Mail handoff. Email is owned by the separate email branch.
 
 ## Required update workflow
 
