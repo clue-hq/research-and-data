@@ -355,3 +355,10 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **X3.5** The trials (step 5) include one rebuild with motion (e.g. Pallet's hero, rebuilt as an editable section that keeps its video).
 
 **Family 6 step 2 complete (X1–X3 ruled, 2026-10-28). All six families ruled.**
+
+## S5 · Case skills consolidated — RULED 2026-10-28 (revises S1.2)
+- **S5.1** Following the Deep Agents docs ("fewer well-scoped skills outperform many overlapping ones"; reference files one level deep, described in SKILL.md): the six case skills become **one `page-kinds` skill** — a short SKILL.md (a comparison table of the page kinds and "read the reference for your case") with six reference files (`references/one-to-one.md`, `contact.md`, `one-to-few.md`, `general-campaign.md`, `event.md`, `product-campaign.md`). The agent reads its case through the SKILL.md plus one reference.
+- **S5.2** `decision-material` moves inside `page-kinds` as a reference (`references/decision-material.md`), read by the one-to-one, one-to-few and contact references. *(Taken as included in the founder's "yes consolidate into page-kinds".)*
+- **S5.3** Skill descriptions are written as the docs advise: what the skill does and when to read it, with distinct keywords so no two overlap; SKILL.md bodies under ~5,000 tokens.
+- **S5.4** Later, with a deepagents upgrade (≥0.7.23), the harness may pin `planning-a-page` on a new document; until then the system prompt's step-1 line and the description carry it.
+- Fix 1 wording approved (system prompt step 1 and the skills section).

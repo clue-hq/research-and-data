@@ -1,5 +1,9 @@
 # Site agent · consolidated skill-set map (step 4 blueprint)
 
+> **Revised by S5 (2026-10-28):** the six case skills are one `page-kinds` skill with six reference files, and
+> `decision-material` is a seventh reference inside it. Sections 0, 3, 4 and 10 below still name them separately;
+> read "`one-to-one-page`" as "`page-kinds` → `references/one-to-one.md`", and so on.
+
 Compiled 2026-10-28 from `RULINGS.md` and the six `HOMES-family*.md` tables. Each line names the rulings a piece
 holds; the wording comes in step 4, one piece at a time, shown to the founder first. Skills are listed in the system
 prompt and read on demand (S2); a new document reads the base skill, then its case skill, then aspect skills as

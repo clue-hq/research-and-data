@@ -100,3 +100,4 @@ Legacy: L7 conversion-copywriting · L7a copy-craft · L7b website-copy-brief ·
 - 2026-10-28: family 5 homes approved (founder: "lets move to the next step"). Family 6 ledgered (10 site rows; 479 in all); 3 groups X1–X3; no legacy candidates for this family.
 - 2026-10-28: X1–X3 ruled; all six families through step 2; HOMES-family6.md drafted.
 - 2026-10-28: family 6 homes approved; steps 1–3 complete for all six families. SKILL-SET-MAP.md compiled (step 4 blueprint); two homes corrected (R7.5 → code check; R4.4 explain-before-evaluating → decision-material).
+- 2026-10-28: code fix 1 done (e3a005c5d): skills listed, not pasted (S2/X2); contract test caught images-and-logos silently skipped (YAML), fixed. S5: case skills consolidated into page-kinds with references (Deep Agents docs). Next: code fix 2 (site clarification tool, R9.4).
