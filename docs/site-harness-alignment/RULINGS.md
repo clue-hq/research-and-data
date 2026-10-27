@@ -216,3 +216,12 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - Per case: every case; product and general campaign pages usually carry the most of the seller's motion.
 - **M1.7** Library addition (mechanics, product work): add at least a basic **carousel** brand section; a **tabs** section later (not urgent). When they exist they slot into the ladder between "keep the clone" and "write your own".
 - **M1.8** For now, the agent's own section writing (`write_section`, `writing-a-section`, `making-a-section-interactive`) must be strong enough to rebuild the seller's motion well — a focus for family 6 (mechanics overlaps) and the trials.
+
+## M2 · When to generate an image, and how well — RULED 2026-10-28
+- **M2.1** When: reuse first (the clone's images, `brand/brand.md`, then `search_assets`); generate only when a section needs an image and nothing fits. The ad-era "one of two hands" stance does not carry over.
+- **M2.2** What: generated imagery follows the imagery type of the seller's own website and assets (photographic or illustrated, its subjects and treatment). A generated setting for the segment's industry is a normal use.
+- **M2.3** The line "It must not show: words, numbers or logos; real people…; a product screen…" is **removed, no matter what** — the seller's own imagery may contain these things, and the line sends the wrong message. (Founder.)
+- **M2.4** Kept: nothing generated is presented as the account's own building, staff or customers, and generation never imitates the target account's logo or makes an exact replica of anything of the target account's.
+- **M2.5** How: the five-question prompt (what it is; the style; the brand's exact colours; the composition — where the weight sits and where it stays calm; what must not appear); the brand's own imagery described in plain words; one to three brand photos as style references; the test "would the brand's own design team have made this?"
+- **M2.6** Then look: if wrong, change the prompt rather than repeat it; one retry, then leave the image out; a failed or placeholder image is never shipped.
+- **M2.7** Text over a generated image sits on its calm area or on a scrim; one atmosphere per section.

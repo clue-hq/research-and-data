@@ -859,7 +859,7 @@
   "family": 3,
   "topic": "GENERATE",
   "severity": "high",
-  "status": "open",
+  "status": "RULED 2026-10-28 (M2.1–M2.7)",
   "title": "When to generate an image, and how well",
   "what": "The site generates only as a last resort ('only when a section needs one and none of the brand's images fits'), only a scene or a mood, never anything presented as real, styled from one to three brand photos, one retry, else no image. The legacy web media skill agrees ('generation is optional… authentic reused imagery is a complete valid outcome'). The legacy generative-imagery skill, written mainly for ads, says the opposite: generation 'is not a fallback… it is one of your two hands' for atmosphere — and it carries real craft the site lacks: a five-question prompt (what, style, exact brand colours, composition with a calm area, what must not appear), describing the brand's own imagery in plain words, the test 'would the brand's own design team have made this?', and text on an image only over a calm area or a scrim.",
   "why": "Decides how often site pages carry generated imagery, and how good it is when they do.",
