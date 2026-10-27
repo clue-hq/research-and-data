@@ -12,7 +12,7 @@ A rule homed in a later family's aspect skill is only *placed* here; its wording
 
 | Ruling | Home | Notes |
 |---|---|---|
-| R0.1 fixed set | SYS + CODE | `How to work` step 1 and `harness.SKILLS_STEP` list the new skills; folder layout in `lumen_agent/site/`. |
+| R0.1 fixed set; S2 on-demand reading | SYS + CODE | The system prompt lists the skills and the reading rule (S2.2); `system_prompt_with_skills` stops pasting skill content; skills middleware or an equivalent list; contract test for named paths. |
 | R1 every kind | SYS | Line 1 rewritten: a seller's landing pages for every kind, not "one named account". |
 | R1.1 kind by judgement, "Who this page is for" | BASE | First step of the sequence. |
 | R1.2 brief opens with who the page is for | HOA | `manual-siblings` new version + Head of ABM re-mint. |
