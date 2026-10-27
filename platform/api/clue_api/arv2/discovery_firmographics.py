@@ -49,6 +49,7 @@ FIRMOGRAPHIC_FIELDS: Final[frozenset[str]] = frozenset(
         "core.industry",
         "core.industries_all",
         "core.revenue_band",
+        "core.annual_revenue",
         "core.employee_count",
         "core.employee_range",
         "core.hq_location",

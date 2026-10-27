@@ -30,7 +30,7 @@ import hashlib
 import re
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any, Literal, Protocol, cast
 from uuid import UUID
 
@@ -618,14 +618,17 @@ def revenue_band_bucket(start: int | None, end: int | None) -> str | None:
     """The registered band a provider's revenue range means, or ``None`` when it means no one band.
 
     A provider band and a registered band are two different vocabularies, and only some provider
-    bands have an answer in ours: ``10M–25M`` is unambiguously ``10m_50m``, while ``25M–75M``
+    bands have an answer in ours: ``10M–25M`` (and ``25M–50M``, whose top is the bucket's own edge)
+    is unambiguously ``10m_50m``, while ``25M–75M``
     spans ``10m_50m`` and ``50m_100m`` and there is no honest way to pick one. ``None`` is that
     answer, and the caller writes no claim — an empty field is a correct output, a rounded one is
     a fabricated fact about how big a company is.
     """
     if start is None or end is None or start < 0 or end < start:
         return None
-    low, high = _bucket_of(start), _bucket_of(end)
+    # A provider range names its buckets' edges: AI Ark's ``5000000-10000000`` is the companies up
+    # to 10M, so its top is read as the last dollar below ``end``. A single figure is itself.
+    low, high = _bucket_of(start), _bucket_of(end - 1 if end > start else end)
     return low if low == high else None
 
 
@@ -646,6 +649,36 @@ def _revenue_bounds(
         numbers = [int(part) for part in parts]
         return numbers[0], numbers[-1]
     return None, None
+
+
+def _annual_revenue(raw: Mapping[str, Any], company: AiArkCompany) -> JsonValue | None:
+    """``financial.revenue.annual`` as the registered ``core.annual_revenue`` object, as a range.
+
+    AI Ark answers a range (``1000000-5000000``), so the value carries ``amount_min`` and
+    ``amount_max`` exactly as the record states them — one ``amount`` only when both ends are the
+    same figure. The record names no currency, so it is written in USD by the same ruling as the
+    funding amounts (the claim carries the assumption marker). ``as_of`` is the record's own
+    ``last_updated`` date when it has one, else the day it was read.
+    """
+    annual = _dig(raw, "financial", "revenue", "annual")
+    start, end = _revenue_bounds(annual if isinstance(annual, Mapping) else None, company.revenue)
+    if start is None or end is None or start < 0 or end < start:
+        return None
+    updated = raw.get("last_updated")
+    as_of = (
+        updated[:10]
+        if isinstance(updated, str) and len(updated) >= 10
+        else datetime.now(UTC).date().isoformat()
+    )
+    span: dict[str, JsonValue] = (
+        {"amount": start} if start == end else {"amount_min": start, "amount_max": end}
+    )
+    return {
+        **span,
+        "currency": ASSUMED_CURRENCY,
+        "as_of": as_of,
+        "estimate_kind": "provider_estimate",
+    }
 
 
 def _revenue_band_draft(company: AiArkCompany, scope: ClaimSubject) -> ClaimDraft | None:
@@ -722,10 +755,10 @@ def ai_ark_company_claims(
     * everything **translated** into the shape its field declares — the widened table
       (:data:`_AI_ARK_WIDE_FIELDS`), the HQ, the staff band, the technologies, and the two funding
       amounts (USD by ruling, recorded as an assumption on every one of those claims);
-    * nothing else. ``financial.revenue.annual`` in particular has **no** honest home in
-      ``core.annual_revenue``, which requires one amount, a currency, an as-of date and an
-      estimate kind, where the record answers a *range* and names no currency at all. Funding is
-      different in exactly the way that matters: it is one disclosed amount, not a band.
+      ``financial.revenue.annual`` is among them: ``core.annual_revenue`` holds the record's own
+      range (:func:`_annual_revenue`), so a company whose range straddles two registered bands
+      still shows the range AI Ark gave;
+    * nothing else.
 
     Every translated value is checked against the field's own registered ``value_schema`` before a
     draft exists. A value that does not fit is logged and not claimed, because a claim that lands
@@ -770,6 +803,9 @@ def ai_ark_company_claims(
             "financial.funding.total_amount",
             money,
         )
+    )
+    widened.append(
+        ("core.annual_revenue", _annual_revenue(raw, company), "financial.revenue.annual", money)
     )
     recent = _recent_round(funding if isinstance(funding, Mapping) else None)
     if recent is not None:

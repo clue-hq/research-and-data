@@ -35,6 +35,7 @@ def test_the_table_fields_are_the_ones_discovery_fills() -> None:
                 "core.industry",
                 "core.industries_all",
                 "core.revenue_band",
+                "core.annual_revenue",
                 "core.employee_count",
                 "core.employee_range",
                 "core.hq_location",

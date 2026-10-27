@@ -299,11 +299,16 @@ CORE_PACK: tuple[SeedField, ...] = (
         # (the pinned Sumble organization attributes carry no revenue figure).
         tier_plan=("apollo", "sumble_organizations", "exa", "exa_deep"),
         freshness_ttl=timedelta(days=365),
+        # One ``amount``, or a provider's ``amount_min``/``amount_max`` range (AI Ark answers a
+        # range). The validator has no ``anyOf``, so neither shape is required by the schema; the
+        # writers each write one (migration ``802fa1e6c449``).
         value_schema={
             "type": "object",
-            "required": ["amount", "currency", "as_of", "estimate_kind"],
+            "required": ["currency", "as_of", "estimate_kind"],
             "properties": {
                 "amount": {"type": "number"},
+                "amount_min": {"type": "number"},
+                "amount_max": {"type": "number"},
                 "currency": {"type": "string"},
                 "as_of": {"type": "string"},
                 "estimate_kind": {
@@ -313,7 +318,8 @@ CORE_PACK: tuple[SeedField, ...] = (
             },
         },
         description=(
-            "Annual revenue with currency, as-of date, and explicit reported/estimate semantics."
+            "Annual revenue — one amount or a provider's low-high range — with currency, as-of "
+            "date, and explicit reported/estimate semantics."
         ),
         research_view_route=_account_route(
             "core.annual_revenue", ResearchSectionKind.ABOUT, ordinal=18

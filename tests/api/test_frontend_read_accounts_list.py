@@ -1130,6 +1130,34 @@ def test_the_row_is_the_display_row_for_a_fully_populated_account() -> None:
     run_async(scenario())
 
 
+def test_the_revenue_column_serves_the_providers_own_range_over_the_band() -> None:
+    """Founder 2026-10-27: the table shows the range AI Ark gives. A ``core.annual_revenue`` range
+    wins over the band, as on the account page; a range that straddles two of our bands — which
+    has no band at all — still shows."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            _, zafran = await _build_v1(conn)
+            await _neutral_claim(
+                conn,
+                account_id=zafran,
+                field_key="core.annual_revenue",
+                value={
+                    "amount_min": 25_000_000,
+                    "amount_max": 75_000_000,
+                    "currency": "USD",
+                    "as_of": "2026-10-21",
+                    "estimate_kind": "provider_estimate",
+                },
+            )
+            body = (await _get(conn)).json()
+            AccountsResponseV1.model_validate(body)
+
+            assert _rows(body)["Zafran"]["revenueBand"] == "$25M–75M"
+
+    run_async(scenario())
+
+
 def test_an_unscored_membership_less_account_serves_nulls_and_unknown_bands() -> None:
     """Decision 16: a required band says "Unknown"; a nullable score says ``null``. Neither is
     guessed, and the row still renders."""

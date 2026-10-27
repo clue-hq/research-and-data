@@ -27,7 +27,13 @@ LinkedIn, Twitter) are filled by discovery from AI Ark, not by deep research.
   saved legal/founded/type/tech facts as `research:provider_record` but NONE of the 6 table
   fields discovery had (v4 saves AI Ark facts under `research:provider_record`, filtered before
   the write). PlanSource (2 records) never reaches the save, as before.
-- Revenue band stays empty when AI Ark's range spans two of our bands (existing deliberate rule).
+- Revenue (founder 2026-10-27, "take whatever band AI Ark has"): AI Ark's range is now saved as
+  `core.annual_revenue` `{amount_min, amount_max, currency: USD (assumed, marked), as_of:
+  last_updated, estimate_kind: provider_estimate}`; the field's schema gained `amount_min`/`amount_max`
+  and `amount` is no longer required (validator has no anyOf) — migration `802fa1e6c449`. The accounts
+  table reads annual revenue first (as the account page does), then the band. The band rule also read
+  a range's top as the next bucket (AI Ark `5M-10M` → refused); a range's top is now its bucket's edge.
+  `core.annual_revenue` is a discovery field, so deep research skips it too.
 
 ## Owed / notes
 - `tests/arv2/test_quality_relationships_db.py` fails on main too (not this change).
