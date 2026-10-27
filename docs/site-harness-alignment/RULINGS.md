@@ -132,3 +132,10 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 
 ## S3 · Ploy as a reference — RULED 2026-10-28
 - **S3.1** Ploy's skills (`copywrite`, `campaign-landing-page`, `plan-design`, `brand-adherence`, `build-site-page`, `redactor-and-code`, and the Stripe-for-Cursor conversation; founder's zip `~/Documents/ploy-inspiration 2.zip`) are a reference source **for discussion only**: brought beside the site and legacy rules when a group is discussed, never quoted or referenced in any skill. Not copied into the repo.
+
+## W3 · A number with a condition, and a line under proof — RULED 2026-10-28
+- **W3.1** A short scoping condition (a time window, a plan, a region, a company size) stays with its number, in the same sentence or the proof's source line — e.g. "Wynwood House cut guest resolution time from 15 minutes to 3 in its first year."
+- **W3.2** A figure that needs explaining to avoid misleading (combined with other costs, a reporter's estimate, one that needs a second clause) is left out. The site's existing rule stays for these.
+- **W3.3** Customer results always carry whose result it is, in the same line as the number.
+- **W3.4** On **one-to-one pages**, follow Ploy's practice: a short qualification line near customer proof that sits beside account-specific material, saying the results are each named customer's own and not a promise about this account's outcome (Ploy: "These are results reported for each named Stripe customer. They are evidence for the model—not promises about Cursor's outcome."). Other page kinds: no disclaimer line; attribution does the job.
+  - An exception to the site's "caveats never on the page" and to the legacy "no disclaimer sentence" rule; W4 records the general rule around it.

@@ -215,7 +215,7 @@ ISSUES = [
      ("L7a", "the transformation-word test")]},
    {"label": "Both: the same checks", "refs": [("D1", "Benefit inflation"), ("D1", "Metric mutation")]}]},
 
- {"id": "W3", "family": 2, "topic": "CLAIMS", "severity": "high", "status": "open",
+ {"id": "W3", "family": 2, "topic": "CLAIMS", "severity": "high", "status": "RULED 2026-10-28 (W3.1–W3.4)",
   "title": "A number that needs a condition: drop it, or keep the condition beside it?",
   "what": "The site drops any figure that needs a condition to be true ('leave it out rather than explain it'). The legacy skills keep the number with its subject, unit, time window and material conditions in the same visible sentence. Both agree that naming whose result it is is the qualification, with no disclaimer sentence.",
   "why": "The site rule removes strong but conditional proof; the legacy rule makes sentences longer, against R4.7's 20-word paragraphs.",
