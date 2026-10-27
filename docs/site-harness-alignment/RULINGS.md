@@ -265,3 +265,14 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - Per case: follows R6.
 
 **Family 3 step 2 complete (M1–M7 ruled, 2026-10-28).**
+
+---
+# Family 4 · Visual design and brand fidelity
+
+## V1 · Section rhythm — RULED 2026-10-28
+- **V1.1** Follow the seller's own rhythm, of surfaces and of density: before choosing surfaces the agent notes the seller's cadence in one line in its plan, from the clones of the source page in order (e.g. "light hero, dense details, product visual, proof, rare dark band, light close"), and remixes it rather than copying it section for section.
+- **V1.2** Dark or strong sections appear about as often as on the seller's site, and where the seller puts them — not capped at one, not banned from sitting next to each other.
+- **V1.3** A brand section or new section takes the surface and density that fit between its neighbours, as the seller would.
+- **V1.4** Avoid uniform sections: not every section as three equal cards; no layout with no precedent on the seller's site.
+- **V1.5** The three fixed rules go ("alternate light and dark", "at most one dark brand section", "no two dark in a row"). "Must not look foreign next to the clones" stays. Fallback when the cadence cannot be read: alternate light and dark, and use the strongest surface sparingly.
+- (From Ploy, at the founder's request, written in our own words.)

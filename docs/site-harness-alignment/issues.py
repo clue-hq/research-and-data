@@ -418,7 +418,7 @@ ISSUES = [
      ("H4", "shows a logo whole"), ("H4", "## The account's logo (header only)")]},
    {"label": "Legacy", "refs": [
      ("L8", "Distinguish a full wordmark/lockup"), ("L8", "returns proven family cells"), ("L8", "If identity is ambiguous")]}]},
- {"id": "V1", "family": 4, "topic": "RHYTHM", "severity": "high", "status": "open",
+ {"id": "V1", "family": 4, "topic": "RHYTHM", "severity": "high", "status": "RULED 2026-10-28 (V1.1–V1.5)",
   "title": "Section rhythm: alternate light and dark with one dark section, or follow the seller's own rhythm?",
   "what": "The site sets a fixed pattern for brand sections: choose surfaces so light and dark alternate, use at most one dark brand section, never two dark sections in a row (clones keep their own backgrounds). The legacy design skill says no universal pattern applies: record the seller's own sequence of surfaces, image fields and density — 'a brand may use several vivid fields or a single canvas' — and a new band inherits its neighbour's treatment and the page's rhythm; 'do not invent a rule such as one colored band per page'.",
   "why": "A seller whose site runs two dark bands back to back, or lives on one canvas, gets a page that no longer looks like theirs.",
