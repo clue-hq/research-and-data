@@ -42,6 +42,7 @@ Site (delivered every turn):
 - [x] D5 rebuilding-a-section (video line) · [x] D6 writing-a-section (own header: account line, one button) · [x] D7 making-a-section-interactive (no family-1 rules)
 - [x] B1 tool descriptions (fetch_logo placement; the rest have no family-1 rules)
 - [x] H1 brief.md (`site_workspace_view.brief_text`), research/README.md (`workspace.materialize_workspace`)
+- [x] G1 message wrapper (`render_leg_turn_prompt`): brief label, prompt order, multi-document assignment — added 2026-10-27
 - [ ] catalog/index.md header-template wording (site-kit `catalog.ts`) — family 4
 
 Legacy candidates (not delivered):
@@ -59,3 +60,4 @@ Out of scope: the Head of ABM's brief content (another agent), the exit judge.
   ledgered (A1, B1, D1–D6, H1 site; L1–L6 legacy) = 200 rows; 13 conflict groups P1–P13 in `issues.py`;
   page `rule-ledger.html`. P1 direction already ruled (R1). No prompt/skill/code edits.
 - 2026-10-27: P1 ruled (R1.1–R1.4): judgement + honest inputs, no field; Head of ABM brief opens with who the page is for; untagged pages named for their context; kinds = one account, segment, event, product/offer (not several named accounts).
+- 2026-10-27: P2–P7 ruled (see RULINGS.md). Correction: the site agent DOES receive the person's own message (last, after the brief); G1 added and P8 corrected.

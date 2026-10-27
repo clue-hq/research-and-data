@@ -7,14 +7,14 @@ issues = json.loads((HERE/"issues.json").read_text())
 LABEL = {
  "A1":"Site · system prompt",
  "D1":"Site skill · account-page-copy","D2":"Site skill · building-with-puck","D3":"Site skill · images-and-logos","D4":"Site skill · page-review",
- "D5":"Site skill · rebuilding-a-section","D6":"Site skill · writing-a-section","B1":"Site · tool descriptions","H1":"Site data · brief.md, research/",
+ "D5":"Site skill · rebuilding-a-section","D6":"Site skill · writing-a-section","B1":"Site · tool descriptions","G1":"Site · message wrapper (leg prompt)","H1":"Site data · brief.md, research/",
  "L1":"Legacy · campaign-landing-page","L1a":"Legacy · campaign-landing-page / action-selection","L1b":"Legacy · campaign-landing-page / argument-and-shell",
  "L1c":"Legacy · campaign-landing-page / page-directions","L2":"Legacy · campaign-page-workflow","L3":"Legacy · web-account-personalization",
  "L3a":"Legacy · web-account-personalization / account-argument","L3b":"Legacy · web-account-personalization / audience-modes",
  "L3c":"Legacy · web-account-personalization / identity-and-evidence","L4":"Legacy · web-contact-personalization",
  "L5":"Legacy · web-decision-material","L6":"Legacy · plan-design",
 }
-GROUPS = [("A","Site · system prompt"),("B","Site · tools"),("D","Site · skills"),("H","Site · data files"),("L","Legacy candidates (not delivered)")]
+GROUPS = [("A","Site · system prompt"),("B","Site · tools"),("D","Site · skills"),("G","Site · message wrapper"),("H","Site · data files"),("L","Legacy candidates (not delivered)")]
 TOPIC_DESC = {
  "KIND":"Which kind of page, for whom","ARGUMENT":"What the page argues; the message plan","STRUCTURE":"Sections, order, length",
  "SUBSTANCE":"Decision material and depth","ACTION":"Offer, buttons, destinations","PEOPLE":"People at the account; contact pages",

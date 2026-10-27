@@ -107,7 +107,7 @@ ISSUES = [
    {"label": "Legacy candidates: no markers on shared pages", "refs": [
      ("L3b", "no invented per-visitor facts or account markers"), ("L3b", "Neither an ABM identity treatment nor a booking dialog")]}]},
 
- {"id": "P7", "family": 1, "topic": "SHELL", "severity": "medium", "status": "open",
+ {"id": "P7", "family": 1, "topic": "SHELL", "severity": "medium", "status": "RULED 2026-10-27 (R7.1–R7.5)",
   "title": "A fixed header and footer, or a choice from the page's traffic and trust?",
   "what": "The site starts every page from the brand's account header template (or a plain header) and the plain footer, and uses the seller's own footer only when asked. The legacy skills make it a judgement each time: keep the seller's real navigation when the visitor will vet the seller or forward the page, strip it to a minimal campaign shell when the page serves one offer from one campaign.",
   "why": "Product and segment pages often need the seller's real navigation for trust; a 1:1 outbound page usually does not.",
@@ -121,12 +121,14 @@ ISSUES = [
 
  {"id": "P8", "family": 1, "topic": "PLAN", "severity": "medium", "status": "open",
   "title": "Is the brief binding, or an agent's summary to read critically?",
-  "what": "The site treats the brief's goal, reader and offer as fixed and its facts, proof and structure as suggestions. The legacy skills say a delegation brief is an agent-authored summary: quote the person's actual words, keep user requirements apart from working choices, and do not read a pilot, demo or section count into a short request. The site agent never sees the person's own message, only the Head of ABM's brief and the session history.",
+  "what": "The site treats the brief's goal, reader and offer as fixed and its facts, proof and structure as suggestions. The legacy skills say a delegation brief is an agent-authored summary: quote the person's actual words, keep user requirements apart from working choices, and do not read a pilot, demo or section count into a short request. The site agent does receive the person's own message (last, after the brief and the session history), and the brief's wrapper already calls it 'an agent-authored summary' — which contradicts the system prompt's 'keep to those'.",
   "why": "When the brief picks a weak offer or the wrong page kind, the site agent has no permission to question it.",
   "groups": [
    {"label": "Site: the brief sets goal, reader, offer", "refs": [
      ("A1", "The brief sets the goal, the reader and the offer"), ("D1", "The brief may suggest a proof or a structure"),
      ("H1", "the delegation brief, then this artifact's line")]},
+   {"label": "Site message wrapper: the brief is a summary; the person's message comes last", "refs": [
+     ("G1", "This is an agent-authored summary"), ("G1", "the person's own message last")]},
    {"label": "Legacy candidates: the person's words outrank the brief", "refs": [
      ("L2", "Quote the actual user message, not the delegation brief"), ("L6", "A delegation brief is an agent-authored summary"),
      ("L6", "A simple request for an account page does not specify a pilot"), ("L2", "A short account-page request does not mandate"),

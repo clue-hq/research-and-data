@@ -50,3 +50,11 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **R6.2** One-to-few: the header line names the group ("Prepared for regional health systems") or is hidden; no single account's logo; the hero names the group.
 - **R6.3** General campaign, event and product campaign: no account line and no account logo; the header is the seller's own; the hero names the audience or the offer.
 - **R6.4** Every case: placing the account beside the seller never implies a partnership, and a customer logo wall never includes the account or a company that looks like it (similar name, parent, subsidiary).
+
+## P7 · Header and footer — RULED 2026-10-27
+- **R7.1** One-to-one and one-to-few: the account header template ("one page") with one button, and the plain footer. No seller menu (follows R5.3).
+- **R7.2** General campaign: a judgement written in the plan with its reason — one offer from one campaign → a minimal header with the seller's logo and one button; visitors who will vet the seller or arrive from wider traffic → the seller-styled header with a few links to the seller's real pages, and the brand's footer template allowed.
+- **R7.3** Event: a minimal header with the seller's logo and the register button, and the plain footer. Product campaign: a minimal header matching the ad or email, and the plain footer; one or two links to the product page or pricing only when they help the decision.
+- **R7.4** Every case: the person's explicit request wins; the agent writes which header and footer it chose, and why, in plan.md; a shorter shell never removes information the decision needs.
+- **R7.5** In every case, the header's and footer's style is derived from the company's own landing page.
+  - Follow-up (mechanics, step 3/4): the plain footer (`SiteFooter`) and plain header are drawn in brand tokens, not from the seller's captured header/footer; the header templates are made from the seller's header, but there is no default footer made from the seller's footer. Check what R7.5 needs before rewriting.

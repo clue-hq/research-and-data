@@ -238,7 +238,7 @@
   "family": 1,
   "topic": "SHELL",
   "severity": "medium",
-  "status": "open",
+  "status": "RULED 2026-10-27 (R7.1–R7.5)",
   "title": "A fixed header and footer, or a choice from the page's traffic and trust?",
   "what": "The site starts every page from the brand's account header template (or a plain header) and the plain footer, and uses the seller's own footer only when asked. The legacy skills make it a judgement each time: keep the seller's real navigation when the visitor will vet the seller or forward the page, strip it to a minimal campaign shell when the page serves one offer from one campaign.",
   "why": "Product and segment pages often need the seller's real navigation for trust; a 1:1 outbound page usually does not.",
@@ -270,7 +270,7 @@
   "severity": "medium",
   "status": "open",
   "title": "Is the brief binding, or an agent's summary to read critically?",
-  "what": "The site treats the brief's goal, reader and offer as fixed and its facts, proof and structure as suggestions. The legacy skills say a delegation brief is an agent-authored summary: quote the person's actual words, keep user requirements apart from working choices, and do not read a pilot, demo or section count into a short request. The site agent never sees the person's own message, only the Head of ABM's brief and the session history.",
+  "what": "The site treats the brief's goal, reader and offer as fixed and its facts, proof and structure as suggestions. The legacy skills say a delegation brief is an agent-authored summary: quote the person's actual words, keep user requirements apart from working choices, and do not read a pilot, demo or section count into a short request. The site agent does receive the person's own message (last, after the brief and the session history), and the brief's wrapper already calls it 'an agent-authored summary' — which contradicts the system prompt's 'keep to those'.",
   "why": "When the brief picks a weak offer or the wrong page kind, the site agent has no permission to question it.",
   "groups": [
    {
@@ -279,6 +279,13 @@
      "A1-06",
      "D1-13",
      "H1-01"
+    ]
+   },
+   {
+    "label": "Site message wrapper: the brief is a summary; the person's message comes last",
+    "rows": [
+     "G1-01",
+     "G1-02"
     ]
    },
    {
