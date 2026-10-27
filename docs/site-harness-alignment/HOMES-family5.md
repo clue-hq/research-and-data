@@ -1,4 +1,4 @@
-# Family 5 · Step 3 — one home per rule (draft for founder review)
+# Family 5 · Step 3 — one home per rule (approved 2026-10-28)
 
 Homes as before (S1): **BASE** · **CASE** · **REVIEW** (the family-5 aspect skill: today's `page-review`, rebuilt) ·
 **COPY** (family 2; holds the final check on the words) · **SYS** · **TOOLS** · **CODE**.

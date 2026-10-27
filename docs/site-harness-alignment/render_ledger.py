@@ -7,7 +7,7 @@ issues = json.loads((HERE/"issues.json").read_text())
 LABEL = {
  "A1":"Site · system prompt",
  "D1":"Site skill · account-page-copy","D2":"Site skill · building-with-puck","D3":"Site skill · images-and-logos","D4":"Site skill · page-review",
- "D5":"Site skill · rebuilding-a-section","D6":"Site skill · writing-a-section","D7":"Site skill · making-a-section-interactive","B1":"Site · tool descriptions","G1":"Site · message wrapper (leg prompt)","H1":"Site data · brief.md, research/","H2":"Site data · research files and claims.md","H3":"Site data · clone cards","H4":"Site data · brand/brand.md","H5":"Site data · catalog/sections.md, index.md","H6":"Site · harness messages",
+ "D5":"Site skill · rebuilding-a-section","D6":"Site skill · writing-a-section","D7":"Site skill · making-a-section-interactive","B1":"Site · tool descriptions","G1":"Site · message wrapper (leg prompt)","H1":"Site data · brief.md, research/","H2":"Site data · research files and claims.md","H3":"Site data · clone cards","H4":"Site data · brand/brand.md","H5":"Site data · catalog/sections.md, index.md","H6":"Site · harness messages","H7":"Site · harness skill delivery",
  "L1":"Legacy · campaign-landing-page","L1a":"Legacy · campaign-landing-page / action-selection","L1b":"Legacy · campaign-landing-page / argument-and-shell",
  "L1c":"Legacy · campaign-landing-page / page-directions","L2":"Legacy · campaign-page-workflow","L3":"Legacy · web-account-personalization",
  "L3a":"Legacy · web-account-personalization / account-argument","L3b":"Legacy · web-account-personalization / audience-modes",
@@ -22,7 +22,7 @@ TOPIC_DESC = {
  "SCOPE":"How much an edit may change","ASK":"When to ask the person",
  "SOURCING":"Where facts may come from (family 2)","CLAIMS":"Claim strength and numbers (family 2)","PROOF":"Customer proof (family 2)","OFFPAGE":"What never reaches the page (family 2)","VOICE":"Voice and the reader's words (family 2)","HEADLINE":"Headlines (family 2)","EVIDENCE":"Reading evidence (family 2)","COPY":"Wording craft (family 2)","IMAGERY":"Image composition (family 3)","ASSETS":"Choosing and finding images (family 3)","GENERATE":"Image generation (family 3)","LOGOS":"Logos (family 3)","PRODUCTUI":"Product screenshots (family 3)","MOTION":"Video and motion (family 3)",
  "LAYOUT":"Composition (family 4)","BRAND":"Brand-only styling (family 4)","HERO":"The hero (family 4)","RHYTHM":"Section rhythm (family 4)","TYPE":"Type hierarchy (family 4)","FIDELITY":"Looking like the seller (family 4)","CONTRAST":"Readable text (family 4)","REVIEW":"Self-check (family 5)","LOOP":"Render-and-fix rounds (family 5)","CHECKLIST":"What the self-check covers (family 5)","VERDICT":"Final report and status (family 5)",
- "TOOLS":"Tool mechanics","READING":"What to read","OUTPUT":"Finishing and reporting","MECHANICS":"Legacy mechanics (not carried over)"}
+ "TOOLS":"Tool mechanics (family 6)","READING":"What to read and how skills arrive (family 6)","OUTPUT":"Finishing and reporting","MECHANICS":"Mechanics: site skills (family 6) and legacy tools (not carried over)"}
 for r in rows:
     r["sid"] = r["id"].rsplit("-",1)[0]
     r["label"] = LABEL[r["sid"]]
@@ -80,9 +80,11 @@ button.more{font:14px var(--sans);color:var(--acc);background:none;border:1px so
 </style>
 <main>
 <header><h1>Site agent rule ledger</h1>
-<p class="lede">Every rule the site agent receives, family by family, beside the legacy web skills we may bring over (dashed, not delivered). Family 5 (review) is open for rulings; families 1–4 are ruled. Nothing in the agent has been changed yet.</p>
+<p class="lede">Every rule the site agent receives, family by family, beside the legacy web skills we may bring over (dashed, not delivered). Family 6 (mechanics overlaps) is open for rulings; families 1–5 are ruled. Nothing in the agent has been changed yet.</p>
 <div class="stats"><span><b>''' + str(len(rows)) + r'''</b> rules</span><span><b>''' + str(n_site) + r'''</b> site rules</span><span><b>''' + str(n_sources) + r'''</b> sources</span><span><b>''' + str(len(issues)) + r'''</b> conflict groups</span><span>captured on <b>origin/main</b> @ 166bafd70</span></div></header>
-<h2 id="f5">Family 5 · review</h2>
+<h2 id="f6">Family 6 · mechanics overlaps</h2>
+<div id="issues6"></div>
+<h2 id="f5">Family 5 · review (ruled)</h2>
 <div id="issues5"></div>
 <h2 id="f4">Family 4 · visual design and brand fidelity (ruled)</h2>
 <div id="issues4"></div>
@@ -113,6 +115,7 @@ button.more{font:14px var(--sans);color:var(--acc);background:none;border:1px so
 <li>Family 3 adds the site agent's image and motion rules (images-and-logos, image lines in building-with-puck, writing-a-section and page-review, making-a-section-interactive, the image tools, brand/brand.md's logo, asset and motion sections, clone cards) and the legacy web-media-composition, web-product-story, web-motion-fidelity and generative-imagery skills.</li>
 <li>Family 4 adds the site agent's design rules (the system prompt's brand-only rule, building-with-puck's rhythm, clone choice and styling-by-hand lines, rebuilding-a-section and writing-a-section fidelity lines, page-review's rhythm check, view_clone and compare_section, brand/brand.md's surfaces, type, spacing, buttons, cards and links, catalog/sections.md) and the legacy design-guidance, color-and-contrast, web-source-readiness and create-website skills.</li>
 <li>Family 5 adds the site agent's render-and-fix rules (system prompt How to work 4–5, validate rules, the edit routine), page-review, account-page-copy's final-check opening, render_page and validate_page, the harness's finish guard and limits, and the legacy review-website skill with its two references.</li>
+<li>Family 6 compares the site's mechanics skills (building-with-puck, writing-a-section, rebuilding-a-section, making-a-section-interactive), the system prompt's skill lines and the harness's skill delivery against the rulings of families 1–5; there are no legacy candidates for it.</li>
 <li>The family-1 legacy candidates are the web harness's direction skills that Shashank Keshri created or rewrote: campaign-landing-page (with 3 references), campaign-page-workflow, web-account-personalization (with 3 references), web-contact-personalization, web-decision-material and plan-design. Legacy mechanics rows are tagged MECHANICS and will not carry over as written.</li>
 <li>Out of scope: the Head of ABM's brief itself (written by another agent each turn) and the exit judge.</li>
 <li>Working files: <code>docs/site-harness-alignment/</code> (PROGRESS.md, ledger/*.jsonl, issues.py, sources/).</li>
@@ -127,7 +130,8 @@ const byId=Object.fromEntries(D.rows.map(r=>[r.id,r]));
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function rowHtml(r,cls){return `<div class="${cls}${r.sid.startsWith('L')?' legacy':''}"><div class="rmeta"><b>${esc(r.id)}</b><span>${esc(r.label)}</span><span>${esc(r.loc)}</span><span class="tag">${esc(r.topic)}</span><span class="tag">${esc(r.strength)}</span><span class="tag">${esc(r.applies)}</span></div><div class="rtext">${esc(r.text)}</div>${r.note?`<div class="rnote">${esc(r.note)}</div>`:''}</div>`}
 const issueHtml=(list,openFirst)=>list.map((i,n)=>`<details class="issue"${openFirst&&n<2?' open':''}><summary><span class="sev ${i.severity}">${i.severity}</span><span class="itl">${esc(i.id)} · ${esc(i.title)}</span><span class="isub">${esc(i.topic)} · ${i.groups.reduce((a,g)=>a+g.rows.length,0)} rules · <span class="status">${esc(i.status||"open")}</span></span></summary><div class="ibody"><p>${esc(i.what)}</p><p class="why">${esc(i.why)}</p>${i.cases?`<p class="status">Case-specific: ${esc(i.cases)}</p>`:''}${i.groups.map(g=>`<div class="grp"><h4>${esc(g.label)}</h4>${g.rows.map(id=>rowHtml(byId[id],'row')).join('')}</div>`).join('')}</div></details>`).join('');
-document.getElementById('issues5').innerHTML=issueHtml(D.issues.filter(i=>i.family===5),true);
+document.getElementById('issues6').innerHTML=issueHtml(D.issues.filter(i=>i.family===6),true);
+document.getElementById('issues5').innerHTML=issueHtml(D.issues.filter(i=>i.family===5),false);
 document.getElementById('issues4').innerHTML=issueHtml(D.issues.filter(i=>i.family===4),false);
 document.getElementById('issues3').innerHTML=issueHtml(D.issues.filter(i=>i.family===3),false);
 document.getElementById('issues2').innerHTML=issueHtml(D.issues.filter(i=>i.family===2),false);

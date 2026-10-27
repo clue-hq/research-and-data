@@ -18,8 +18,8 @@ alignment (`docs/design-harness-alignment/`), done **one family at a time**:
 2. **Wording and evidence** — sourcing, claim strength, proof, what stays off the page, voice, headlines, copy craft. ← steps 1–3 done 2026-10-28 (W1–W12 ruled; HOMES-family2.md approved)
 3. **Imagery and media** — composition, choosing images, generation, logos, product screenshots, video and motion. ← steps 1–2 done 2026-10-28 (M1–M7 ruled); step 3 approved (HOMES-family3.md)
 4. **Visual design and brand fidelity** — rhythm, hero, looking like the seller, type, brand-only styling, contrast. ← steps 1–2 done 2026-10-28 (V1–V6 ruled); step 3 approved (HOMES-family4.md, S4: separate page-design skill)
-5. **Review** — render-and-fix rounds, what the self-check covers, the final report. ← steps 1–2 done 2026-10-28 (Q1–Q3 ruled); step 3 drafted (HOMES-family5.md)
-6. Mechanics — only where a mechanics skill repeats or contradicts a judgement rule.
+5. **Review** — render-and-fix rounds, what the self-check covers, the final report. ← steps 1–2 done 2026-10-28 (Q1–Q3 ruled); step 3 approved (HOMES-family5.md)
+6. **Mechanics overlaps** — where the mechanics skills, the skill lines and skill delivery cut across rulings 1–5. ← step 1 done 2026-10-28 (X1–X3)
 
 Organisation (S1, 2026-10-27): base planning skill → case direction per page kind → aspect skills (the how). Every family's rulings also record per-case direction.
 
@@ -97,3 +97,4 @@ Legacy: L7 conversion-copywriting · L7a copy-craft · L7b website-copy-brief ·
 - 2026-10-28: S4 ruled (page-design as its own small skill, well referenced); family 4 homes approved.
 - 2026-10-28: family 5 ledgered (37 rows: 13 site, 24 legacy; 469 in all); 3 conflict groups Q1–Q3. Screenshots are already tiled (tools.py TILE_PX), so no screenshot-reading group.
 - 2026-10-28: Q1–Q3 ruled; family 5 step 2 complete; HOMES-family5.md drafted.
+- 2026-10-28: family 5 homes approved (founder: "lets move to the next step"). Family 6 ledgered (10 site rows; 479 in all); 3 groups X1–X3; no legacy candidates for this family.

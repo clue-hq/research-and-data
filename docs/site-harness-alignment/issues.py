@@ -528,6 +528,35 @@ ISSUES = [
    {"label": "Legacy", "refs": [
      ("L16", "Distinguish tool completion from request satisfaction"), ("L16", "Completed with warnings"),
      ("L16", "Evidence gaps are not observed pixel defects"), ("L16", "Use a short final report")]}]},
+ {"id": "X1", "family": 6, "topic": "MECHANICS", "severity": "high", "status": "open",
+  "title": "When the agent rebuilds a seller section or writes its own",
+  "what": "R4.3 set the order: the clone's slots, then the clone rebuilt as a component, then a brand section, then a section of the agent's own — and the agent decides when the material needs more room. The mechanics text still says otherwise: rebuilding-a-section is 'Use when you are asked to rebuild…'; writing-a-section is 'Use when you have been asked to add something that no clone and no brand section can carry'; building-with-puck's 'Reuse first' and account-page-copy go clone → brand section → leave the point out, with no rebuilt clone and no own section.",
+  "why": "With these descriptions the agent may never rebuild a clone on its own, which is what R4.3 and M1.2 rely on.",
+  "cases": "",
+  "groups": [
+   {"label": "Site mechanics text", "refs": [
+     ("D5", "Use when you are asked to rebuild"), ("D6", "Use when you have been asked to add something"),
+     ("D2", "**A clone first.**"), ("D1", "When no clone can carry the point, use a brand section")]}]},
+
+ {"id": "X2", "family": 6, "topic": "READING", "severity": "medium", "status": "open",
+  "title": "How the system prompt delivers and lists skills after S2",
+  "what": "The system prompt says 'Your skills are below this prompt… Follow them', and the harness pastes them in. Under S2 the prompt lists skills and a reading rule instead. The harness also delivers two folders conditionally: skills-e5 (writing and rebuilding sections) only when new sections are allowed for the workspace, skills-live only on live sites. R0.1 fixed the set by page kind; these vary by workspace capability.",
+  "why": "The reading rule and the skill list have to match what is actually delivered.",
+  "cases": "",
+  "groups": [
+   {"label": "Site", "refs": [
+     ("A1", "Your skills are below this prompt"), ("A1", "Open clone files and seller files when you need them"),
+     ("H7", "folders = ")]}]},
+
+ {"id": "X3", "family": 6, "topic": "MECHANICS", "severity": "medium", "status": "open",
+  "title": "Section writing strong enough to rebuild the seller's sections and motion (M1.8)",
+  "what": "M1.8 asks the agent's own section writing to be strong enough to rebuild the seller's motion. Today: the kit has no video piece, so a rebuilt section cannot carry the seller's video; writing-a-section still says 'write no transition or animation of your own'; making-a-section-interactive has an accordion example but nothing on rebuilding the seller's own motion or on a still state for visitors who ask for less motion; rebuilding-a-section still swaps video for an image (already ruled out by R11.1).",
+  "why": "R11.1, M1.2 and M1.4 depend on these mechanics.",
+  "cases": "",
+  "groups": [
+   {"label": "Site", "refs": [
+     ("D6", "The kit gives you these pieces"), ("D6", "Write no transition or animation of your own"),
+     ("D7", "(a worked accordion section)"), ("D5", "If the original shows a video")]}]},
 ]
 
 out = []
