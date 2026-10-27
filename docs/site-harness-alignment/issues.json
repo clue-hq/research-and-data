@@ -428,5 +428,390 @@
     ]
    }
   ]
+ },
+ {
+  "id": "W1",
+  "family": 2,
+  "topic": "SOURCING",
+  "severity": "high",
+  "status": "open",
+  "title": "Which words and facts may the page use?",
+  "what": "The site allows only three sources for a number or a quote: the research, the seller's files, a page the agent fetched. It does not name the seller's own captured sections, although every clone keeps the seller's published words, stats, customer names and quotes unless changed; nor the brief's facts, which the Head of ABM sends with their sources; nor the audience context R1.3a now allows from web searches. The legacy skills treat the clone's own copy and proof strips as captured evidence, and supplied facts as usable at their stated scope without upgrading them to verified.",
+  "why": "Under the site rule, keeping a clone's stat strip or testimonial is technically unsupported, and so is a fact the brief carries.",
+  "cases": "One-to-one leans on account research; general, event and product pages lean on the seller's files and clones; R1.3a adds audience context for untagged pages.",
+  "groups": [
+   {
+    "label": "Site: three sources",
+    "rows": [
+     "A1-13",
+     "B1-02",
+     "D1-39",
+     "D1-41",
+     "A1-12"
+    ]
+   },
+   {
+    "label": "Site data: what the clones already carry",
+    "rows": [
+     "H3-01"
+    ]
+   },
+   {
+    "label": "Legacy: captured copy and supplied facts are evidence at their scope",
+    "rows": [
+     "L7a-20",
+     "L1b-26",
+     "L6-19",
+     "L1b-28",
+     "L3c-06"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W2",
+  "family": 2,
+  "topic": "CLAIMS",
+  "severity": "high",
+  "status": "open",
+  "title": "May the page say what the product 'could' do for this reader?",
+  "what": "Both sides use a claim ladder from product fact to forecast, and both forbid a forecast. They differ on the step below it. The site allows 'what it could mean for this account (\"could\")'. The legacy one-account shape uses 'would'. The legacy copy skill says could, may and helps still assert an outcome and supply no evidence; its fourth step is an invitation such as 'Explore how usage-based billing fits your expansion plans', a capability joined to the reader's task with no invented outcome.",
+  "why": "This decides how every benefit sentence on a personalised page is phrased.",
+  "cases": "Mainly one-to-one, one-to-few and contact pages; general and product pages speak about the audience, not one account.",
+  "groups": [
+   {
+    "label": "Site: 'could' for what it might mean",
+    "rows": [
+     "D1-44",
+     "D1-45"
+    ]
+   },
+   {
+    "label": "Legacy: 'would' in the one-account shape",
+    "rows": [
+     "L3a-10"
+    ]
+   },
+   {
+    "label": "Legacy: no outcome without evidence, whatever the verb",
+    "rows": [
+     "L7a-10",
+     "L7a-11",
+     "L3c-07",
+     "L7a-12"
+    ]
+   },
+   {
+    "label": "Both: the same checks",
+    "rows": [
+     "D1-50",
+     "D1-51"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W3",
+  "family": 2,
+  "topic": "CLAIMS",
+  "severity": "high",
+  "status": "open",
+  "title": "A number that needs a condition: drop it, or keep the condition beside it?",
+  "what": "The site drops any figure that needs a condition to be true ('leave it out rather than explain it'). The legacy skills keep the number with its subject, unit, time window and material conditions in the same visible sentence. Both agree that naming whose result it is is the qualification, with no disclaimer sentence.",
+  "why": "The site rule removes strong but conditional proof; the legacy rule makes sentences longer, against R4.7's 20-word paragraphs.",
+  "cases": "Proof-heavy cases (product campaign, general campaign) feel this most.",
+  "groups": [
+   {
+    "label": "Site: drop it",
+    "rows": [
+     "D1-36",
+     "D1-33"
+    ]
+   },
+   {
+    "label": "Legacy: keep the condition in the sentence",
+    "rows": [
+     "L7a-14",
+     "L7a-25",
+     "L3c-07"
+    ]
+   },
+   {
+    "label": "Both: attribution is the qualification",
+    "rows": [
+     "D1-42",
+     "L1b-27",
+     "D1-52"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W4",
+  "family": 2,
+  "topic": "OFFPAGE",
+  "severity": "medium",
+  "status": "open",
+  "title": "What never reaches the page, and do product limits count as caveats?",
+  "what": "Both sides keep notes off the page: the brief's Notes for Design, the research's Watch-outs and Context only, approach notes, claim ids, caveats and strategy. The legacy skills add three things: never lift the brief's or research's sentences onto the page (write your own); a test for a leaked note ('a sentence that says what the page is not… is almost always a note that leaked'); and an exception — genuine product limits and proof conditions that affect the reader's choice stay visible. The site says caveats go to plan.md, never the page.",
+  "why": "The rule is repeated in eight places today; the product-limits exception is the one real disagreement.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site: off the page",
+    "rows": [
+     "A1-15",
+     "A1-10",
+     "D1-34",
+     "D1-35",
+     "D1-47",
+     "H2-02"
+    ]
+   },
+   {
+    "label": "Legacy: write your own words; spot leaked notes",
+    "rows": [
+     "L7a-03",
+     "L7a-05",
+     "L7b-01",
+     "L3a-15"
+    ]
+   },
+   {
+    "label": "Legacy: genuine limits stay visible",
+    "rows": [
+     "L7b-07",
+     "L3a-16",
+     "L5-12"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W5",
+  "family": 2,
+  "topic": "EVIDENCE",
+  "severity": "medium",
+  "status": "open",
+  "title": "Reading research: facts, inferences and the research lane's own arguments",
+  "what": "The research files tag statements as (inference), (quote), (qualified) or (gap), with notes, and claims.md includes value-narrative claims that are the research lane's own argument for a persona. The site prompt never says what these mean. The legacy skills say: separate sourced facts from analyst interpretations — job openings do not prove a staffing problem, an initiative does not prove budget, a technology fingerprint does not prove an integration; a report saying 'verified' does not make it so.",
+  "why": "An inference written up as a fact is the fastest way to a false claim about the account.",
+  "cases": "One-to-one, one-to-few and contact pages (the cases with research).",
+  "groups": [
+   {
+    "label": "Site data: what the research files contain",
+    "rows": [
+     "H2-01",
+     "H2-05",
+     "H2-03",
+     "A1-14"
+    ]
+   },
+   {
+    "label": "Legacy: facts versus interpretations",
+    "rows": [
+     "L7b-02",
+     "L3a-03",
+     "L3a-16",
+     "L3a-17"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W6",
+  "family": 2,
+  "topic": "SOURCING",
+  "severity": "medium",
+  "status": "open",
+  "title": "How much evidence bookkeeping goes into plan.md?",
+  "what": "The site's plan lists proof as case studies with links. The legacy skills ask for an evidence map: every prominent factual sentence paired in the plan with its supporting excerpt, subject, units, time window and status, and 'never fill it from memory'.",
+  "why": "More bookkeeping catches mutated numbers; it also costs time on every page.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D1-08"
+    ]
+   },
+   {
+    "label": "Legacy: an evidence map",
+    "rows": [
+     "L7-02",
+     "L7b-03",
+     "L3c-05",
+     "L6-18"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W7",
+  "family": 2,
+  "topic": "VOICE",
+  "severity": "medium",
+  "status": "open",
+  "title": "Whose voice, and whose words?",
+  "what": "The site asks the agent to write like the clone's author and in the reader's words, with at most one or two of the account's own figures. The legacy skills rank voice sources — a brand voice or style guide when one exists, then the brand card, then the clone's own copy — and allow the reader's own phrases verbatim ('recognition is persuasion'). The site has no rule for a voice document in seller/.",
+  "why": "The seller's pinned documents may hold a voice guide the agent never consults.",
+  "cases": "Event and product pages may follow the ad's or invite's own wording (conversion scent).",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D1-30",
+     "D1-43",
+     "D1-33",
+     "D1-49",
+     "D1-55"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L7a-21",
+     "L7a-08",
+     "L7a-09",
+     "L7-01"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W8",
+  "family": 2,
+  "topic": "COPY",
+  "severity": "medium",
+  "status": "open",
+  "title": "Concise statements, not slogans",
+  "what": "R4.6 (no over-explaining) and R4.7 (no paragraph over 20 words) now set the length. The legacy skills warn the other way: do not shrink copy into slogans, write the explanation and not just headings and buttons, and cash out words like 'unlock' into something checkable. The two fit together if 'concise' means short specific statements, not short vague ones.",
+  "why": "Family 1 left this to be reconciled here.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D1-31"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L3a-09",
+     "L7b-05",
+     "L7a-01",
+     "L7a-18",
+     "L7a-12"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W9",
+  "family": 2,
+  "topic": "HEADLINE",
+  "severity": "low",
+  "status": "open",
+  "title": "Headlines",
+  "what": "The site's hero rule and two checks (mystery box, redundant subheadline) agree with the legacy skills, which add five tests (one-read meaning, reader ownership, specificity, evidence, fit), a formula (outcome or system + reader context + qualifier), and 'product nouns and verbs, not category slogans, forced puns or repeated account names'.",
+  "why": "Agreement; the question is how much of the legacy craft to bring over.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D1-17",
+     "D1-48",
+     "D1-56"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L7a-06",
+     "L7a-07",
+     "L7b-04"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W10",
+  "family": 2,
+  "topic": "COPY",
+  "severity": "low",
+  "status": "open",
+  "title": "Buttons, forms and promises",
+  "what": "Both say a button names what happens. The legacy skills add: two to five words, field labels as plain nouns, success and error copy, and never promise a response time, consent handling or delivery the page does not actually provide.",
+  "why": "Small additions.",
+  "cases": "Event pages: registration wording; product pages: the ad's offer.",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D1-57",
+     "D1-58",
+     "D1-22"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L7a-16",
+     "L7a-17",
+     "L7-05"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W11",
+  "family": 2,
+  "topic": "VOICE",
+  "severity": "low",
+  "status": "open",
+  "title": "Talking about the prospect",
+  "what": "Both say: frame toward what improves, never tell them their setup is broken. The legacy skills add: never show buying-committee labels, and never describe the prospect's own product negatively (the Head of ABM's brief template already says this).",
+  "why": "Small additions.",
+  "cases": "One-to-one, one-to-few and contact pages.",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D1-46",
+     "D1-54",
+     "D1-53"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L7a-22",
+     "L7a-23",
+     "L7a-13"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W12",
+  "family": 2,
+  "topic": "COPY",
+  "severity": "low",
+  "status": "open",
+  "title": "Wording the person asked for exactly",
+  "what": "The site has no rule. The legacy skills keep wording the person asked for exactly (a headline, a tagline, a button), and when that wording claims something unsupported, they say so instead of silently rewriting it.",
+  "why": "A gap.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Legacy",
+    "rows": [
+     "L7a-03",
+     "L7a-26"
+    ]
+   }
+  ]
  }
 ]

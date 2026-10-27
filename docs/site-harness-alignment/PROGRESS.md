@@ -15,7 +15,7 @@ alignment (`docs/design-harness-alignment/`), done **one family at a time**:
 ## Families
 1. **The page's argument** — page kind, reader, message plan, structure and length, decision material,
    action, the account's identity, header/footer choice, the brief, asking. ← steps 1–3 done 2026-10-27 (P1–P13 ruled; homes approved in HOMES-family1.md)
-2. Wording and evidence — copy, claims, proof, numbers.
+2. **Wording and evidence** — sourcing, claim strength, proof, what stays off the page, voice, headlines, copy craft. ← step 1 done 2026-10-28 (W1–W12)
 3. Imagery and media — brand images, product screenshots, generation, logos, video and motion.
 4. Visual design and brand fidelity — hero, rhythm, type, source fidelity, contrast.
 5. Review — the self-check after render.
@@ -57,6 +57,12 @@ Legacy candidates (not delivered):
 
 Out of scope: the Head of ABM's brief content (another agent), the exit judge.
 
+## Sources — family 2
+Site (appended to the family-1 source files): A1 (research line, seller line, tools line, "Use only the facts…", claims rule, Notes for Design) ·
+B1 (fetch_page, web_search) · D1 (account-page-copy parts 2–6 wording and proof) · D2 (alt text, slot length) · D4 (words fit their space) ·
+H2 research files and claims.md wording (`workspace.py`) · H3 clone cards (`site-kit/src/catalog.ts`).
+Legacy: L7 conversion-copywriting · L7a copy-craft · L7b website-copy-brief · evidence rows appended to L1b, L3a, L3c, L5, L6.
+
 ## Log
 - 2026-10-27: branch `design/site-harness-alignment` from origin/main 166bafd70; capture taken; family 1
   ledgered (A1, B1, D1–D6, H1 site; L1–L6 legacy) = 200 rows; 13 conflict groups P1–P13 in `issues.py`;
@@ -65,3 +71,4 @@ Out of scope: the Head of ABM's brief content (another agent), the exit judge.
 - 2026-10-27: P2–P7 ruled (see RULINGS.md). Correction: the site agent DOES receive the person's own message (last, after the brief); G1 added and P8 corrected.
 - 2026-10-27: P8–P13 ruled; family 1 step 2 complete. Next: step 3 (one home per rule) for family 1.
 - 2026-10-27: S1 (three layers), S2 (skills read on demand, reverses the 2026-10-08 inline ruling), S1.2 = six case skills, decision-material its own aspect skill. Founder edits folded in: R1.3a/R2.5 (ICP/personas + a few web searches without a tagged account), R4.3 softened. Family 1 step 3 approved. Next: family 2 (wording and evidence) ledger.
+- 2026-10-28: family 2 ledgered (106 rows: 47 site, 59 legacy; ledger 302 rows in all); 12 conflict groups W1–W12, each with its case-specific note (S1.3). add_rows.py gained --append. Page shows family 2 open, family 1 ruled.
