@@ -708,9 +708,10 @@ class MemoryConn:
     def __init__(self) -> None:
         self.statements: list[tuple[str, Any]] = []
 
-    async def execute(self, statement: Any, parameters: Any = None) -> None:
+    async def execute(self, statement: Any, parameters: Any = None) -> list[Any]:
+        """Records the statement and answers "no rows" (a fresh account has none on file)."""
         self.statements.append((str(statement), parameters))
-        return None
+        return []
 
 
 class MemoryConnFactory:

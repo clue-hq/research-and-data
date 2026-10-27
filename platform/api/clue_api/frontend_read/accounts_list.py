@@ -76,7 +76,7 @@ from clue_api.frontend_read.v1_shared import (
     last_modified_for,
     location_label,
     owners_for,
-    revenue_band_label,
+    revenue_label,
     socials,
     website_url,
 )
@@ -98,6 +98,7 @@ V1_NEUTRAL_FIELD_KEYS: tuple[str, ...] = (
     "core.employee_count",
     "core.employee_range",
     "core.revenue_band",
+    "core.annual_revenue",
     "core.hq_location",
     "core.industry",
     "core.industries_all",
@@ -665,9 +666,11 @@ async def list_accounts(
                 research_is_refreshing=refreshing,
                 overall_fit=fit_band(fit, settings=settings),
                 fit_score=fit_score_100(fit),
-                # The label, not the token: ``core.revenue_band`` stores ``"10m_50m"`` and the
-                # revenue column was printing it verbatim at a marketer (D4-b controller ruling 2).
-                revenue_band=revenue_band_label(revenue_band),
+                # The provider's own figure or range first (``"$25M–$75M"``), as the account page
+                # reads it; else the band's label, never the ``"10m_50m"`` token (D4-b ruling 2).
+                revenue_band=revenue_label(
+                    neutral_value(entity_id, "core.annual_revenue"), revenue_band
+                ),
                 employee_band=employee_band(
                     as_int(neutral_value(entity_id, "core.employee_count")),
                     neutral_value(entity_id, "core.employee_range"),

@@ -73,6 +73,9 @@ EXPORT_PROFILE_CREDITS: Final = Decimal("0.5")
 EXPORT_EMAIL_CREDITS: Final = Decimal("0.5")
 PHONE_CREDITS: Final = Decimal("5")
 MAX_ROLE_PAGE_SIZE: Final = 100
+
+#: ``/v1/companies``' page-size ceiling, used when one search names many domains.
+COMPANY_PAGE_SIZE: Final = 100
 SENIORITY_VALUES: Final = frozenset(
     {
         "owner",
@@ -768,6 +771,46 @@ class AiArkClient:
         if not isinstance(record.get("content"), list):
             raise AiArkResponseError(result.response.status, "ai_ark_missing_content")
         return tuple(company_from_record(p) for p in record["content"] if isinstance(p, Mapping))
+
+    def companies_for_domains(
+        self, domains: Sequence[str], *, max_pages: int
+    ) -> tuple[AiArkCompany, ...]:
+        """Every company record AI Ark holds for any of ``domains``, read page by page.
+
+        One search names every domain (discovery enriches a whole round at once, spec 2026-10-27):
+        a domain is shared by every company page that lists a website on it — a group and each of
+        its hotels or schools — so a search returns several records for many domains and the
+        caller picks one (``discovery_firmographics.resolve_company``). Pages of
+        :data:`COMPANY_PAGE_SIZE` are read until AI Ark marks the last one, or ``max_pages``:
+        each record costs 0.1 credit, and a brand with hundreds of pages must not run up the bill.
+        """
+        wanted = [_require_text(domain, "domain") for domain in domains]
+        if not wanted:
+            return ()
+        companies: list[AiArkCompany] = []
+        for page in range(max(0, max_pages)):
+            result = self._send(
+                operation="v1/companies",
+                label=f"companies-for-domains-page-{page}",
+                path="/v1/companies",
+                json_body={
+                    "account": {"domain": {"any": {"include": wanted}}},
+                    "page": page,
+                    "size": COMPANY_PAGE_SIZE,
+                },
+                estimate=SpendEstimate(credits=COMPANY_CREDITS_PER_RESULT * COMPANY_PAGE_SIZE),
+                cost_reader=company_cost_reader,
+            )
+            record = response_record(result)
+            content = record.get("content")
+            if not isinstance(content, list):
+                raise AiArkResponseError(result.response.status, "ai_ark_missing_content")
+            companies.extend(
+                company_from_record(row) for row in content if isinstance(row, Mapping)
+            )
+            if record.get("last") is True or len(content) < COMPANY_PAGE_SIZE:
+                break
+        return tuple(companies)
 
     def people_by_name(
         self,

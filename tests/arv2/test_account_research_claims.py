@@ -157,11 +157,18 @@ CATALOG = FieldCatalog(
         ),
         FieldSpec(
             "core.annual_revenue",
-            "Annual revenue with currency and semantics.",
+            "Annual revenue — one amount or a provider's range — with currency and semantics.",
             {
                 "type": "object",
-                "required": ["amount", "currency", "as_of", "estimate_kind"],
-                "properties": {"amount": {"type": "number"}, "currency": _STR},
+                "required": ["currency", "as_of", "estimate_kind"],
+                "properties": {
+                    "amount": {"type": "number"},
+                    "amount_min": {"type": "number"},
+                    "amount_max": {"type": "number"},
+                    "currency": _STR,
+                    "as_of": _STR,
+                    "estimate_kind": _STR,
+                },
             },
         ),
         FieldSpec(
@@ -278,6 +285,7 @@ def test_ai_ark_company_maps_only_registered_keys_at_their_real_raw_paths() -> N
         "core.industry",
         "core.employee_count",
         "core.revenue_band",
+        "core.annual_revenue",
         "core.hq_location",
         "core.primary_tech_stack",
     }
@@ -341,8 +349,8 @@ def test_ai_ark_company_omits_the_fields_the_record_did_not_carry() -> None:
     assert ai_ark_company_claims(company, SCOPE, catalog=CATALOG) == []
 
 
-def test_a_revenue_range_that_straddles_two_buckets_is_not_claimed_at_all() -> None:
-    """The other fields still land: one untranslatable field is not a failed record."""
+def test_a_revenue_range_that_straddles_two_buckets_has_no_band_but_keeps_its_range() -> None:
+    """No band is guessed; the range AI Ark gave is still claimed, and the other fields land."""
     company = AiArkCompany(
         name="Zafran Security",
         domain="zafran.io",
@@ -358,8 +366,9 @@ def test_a_revenue_range_that_straddles_two_buckets_is_not_claimed_at_all() -> N
     keys = {d.field_key for d in ai_ark_company_claims(company, SCOPE, catalog=CATALOG)}
 
     assert "core.revenue_band" not in keys, "10m_50m and 50m_100m: there is no honest single answer"
-    # linkedin, industry and headcount; the HQ names no ``raw_address``, so it is not claimed.
-    assert len(keys) == 3
+    assert "core.annual_revenue" in keys
+    # linkedin, industry, headcount and the revenue range; the HQ names no ``raw_address``.
+    assert len(keys) == 4
 
 
 def test_the_revenue_band_is_parsed_from_the_amount_string_when_the_record_omits_the_pair() -> None:
@@ -386,7 +395,12 @@ def test_revenue_band_buckets_are_half_open_and_refuse_to_guess() -> None:
     assert revenue_band_bucket(10_000_000, 10_000_000) == "10m_50m"
     assert revenue_band_bucket(0, 999_999) == "under_1m"
     assert revenue_band_bucket(2_000_000_000, 5_000_000_000) == "1b_plus"
-    assert revenue_band_bucket(999_999_999, 1_000_000_000) is None  # straddles 500m_1b / 1b_plus
+    # A provider range's top is its bucket's edge: AI Ark's ``500000000-1000000000`` is 500m_1b.
+    assert revenue_band_bucket(500_000_000, 1_000_000_000) == "500m_1b"
+    assert revenue_band_bucket(5_000_000, 10_000_000) == "1m_10m"
+    assert revenue_band_bucket(25_000_000, 50_000_000) == "10m_50m"
+    assert revenue_band_bucket(0, 100_000) == "under_1m"
+    assert revenue_band_bucket(999_999_999, 1_000_000_001) is None  # straddles 500m_1b / 1b_plus
     assert revenue_band_bucket(25_000_000, 75_000_000) is None  # straddles two buckets
     assert revenue_band_bucket(None, 25_000_000) is None
     assert revenue_band_bucket(10_000_000, None) is None
@@ -913,13 +927,26 @@ def test_the_technologies_the_record_returned_become_claims_rather_than_context(
     assert drafts["core.tech_stack_categorised"].markers["json_path"] == "technologies"
 
 
-def test_the_provider_revenue_range_is_never_forced_into_the_registered_revenue_shape() -> None:
-    """``core.annual_revenue`` requires one amount, a currency, an as-of date and an estimate kind;
-    the record answers a range and names no currency. The band claim is the honest translation."""
-    keys = {d.field_key for d in ai_ark_company_claims(_zafran_record(), SCOPE, catalog=CATALOG)}
+def test_the_provider_revenue_range_is_claimed_as_the_range_it_is() -> None:
+    """Founder 2026-10-27: show the band AI Ark gives. The range is written as its two ends, in
+    USD by the funding ruling (marked as an assumption), as of the record's own ``last_updated``."""
+    drafts = {
+        d.field_key: d for d in ai_ark_company_claims(_zafran_record(), SCOPE, catalog=CATALOG)
+    }
 
-    assert "core.annual_revenue" not in keys
-    assert "core.revenue_band" in keys
+    revenue = drafts["core.annual_revenue"]
+    assert revenue.value_json == {
+        "amount_min": 10_000_000,
+        "amount_max": 25_000_000,
+        "currency": "USD",
+        "as_of": "2026-08-22",
+        "estimate_kind": "provider_estimate",
+    }
+    assert revenue.markers["json_path"] == "financial.revenue.annual"
+    assert revenue.markers["currency_assumed"] == "USD"
+    assert revenue.markers["provider_record"] == "ai_ark"
+    assert revenue.source_url is None
+    assert "core.revenue_band" in drafts
 
 
 def test_the_hq_is_translated_into_the_registered_shape_rather_than_written_through() -> None:

@@ -40,6 +40,7 @@ from clue_api.arv2.ai_ark_client import (
 )
 from clue_api.arv2.ai_ark_research import enrichment_only
 from clue_api.arv2.claim_writer import WriteReceipt
+from clue_api.arv2.discovery_firmographics import ai_ark_firmographics_on_file, without_fields
 from clue_api.arv2.exa_client import exa_result_rows, read_deep_report
 from clue_api.arv2.quality_recipe import RECIPE_27, at_least
 from clue_core import ExtractionMethod
@@ -232,16 +233,26 @@ async def company_lock(runtime: ToolRuntime) -> dict[str, Any]:
     ids = {row.ark_id for row in exact if row.ark_id}
     selected = exact[0] if len(ids) == 1 and len(exact) == 1 else None
     if selected:
-        await runtime.write(
-            [
-                replace(
-                    d,
-                    artifact_key=op.artifact_key,
-                    markers={**d.markers, "operation_id": str(op.operation_id)},
-                )
-                for d in ai_ark_company_claims(selected, runtime.scope, catalog=runtime.catalog)
-            ]
+        # The company facts discovery already saved from AI Ark are not saved again (founder
+        # ruling 2026-10-27): the lookup stays, because the committee search needs the company.
+        async with runtime._conn_factory() as conn:
+            on_file = await ai_ark_firmographics_on_file(
+                conn, workspace_id=runtime.scope.workspace_id, account_id=runtime.scope.account_id
+            )
+        drafts = without_fields(
+            ai_ark_company_claims(selected, runtime.scope, catalog=runtime.catalog), on_file
         )
+        if drafts:
+            await runtime.write(
+                [
+                    replace(
+                        d,
+                        artifact_key=op.artifact_key,
+                        markers={**d.markers, "operation_id": str(op.operation_id)},
+                    )
+                    for d in drafts
+                ]
+            )
     return {
         "domain": domain,
         "company_id": selected.ark_id if selected else None,

@@ -70,9 +70,17 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2 import discovery_store as default_store
+from clue_api.arv2.account_research_store import read_account_catalog
+from clue_api.arv2.ai_ark_client import AiArkClient, AiArkCompany
 from clue_api.arv2.calls import ProviderCaller
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
 from clue_api.arv2.discovery_brief import DiscoveryBrief
+from clue_api.arv2.discovery_firmographics import (
+    ai_ark_firmographics_on_file,
+    firmographic_drafts,
+    resolve_company,
+    without_fields,
+)
 from clue_api.arv2.discovery_launch import Arv2DiscoveryRefused, read_icp_document
 from clue_api.arv2.discovery_request import (
     DiscoveryBrief2,
@@ -235,6 +243,9 @@ class DiscoveryClients(Protocol):
 
     def websets(self, caller: ProviderCaller) -> ExaWebsetsClient: ...
 
+    #: ``None`` when this worker has no AI Ark key: discovery then saves no firmographics.
+    def ai_ark(self, caller: ProviderCaller) -> AiArkClient | None: ...
+
 
 class DiscoveryWake(Protocol):
     """Queue the turn that tells the launching thread its discovery run ended (spec §4, §6.3).
@@ -364,6 +375,11 @@ class _RunState:
     #: Item ids this attempt has handed to the pool — claimed when a task is taken, never when it
     #: finishes, so a re-listed item on the next tick is not verified twice.
     claimed: set[str] = field(default_factory=set)
+    #: Every account this attempt added to the project, as (account, domain, the name discovery
+    #: found it under), in order — what each round's AI Ark search enriches (ruling 2026-10-27).
+    landed: list[tuple[EntityId, str, str]] = field(default_factory=list)
+    #: The accounts already searched for in AI Ark this attempt, so a round never asks twice.
+    firmographics_searched: set[str] = field(default_factory=set)
 
     def count_guard(self, guard: str) -> None:
         self.guards[guard] = self.guards.get(guard, 0) + 1
@@ -649,6 +665,7 @@ class Arv2DiscoveryWorkHandler:
                 await self._run_search_round(state, search)
             else:
                 await self._run_search(state, search)
+            await self._enrich_firmographics(state)
             # Nothing new: the same brief asked again would find nothing more. A resumed round's
             # companies were counted as seen by the attempt that read them, so it is dry only when
             # its search found nothing at all.
@@ -658,6 +675,77 @@ class Arv2DiscoveryWorkHandler:
                 return
         if state.shown < run.target_count:
             state.end_reason = "round_cap"
+
+    async def _enrich_firmographics(self, state: _RunState) -> None:
+        """The table's company facts for the accounts this round added: one AI Ark search.
+
+        Founder ruling 2026-10-27. Every account the round added is named in one search; each
+        account takes the record :func:`resolve_company` chooses for it (the strict rule) or
+        nothing, and its industry, revenue, headcount, HQ, LinkedIn and Twitter are written as
+        discovery claims. A field the account already has from AI Ark (an earlier run, or deep
+        research on an account another project brought) is not written again.
+
+        Best-effort: a refused or failed search is logged and the run goes on — the fields stay
+        empty for deep research, which is where they came from before this ruling.
+        """
+        pending = [
+            entry for entry in state.landed if str(entry[0]) not in state.firmographics_searched
+        ]
+        max_pages = self._settings.arv2_discovery_firmographics_max_pages
+        if not pending or max_pages <= 0:
+            return
+        state.firmographics_searched.update(str(account_id) for account_id, _, _ in pending)
+        domains = sorted({domain for _, domain, _ in pending})
+
+        def _search_companies(caller: ProviderCaller) -> tuple[AiArkCompany, ...] | None:
+            client = self._clients.ai_ark(caller)
+            if client is None:
+                return None
+            return client.companies_for_domains(domains, max_pages=max_pages)
+
+        try:
+            records = await self._hop(state, _search_companies)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 — enrichment never fails a discovery run
+            log.warning(
+                "arv2.discovery_firmographics_failed",
+                run_id=str(state.run.run_id),
+                accounts=len(pending),
+                error=type(error).__name__,
+            )
+            return
+        if records is None:
+            return
+        run = state.run
+        resolved = 0
+        async with self._connection() as conn:
+            catalog = await read_account_catalog(conn, workspace_id=run.workspace_id)
+            for account_id, domain, name in pending:
+                resolution = resolve_company(domain, name, records)
+                if resolution is None:
+                    continue
+                on_file = await ai_ark_firmographics_on_file(
+                    conn, workspace_id=run.workspace_id, account_id=account_id
+                )
+                drafts = firmographic_drafts(
+                    resolution,
+                    workspace_id=run.workspace_id,
+                    discovery_run_id=run.run_id,
+                    account_id=account_id,
+                    domain=domain,
+                    catalog=catalog,
+                )
+                for draft in without_fields(drafts, on_file):
+                    await self._writer.write(conn, draft)
+                resolved += 1
+        log.info(
+            "arv2.discovery_firmographics",
+            run_id=str(run.run_id),
+            accounts=len(pending),
+            records=len(records),
+            resolved=resolved,
+        )
 
     async def _stop_requested(self, state: _RunState) -> bool:
         """Whether a human pressed Stop on this run (a free read, made between steps)."""
@@ -1211,6 +1299,7 @@ class Arv2DiscoveryWorkHandler:
             )
         state.project_domains.add(verified)
         state.workspace_accounts[verified] = UUID(str(account_id))
+        state.landed.append((account_id, verified, item.name or ""))
         if existing_account is not None:
             state.from_other_projects += 1
         if outcome in _SHOWN:
@@ -2001,9 +2090,17 @@ class _LiveClients:
 
     settings: Settings
     exa_api_key: SecretStr
+    ai_ark_api_key: SecretStr | None = None
 
     def exa(self, caller: ProviderCaller) -> ExaClient:
         return ExaClient(caller, api_key=self.exa_api_key)
+
+    def ai_ark(self, caller: ProviderCaller) -> AiArkClient | None:
+        if self.ai_ark_api_key is None:
+            return None
+        return AiArkClient(
+            caller, self.ai_ark_api_key, min_gap_s=self.settings.arv2_ai_ark_min_gap_s
+        )
 
     def websets(self, caller: ProviderCaller) -> ExaWebsetsClient:
         return ExaWebsetsClient(
@@ -2011,6 +2108,13 @@ class _LiveClients:
             api_key=self.exa_api_key,
             usd_per_credit=self.settings.arv2_discovery_websets_usd_per_credit,
         )
+
+
+def _present(key: SecretStr | None) -> SecretStr | None:
+    """A configured key, or ``None`` for a missing or blank one."""
+    if key is None or not key.get_secret_value().strip():
+        return None
+    return SecretStr(key.get_secret_value())
 
 
 def build_arv2_discovery_handler(
@@ -2049,7 +2153,11 @@ def build_arv2_discovery_handler(
         conn_factory=conn_factory,
         storage=storage,
         artifacts=artifacts,
-        clients=_LiveClients(settings=settings, exa_api_key=SecretStr(key.get_secret_value())),
+        clients=_LiveClients(
+            settings=settings,
+            exa_api_key=SecretStr(key.get_secret_value()),
+            ai_ark_api_key=_present(secrets.ai_ark_api_key),
+        ),
         writer=LenientClaimWriter(lenient=settings.claim_write_lenient),
         wake=wake,
     )

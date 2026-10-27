@@ -97,6 +97,7 @@ from clue_api.arv2.ats_client import (
 from clue_api.arv2.calls import CallCost, ProviderCaller
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter, WriteReceipt
 from clue_api.arv2.deepgram_media_client import DeepgramMediaClient
+from clue_api.arv2.discovery_firmographics import ai_ark_firmographics_on_file, without_fields
 from clue_api.arv2.errors import ProviderHalted, RawParseError
 from clue_api.arv2.exa_client import (
     ExaClient,
@@ -1663,8 +1664,15 @@ async def _lookup_company(runtime: ToolRuntime, args: LookupCompanyArgs) -> dict
     if company is None:
         raise RefusalError("company_not_found", f"AI Ark holds no record for {args.domain}")
 
+    # Company facts discovery already saved from AI Ark are not saved again (ruling 2026-10-27).
+    async with runtime._conn_factory() as conn:
+        on_file = await ai_ark_firmographics_on_file(
+            conn, workspace_id=runtime.scope.workspace_id, account_id=runtime.scope.account_id
+        )
     receipts = await runtime.write(
-        ai_ark_company_claims(company, runtime.scope, catalog=runtime.catalog)
+        without_fields(
+            ai_ark_company_claims(company, runtime.scope, catalog=runtime.catalog), on_file
+        )
     )
     raw = company.raw if isinstance(company.raw, Mapping) else {}
     financial = raw.get("financial") if isinstance(raw.get("financial"), Mapping) else {}

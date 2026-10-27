@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.arv2 import discovery_store
+from clue_api.arv2.ai_ark_client import AiArkClient
 from clue_api.arv2.catalog_seed import load_arv2_pack
 from clue_api.arv2.claim_writer import LenientClaimWriter
 from clue_api.arv2.discovery_driver import (
@@ -39,6 +40,7 @@ from clue_api.arv2.discovery_driver import (
     build_arv2_discovery_handler,
     summary_message,
 )
+from clue_api.arv2.discovery_firmographics import FIRMOGRAPHIC_FIELDS
 from clue_api.arv2.discovery_launch import (
     Arv2DiscoveryRequest,
     launch_arv2_discovery,
@@ -286,6 +288,18 @@ class _LiveClientsForTest:
             api_key=_SECRET,
             usd_per_credit=Settings(_env_file=None).arv2_discovery_websets_usd_per_credit,
         )
+
+    def ai_ark(self, caller: Any) -> AiArkClient | None:
+        """No AI Ark key unless a test opts in (:class:`_LiveClientsWithAiArk`)."""
+        del caller
+        return None
+
+
+class _LiveClientsWithAiArk(_LiveClientsForTest):
+    """The real clients plus a real AI Ark client, for the firmographics scenario."""
+
+    def ai_ark(self, caller: Any) -> AiArkClient | None:
+        return AiArkClient(caller, SecretStr("ai-ark-test-key"), min_gap_s=0.0)
 
 
 def _conn_factory(conn: AsyncConnection) -> Any:
@@ -890,6 +904,7 @@ def _routed_handler(
     store: Any = discovery_store,
     sleep: Any = _no_sleep,
     wake: Any = None,
+    clients: Any = None,
 ) -> Arv2DiscoveryWorkHandler:
     return Arv2DiscoveryWorkHandler(
         settings=Settings(
@@ -904,7 +919,7 @@ def _routed_handler(
             storage=storage,  # type: ignore[arg-type]
             conn_factory=_conn_factory(conn),
         ),
-        clients=_LiveClientsForTest(),
+        clients=clients if clients is not None else _LiveClientsForTest(),
         writer=LenientClaimWriter(lenient=True),
         store=store,
         transport_factory=transport,
@@ -1383,3 +1398,141 @@ def test_the_composition_root_hands_the_wake_to_the_handler(tmp_path: Any) -> No
     )
     assert composed is not None
     assert composed._wake is wake
+
+
+# -- firmographics from AI Ark at discovery (founder ruling 2026-10-27) ----------------------------
+
+
+def _ai_ark_company(
+    name: str, domain: str, *, website: str | None = None, staff: int = 120
+) -> dict[str, Any]:
+    return {
+        "id": f"ark-{name.lower().replace(' ', '-')}",
+        "summary": {
+            "name": name,
+            "industry": "hospitality",
+            "staff": {"total": staff, "range": {"start": 51, "end": 200}},
+        },
+        "link": {
+            "domain": domain,
+            "website": website or f"https://www.{domain}",
+            "linkedin": f"https://www.linkedin.com/company/{domain.split('.')[0]}",
+            "twitter": f"https://x.com/{domain.split('.')[0]}",
+        },
+        "financial": {"revenue": {"annual": {"amount": "10000000-25000000"}}},
+        "location": {
+            "headquarter": {
+                "raw_address": "Austin, Texas, United States",
+                "city": "Austin",
+                "state": "Texas",
+                "country": "United States",
+            }
+        },
+        "industries": ["hospitality"],
+    }
+
+
+def _ai_ark_page(*records: dict[str, Any]) -> HttpResponse:
+    return _json({"content": list(records), "last": True})
+
+
+async def _firmographics(conn: AsyncConnection, domain: str) -> dict[str, Any]:
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT c.field_key, c.source_key, c.research_mode, c.write_markers "
+                    "FROM claim c JOIN account_entity a ON a.id = c.entity_id "
+                    "WHERE a.primary_domain = :domain AND c.source_key = 'ai_ark:company' "
+                    "AND c.superseded_by IS NULL"
+                ),
+                {"domain": domain},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return {str(row["field_key"]): row for row in rows}
+
+
+def test_each_round_enriches_its_accounts_from_one_ai_ark_search(tmp_path: Any) -> None:
+    """Round 1 adds Alpha, whose domain also hosts a hotel's page: the record named like the
+    account wins. Round 2 adds Gamma (only a differently named record: nothing is saved) and Delta
+    (one record, same name). Each round makes ONE AI Ark search naming only its own accounts, and
+    the table's company facts land as discovery claims that say how the record was chosen."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            await load_core_pack(conn)
+            await load_arv2_pack(conn)
+            fixture = await seed_icp_fixture(conn, storage)
+            run_id = await _launch(conn, storage, fixture, target_count=3, intent="must_not")
+            transport = _RoutedTransport(
+                [
+                    *_webset_round("ws-r1", ("Alpha", "alpha.com"), ("Hotelco", "hotelco.com")),
+                    (
+                        "",
+                        "v1/companies",
+                        _ai_ark_page(
+                            _ai_ark_company(
+                                "Alpha Downtown Hotel",
+                                "alpha.com",
+                                website="https://alpha.com/downtown",
+                                staff=900,
+                            ),
+                            _ai_ark_company("Alpha", "alpha.com", staff=300),
+                        ),
+                    ),
+                    *_webset_round("ws-r2", ("Gamma", "gamma.com"), ("Delta", "delta.com")),
+                    (
+                        "",
+                        "v1/companies",
+                        _ai_ark_page(
+                            _ai_ark_company("Gamma Holdings Asia", "gamma.com"),
+                            _ai_ark_company("Delta", "delta.com"),
+                        ),
+                    ),
+                    *_company_routes("Alpha", "alpha.com", _NO_INTENT),
+                    *_company_routes("Hotelco", "hotelco.com"),
+                    *_company_routes("Gamma", "gamma.com", _NO_INTENT),
+                    *_company_routes("Delta", "delta.com", _NO_INTENT),
+                ]
+            )
+            handler = _routed_handler(conn, storage, transport, clients=_LiveClientsWithAiArk())
+
+            result = await handler.handle(_work(run_id, fixture))
+
+            assert result.outcome == "completed"
+            assert transport.remaining == 0
+            searches = [
+                json.loads(request.body)
+                for request in transport.sent
+                if str(request.url).endswith("/v1/companies")
+            ]
+            assert [s["account"]["domain"]["any"]["include"] for s in searches] == [
+                ["alpha.com"],
+                ["delta.com", "gamma.com"],
+            ]
+
+            alpha = await _firmographics(conn, "alpha.com")
+            assert {
+                "core.industry",
+                "core.employee_count",
+                "core.revenue_band",
+                "core.company_linkedin_url",
+                "core.company_twitter_url",
+                "core.hq_location",
+            } <= set(alpha)
+            assert set(alpha) <= FIRMOGRAPHIC_FIELDS
+            row = alpha["core.employee_count"]
+            assert row["research_mode"] == "account_discovery"
+            assert row["write_markers"]["resolved_by"] == "exact_name"
+            assert row["write_markers"]["ai_ark_company_id"] == "ark-alpha"
+            assert row["write_markers"]["discovery_run_id"] == str(run_id)
+
+            assert await _firmographics(conn, "gamma.com") == {}
+            delta = await _firmographics(conn, "delta.com")
+            assert delta["core.industry"]["write_markers"]["resolved_by"] == "single_record"
+
+    run_async(scenario())

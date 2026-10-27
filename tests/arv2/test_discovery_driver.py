@@ -613,6 +613,10 @@ class _Clients:
         self.callers.append(caller)
         return self._websets
 
+    def ai_ark(self, caller: Any) -> Any:
+        """No AI Ark key on this fake worker: discovery saves no firmographics."""
+        return None
+
 
 def _cite(url: str, text: str) -> ExaCitation:
     return ExaCitation(url=url, title=None, published_date=None, text=text)

@@ -576,3 +576,65 @@ def test_every_ai_ark_result_type_has_somewhere_to_put_a_cost() -> None:
     """
     for result_type in (AiArkCompany, AiArkEmailExport, AiArkPeople):
         assert "cost" in {f.name for f in fields(result_type)}, result_type.__name__
+
+
+# -- many domains in one search (discovery firmographics, 2026-10-27) --------------------------
+
+
+def _company_page(records: list[dict[str, Any]], *, last: bool) -> HttpResponse:
+    import json
+
+    return HttpResponse(status=200, body=json.dumps({"content": records, "last": last}).encode())
+
+
+def _company_record(name: str, domain: str) -> dict[str, Any]:
+    return {"id": f"id-{name}", "summary": {"name": name}, "link": {"domain": domain}}
+
+
+def test_companies_for_domains_pages_until_the_last_page() -> None:
+    """One search names every domain; pages are read until AI Ark says the last one came back."""
+    first = [_company_record(f"Hotel {n}", "a.com") for n in range(100)]
+    second = [_company_record("Beta Group", "b.com")]
+    transport = ScriptedTransport(
+        [_company_page(first, last=False), _company_page(second, last=True)]
+    )
+    caller = ProviderCaller(
+        transport=transport,
+        raw_sink=MemoryRawSink(),
+        ledger=MemoryLedger(),
+        now=lambda: datetime.now(UTC),
+    )
+    client = AiArkClient(caller, SecretStr("k"), min_gap_s=0.0)
+
+    companies = client.companies_for_domains(["a.com", "b.com"], max_pages=10)
+
+    assert len(companies) == 101
+    assert companies[-1].name == "Beta Group"
+    import json
+
+    bodies = [json.loads(request.body or b"{}") for request in transport.requests]
+    assert [body["page"] for body in bodies] == [0, 1]
+    assert bodies[0]["account"]["domain"]["any"]["include"] == ["a.com", "b.com"]
+    assert bodies[0]["size"] == 100
+
+
+def test_companies_for_domains_stops_at_the_page_cap() -> None:
+    """A brand with hundreds of pages cannot run the bill up: ``max_pages`` is the ceiling."""
+    full = [_company_record(f"Hotel {n}", "a.com") for n in range(100)]
+    transport = ScriptedTransport([_company_page(full, last=False)])
+    caller = ProviderCaller(
+        transport=transport,
+        raw_sink=MemoryRawSink(),
+        ledger=MemoryLedger(),
+        now=lambda: datetime.now(UTC),
+    )
+    client = AiArkClient(caller, SecretStr("k"), min_gap_s=0.0)
+
+    assert len(client.companies_for_domains(["a.com"], max_pages=1)) == 100
+    assert len(transport.requests) == 1
+
+
+def test_companies_for_domains_sends_nothing_for_no_domains() -> None:
+    client, transport = _offline_client()
+    assert client.companies_for_domains([], max_pages=10) == ()
+    assert transport.requests == []

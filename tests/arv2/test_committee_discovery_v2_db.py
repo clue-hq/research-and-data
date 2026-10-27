@@ -1529,3 +1529,69 @@ def test_a_request_left_running_by_a_crashed_attempt_is_still_refused_not_bought
             assert wire.requests == []
 
     run_async(scenario())
+
+
+def test_the_company_lookup_skips_company_facts_discovery_already_saved():
+    """Founder ruling 2026-10-27: discovery enriches the table's company facts from AI Ark, and
+    deep research's company lookup — still made, because the committee search needs the company —
+    does not save those facts again. Facts discovery did not save are still written."""
+    from clue_api.arv2.ai_ark_client import company_from_record
+    from clue_api.arv2.discovery_firmographics import Resolution, firmographic_drafts
+
+    async def scenario():
+        async with rollback_conn(seed_pack=True) as conn:
+            run, account, job_id = await _seed(conn)
+            scope = replace(_scope(run, account), job_id=job_id, catalog_version="v4")
+            record = {
+                "id": "company-1",
+                "link": {"domain": "probook.ai", "linkedin": "https://www.linkedin.com/company/pb"},
+                "summary": {
+                    "name": "Probook",
+                    "industry": "software development",
+                    "staff": {"total": 80},
+                },
+            }
+            # What discovery saved earlier: the industry only.
+            discovered = [
+                d
+                for d in firmographic_drafts(
+                    Resolution(company_from_record(record), "single_record"),
+                    workspace_id=scope.workspace_id,
+                    discovery_run_id=scope.run_id,
+                    account_id=scope.account_id,
+                    domain="probook.ai",
+                    catalog=COMMITTEE_CATALOG,
+                )
+                if d.field_key == "core.industry"
+            ]
+            assert [d.field_key for d in discovered] == ["core.industry"]
+            for draft in discovered:
+                await LenientClaimWriter(lenient=True).write(conn, draft)
+
+            wire = ScriptedTransport([response({"content": [record]})])
+            rt = runtime(
+                conn,
+                replace(scope, input_refs={"quality_recipe_version": 27}),
+                _MemoryStorage(),
+                wire,
+            )
+            lock = await company_lock(rt)
+
+            assert lock["company_id"] == "company-1", "the lookup itself still happens"
+            rows = (
+                await conn.execute(
+                    text(
+                        "SELECT field_key, research_mode FROM claim WHERE entity_id = :e "
+                        "AND source_key = 'ai_ark:company' AND superseded_by IS NULL"
+                    ),
+                    {"e": scope.account_id},
+                )
+            ).all()
+            by_field = {}
+            for field_key, mode in rows:
+                by_field.setdefault(field_key, []).append(mode)
+            assert by_field["core.industry"] == ["account_discovery"], "not saved a second time"
+            assert by_field["core.employee_count"] == ["account_profiling"]
+            assert by_field["core.company_linkedin_url"] == ["account_profiling"]
+
+    run_async(scenario())
