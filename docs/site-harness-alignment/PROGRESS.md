@@ -16,7 +16,7 @@ alignment (`docs/design-harness-alignment/`), done **one family at a time**:
 1. **The page's argument** — page kind, reader, message plan, structure and length, decision material,
    action, the account's identity, header/footer choice, the brief, asking. ← steps 1–3 done 2026-10-27 (P1–P13 ruled; homes approved in HOMES-family1.md)
 2. **Wording and evidence** — sourcing, claim strength, proof, what stays off the page, voice, headlines, copy craft. ← steps 1–2 done 2026-10-28 (W1–W12 ruled); step 3 next
-3. **Imagery and media** — composition, choosing images, generation, logos, product screenshots, video and motion. ← step 1 done 2026-10-28 (M1–M7)
+3. **Imagery and media** — composition, choosing images, generation, logos, product screenshots, video and motion. ← steps 1–2 done 2026-10-28 (M1–M7 ruled); step 3 drafted (HOMES-family3.md)
 4. Visual design and brand fidelity — hero, rhythm, type, source fidelity, contrast.
 5. Review — the self-check after render.
 6. Mechanics — only where a mechanics skill repeats or contradicts a judgement rule.
@@ -81,3 +81,4 @@ Legacy: L7 conversion-copywriting · L7a copy-craft · L7b website-copy-brief ·
 - 2026-10-28: W1, W2 ruled. S3: Ploy's skills are a discussion-only reference (not in the repo, never cited in a skill); brought into each later group's discussion.
 - 2026-10-28: W3–W12 ruled; family 2 step 2 complete. R5.2 amended (W10.3), R5.5 form clause deferred (W10.5), W4.2 exception removed (W12).
 - 2026-10-28: family 2 home table drafted (HOMES-family2.md); founder moved on to family 3 without changes to it. Family 3 ledgered (73 rows: 32 site, 41 legacy; 377 in all); 7 conflict groups M1–M7.
+- 2026-10-28: M1–M7 ruled; family 3 step 2 complete; HOMES-family3.md drafted. Ploy consulted in family 3 only for M5 (founder's ask).

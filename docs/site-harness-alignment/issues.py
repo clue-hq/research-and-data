@@ -407,7 +407,7 @@ ISSUES = [
    {"label": "Site", "refs": [("D4", "no broken image")]},
    {"label": "Legacy", "refs": [("L8", "For a raster painted at W by H")]}]},
 
- {"id": "M7", "family": 3, "topic": "LOGOS", "severity": "low", "status": "open",
+ {"id": "M7", "family": 3, "topic": "LOGOS", "severity": "low", "status": "RULED 2026-10-28 (M7.1–M7.5)",
   "title": "Logos",
   "what": "Mostly agreement: the site fetches the account's logo by domain, looks before placing, hides it when none is found, skips look-alike companies, and shows logos whole. The legacy skills add: tell a full lockup from a bare mark; pick the light or dark version for its background; when identity is unclear leave the logo out; never draw, recolour or generate a logo; don't repeat the seller's wordmark as proof.",
   "why": "Small additions; placement was ruled in R6.",

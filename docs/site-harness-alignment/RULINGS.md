@@ -255,3 +255,13 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **M6.2** Exception: when the brand's own imagery deliberately uses blur or bokeh, that softness is the style, not a sharpness fault. (Founder addition.)
 - **M6.3** Mechanics (code): `view_asset` and `search_assets` report each image's width × height, so the agent can apply M6.1 without guessing from the render.
 - No pixel arithmetic in the skill.
+
+## M7 · Logos — RULED 2026-10-28
+- **M7.1** The site's lines stay (fetch by domain and look first; hide when none is found and say so; skip look-alike companies; logos shown whole).
+- **M7.2** Choose the right version: the full logo where the header has room; the light or dark version that stays readable on its background.
+- **M7.3** When unsure it is the right company's logo (ambiguous name, a sub-brand), leave it out and say so in the report.
+- **M7.4** Never draw, recolour, retype or generate a logo — the seller's or the account's (with M2.4).
+- **M7.5** The seller's logo is not repeated as decoration or proof around the page.
+- Per case: follows R6.
+
+**Family 3 step 2 complete (M1–M7 ruled, 2026-10-28).**
