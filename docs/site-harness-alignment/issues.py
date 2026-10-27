@@ -92,7 +92,7 @@ ISSUES = [
      ("L1b", "Place actions at natural decision points"), ("L1a", "Do not fix a mismatch merely by relabeling"),
      ("L5", "The existence of a booking URL"), ("L1", "do not invent an offer, default to a pilot/demo")]}]},
 
- {"id": "P6", "family": 1, "topic": "IDENTITY", "severity": "medium", "status": "open",
+ {"id": "P6", "family": 1, "topic": "IDENTITY", "severity": "medium", "status": "RULED 2026-10-27 (R6.1–R6.4)",
   "title": "Where do the account's name and logo go?",
   "what": "The site puts the account in the header: 'Prepared for <account>' and the account's logo beside the seller's, and forbids the account's logo anywhere else. The legacy skills say the opposite: target identity belongs in the opening content (an eyebrow, account bar or lockup above the headline), never as a navigation item. For segment and product pages the legacy skills say no account markers at all.",
   "why": "Every site today carries 'Prepared for …' in the header; a segment or product page has no single account to name.",

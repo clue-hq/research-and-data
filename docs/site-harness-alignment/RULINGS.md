@@ -44,3 +44,9 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **R5.3** Secondary links: one-account and one-to-few pages carry no links that take the reader away (a cited case study may open in a new tab); general, event and product pages may carry a few relevant secondary links (product page, pricing, agenda).
 - **R5.4** Every inherited clone button is decided on purpose: kept with its real purpose, label and destination changed together, or removed. A label never promises what its destination does not deliver.
 - **R5.5** The final check's "CTA competition" becomes "more than one primary offer"; "forms ask only what the next step needs" is added.
+
+## P6 · Where the account's name and logo go — RULED 2026-10-27
+- **R6.1** One-to-one: the header lockup is the account's place — "Prepared for <account>" with the account's logo beside the seller's; the logo appears nowhere else. The hero names the account in words. No second logo, no account bar.
+- **R6.2** One-to-few: the header line names the group ("Prepared for regional health systems") or is hidden; no single account's logo; the hero names the group.
+- **R6.3** General campaign, event and product campaign: no account line and no account logo; the header is the seller's own; the hero names the audience or the offer.
+- **R6.4** Every case: placing the account beside the seller never implies a partnership, and a customer logo wall never includes the account or a company that looks like it (similar name, parent, subsidiary).
