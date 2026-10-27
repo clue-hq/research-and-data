@@ -142,7 +142,7 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 
 ## W4 · What never reaches the page — RULED 2026-10-28
 - **W4.1** One list, in one place (the copy skill): the brief's Notes for Design; the research's Watch-outs and Context only; notes on how to approach the account (who to call, what to offer, overlap or competition); file names, line codes, claim ids; the agent's own caveats, strategy, reasons and evidence limits. All of it goes to plan.md and the report.
-- **W4.2** The agent writes its own words: never lifts sentences from the brief or the research (exception: wording the person asked for exactly, W12).
+- **W4.2** The agent writes its own words: never lifts sentences from the brief or the research.
 - **W4.3** The leaked-note test stays: a sentence that says what the page is not, what the evidence is not, or what the agent was told to avoid is a leaked note — say what is true instead, or cut it.
 - **W4.4** Product limits are not stated on the page, and the skills say nothing about such boundaries. The legacy exception ("retain genuine product limits") is dropped. (Founder: "it should not be visible on purpose… mention nothing about this boundary.")
 - **W4.5** No "working model" disclaimer: on one-to-one pages the "how it works" section frames itself through its own heading (e.g. "How it could work at Syracuse"), keeping W2's "could". No partnership-denial line; R6.1's "Prepared for <account>" frames the page.
@@ -195,3 +195,8 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **W11.4** Relationship words: never, about the account, without evidence — partner, customer, working together, joint solution, "our work with <account>", "<account> uses <seller>", "trusted by <account>", "<seller> × <account> partnership". Safer framing: "Prepared for <account>", "A proposal for <account>", "<seller> for <account>", "A tailored … proposal". "Trusted by" and "customer" apply only to real customers. (Ploy's lists, for discussion.)
 - **W11.5** W11.4 applies to the header too: the header's account line and any lockup wording follow the same safe/unsafe lists (home: the header parts of the mechanics skills as well as the copy skill). (Founder: "include these for headers skills as well.")
 - Per case: W11.2–W11.4 matter mainly on one-to-one, one-to-few and contact pages; W11.1 applies everywhere.
+
+## W12 · Wording the person asked for exactly — RULED 2026-10-28
+- **W12** No rule: the skills say nothing about it. (Founder: "no need to mention anything about it.")
+
+**Family 2 step 2 complete (W1–W12 ruled, 2026-10-28).**

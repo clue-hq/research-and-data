@@ -321,7 +321,7 @@ ISSUES = [
    {"label": "Site", "refs": [("D1", "Say what stays and what improves"), ("D1", "Negative assumption"), ("D1", "False relationship")]},
    {"label": "Legacy", "refs": [("L7a", "Lead with the operating state the reader gains"), ("L7a", "never show buying-committee labels"), ("L7a", "\"Trusted by\" needs actual use")]}]},
 
- {"id": "W12", "family": 2, "topic": "COPY", "severity": "low", "status": "open",
+ {"id": "W12", "family": 2, "topic": "COPY", "severity": "low", "status": "RULED 2026-10-28 (W12: no rule)",
   "title": "Wording the person asked for exactly",
   "what": "The site has no rule. The legacy skills keep wording the person asked for exactly (a headline, a tagline, a button), and when that wording claims something unsupported, they say so instead of silently rewriting it.",
   "why": "A gap.",

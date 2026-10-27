@@ -15,7 +15,7 @@ alignment (`docs/design-harness-alignment/`), done **one family at a time**:
 ## Families
 1. **The page's argument** — page kind, reader, message plan, structure and length, decision material,
    action, the account's identity, header/footer choice, the brief, asking. ← steps 1–3 done 2026-10-27 (P1–P13 ruled; homes approved in HOMES-family1.md)
-2. **Wording and evidence** — sourcing, claim strength, proof, what stays off the page, voice, headlines, copy craft. ← step 1 done 2026-10-28 (W1–W12)
+2. **Wording and evidence** — sourcing, claim strength, proof, what stays off the page, voice, headlines, copy craft. ← steps 1–2 done 2026-10-28 (W1–W12 ruled); step 3 next
 3. Imagery and media — brand images, product screenshots, generation, logos, video and motion.
 4. Visual design and brand fidelity — hero, rhythm, type, source fidelity, contrast.
 5. Review — the self-check after render.
@@ -73,3 +73,4 @@ Legacy: L7 conversion-copywriting · L7a copy-craft · L7b website-copy-brief ·
 - 2026-10-27: S1 (three layers), S2 (skills read on demand, reverses the 2026-10-08 inline ruling), S1.2 = six case skills, decision-material its own aspect skill. Founder edits folded in: R1.3a/R2.5 (ICP/personas + a few web searches without a tagged account), R4.3 softened. Family 1 step 3 approved. Next: family 2 (wording and evidence) ledger.
 - 2026-10-28: family 2 ledgered (106 rows: 47 site, 59 legacy; ledger 302 rows in all); 12 conflict groups W1–W12, each with its case-specific note (S1.3). add_rows.py gained --append. Page shows family 2 open, family 1 ruled.
 - 2026-10-28: W1, W2 ruled. S3: Ploy's skills are a discussion-only reference (not in the repo, never cited in a skill); brought into each later group's discussion.
+- 2026-10-28: W3–W12 ruled; family 2 step 2 complete. R5.2 amended (W10.3), R5.5 form clause deferred (W10.5), W4.2 exception removed (W12).

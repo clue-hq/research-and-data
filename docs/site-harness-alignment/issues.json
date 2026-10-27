@@ -799,7 +799,7 @@
   "family": 2,
   "topic": "COPY",
   "severity": "low",
-  "status": "open",
+  "status": "RULED 2026-10-28 (W12: no rule)",
   "title": "Wording the person asked for exactly",
   "what": "The site has no rule. The legacy skills keep wording the person asked for exactly (a headline, a tagline, a button), and when that wording claims something unsupported, they say so instead of silently rewriting it.",
   "why": "A gap.",
