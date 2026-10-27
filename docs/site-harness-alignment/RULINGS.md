@@ -249,3 +249,9 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **M5.4** A diagram instead of a fake screen: when a section must show how the product fits together and no real screenshot fits, the agent draws it as a diagram in the brand's styles (its own section), never a generated fake screen (M2.8).
 - **M5.5** Searching well: one empty search does not mean there is no image — try other words; if nothing fits, a smaller honest placement or no image.
 - (Points M5.2–M5.4 from Ploy, for discussion; written in our own words.)
+
+## M6 · Image sharpness — RULED 2026-10-28
+- **M6.1** An image is never shown larger than its natural size. If its pixel dimensions are small, do not enlarge it: search for a sharper version of that image (`search_assets`), or show it smaller, choose another, or leave it out. A large image on a big screen needs about twice its displayed pixels.
+- **M6.2** Exception: when the brand's own imagery deliberately uses blur or bokeh, that softness is the style, not a sharpness fault. (Founder addition.)
+- **M6.3** Mechanics (code): `view_asset` and `search_assets` report each image's width × height, so the agent can apply M6.1 without guessing from the render.
+- No pixel arithmetic in the skill.

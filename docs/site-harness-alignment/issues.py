@@ -398,7 +398,7 @@ ISSUES = [
    {"label": "Legacy", "refs": [
      ("L8", "State each asset's role"), ("L8", "A failed semantic query may reflect poor labels"), ("L8", "If inadequate, choose in order")]}]},
 
- {"id": "M6", "family": 3, "topic": "ASSETS", "severity": "low", "status": "open",
+ {"id": "M6", "family": 3, "topic": "ASSETS", "severity": "low", "status": "RULED 2026-10-28 (M6.1–M6.3)",
   "title": "Image sharpness",
   "what": "The site has no rule beyond 'no broken image'. The legacy skill gives the arithmetic: an image painted 600 × 400 on a 2× screen needs 1200 × 800 real pixels; a better same-role source, a smaller honest placement, or no image beats a blurry one.",
   "why": "A gap.",
