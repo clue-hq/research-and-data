@@ -29,7 +29,7 @@ Founder review 2026-10-27: sections A and B approved.
 | R4.1 substance before container | BASE | |
 | R4.2 decision material | DECISION (method, its own aspect skill) + CASE (how much, per case) | Ruled: own aspect skill, pointed to by one-to-one, one-to-few and contact. |
 | R4.3 slot length and the reuse order | MECH (`building-with-puck` "Reuse first") + COPY (a rewritten line is not overly verbose; light rule) | |
-| R4.4 swap test, feature dumping, utility test, explain before evaluating | REVIEW (checks) + BASE (explain before evaluating) | |
+| R4.4 swap test, feature dumping, utility test, explain before evaluating | REVIEW (checks) + DECISION (explain before evaluating) | Corrected 2026-10-28 (was BASE). |
 | R4.5 research is input; prose via the copy skill | BASE + COPY | |
 | R4.6 no over-explaining; R4.7 ≤20-word paragraphs | COPY | |
 | R5.1 action from the decision | BASE (step 5) + CASE (usual action) | |
@@ -40,7 +40,7 @@ Founder review 2026-10-27: sections A and B approved.
 | R6.1–R6.3 identity by case | CASE + MECH (header section states the options, not the 1:1 default) | |
 | R6.4 no implied partnership; logo wall | IMAGERY (logo method) + EVIDENCE (relationship claims) | |
 | R7.1–R7.4 shell by case | CASE + BASE (write the choice in plan.md) + MECH (header/footer section lists the options) | |
-| R7.5 shell style from the seller's page | VISUAL + CODE check | |
+| R7.5 shell style from the seller's page | CODE check + MECH (header section) | Corrected 2026-10-28 (was VISUAL). |
 | R8 brief weight unchanged | SYS (no change) | |
 | R9.1–R9.3 build by default, one question | SYS | Turn-level, beside the edit rules. |
 | R9.4 clarification tool + card | CODE | |

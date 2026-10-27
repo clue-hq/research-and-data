@@ -1,4 +1,4 @@
-# Family 6 · Step 3 — one home per rule (draft for founder review)
+# Family 6 · Step 3 — one home per rule (approved 2026-10-28)
 
 Homes as before (S1): **BASE** · **REVIEW** · **MECH** (`building-with-puck`, `writing-a-section`,
 `rebuilding-a-section`, `making-a-section-interactive`) · **SYS** · **CODE** (site-kit, harness, tools) · **TRIALS**.
