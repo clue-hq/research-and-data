@@ -282,7 +282,7 @@ ISSUES = [
      ("L7a", "In order of authority"), ("L7a", "Seller capability language"), ("L7a", "you can use them verbatim"),
      ("L7", "Match the brand's observed voice")]}]},
 
- {"id": "W8", "family": 2, "topic": "COPY", "severity": "medium", "status": "open",
+ {"id": "W8", "family": 2, "topic": "COPY", "severity": "medium", "status": "RULED 2026-10-28 (W8.1–W8.4)",
   "title": "Concise statements, not slogans",
   "what": "R4.6 (no over-explaining) and R4.7 (no paragraph over 20 words) now set the length. The legacy skills warn the other way: do not shrink copy into slogans, write the explanation and not just headings and buttons, and cash out words like 'unlock' into something checkable. The two fit together if 'concise' means short specific statements, not short vague ones.",
   "why": "Family 1 left this to be reconciled here.",
