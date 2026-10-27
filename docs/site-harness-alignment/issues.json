@@ -1,0 +1,424 @@
+[
+ {
+  "id": "P1",
+  "family": 1,
+  "topic": "KIND",
+  "severity": "high",
+  "status": "direction ruled 2026-10-27 (R1)",
+  "title": "The site agent is told every page is for one named account",
+  "what": "The system prompt's first line, the only argument skill and its final check all assume one company and one reader. A campaign page reaches the agent with the artifact's title standing in for the account name and a research file that says 'no written research for this account yet'. Nothing names the page kind; only the Head of ABM's brief can say it. The legacy skills cover six kinds: one account, one person, a few accounts, a whole segment, an event, a product page. The site's own header rules already know about 'a site for several accounts'.",
+  "why": "Founder ruling R1 (2026-10-27): the site agent must handle every kind of landing page. Still open: how the page kind reaches the agent, and which kinds it supports (see P10 for pages about one person).",
+  "groups": [
+   {
+    "label": "Site: one named account",
+    "rows": [
+     "A1-01",
+     "D1-01",
+     "D1-02",
+     "D1-25",
+     "D1-29",
+     "H1-02"
+    ]
+   },
+   {
+    "label": "Site: the few places a group is mentioned",
+    "rows": [
+     "D2-08",
+     "D2-09",
+     "D2-11"
+    ]
+   },
+   {
+    "label": "Legacy candidates: every page kind",
+    "rows": [
+     "L1-01",
+     "L3-03",
+     "L3b-01",
+     "L3b-03",
+     "L3b-04",
+     "L3b-05",
+     "L3b-06",
+     "L3b-07"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P2",
+  "family": 1,
+  "topic": "ARGUMENT",
+  "severity": "high",
+  "status": "open",
+  "title": "The message plan only fits a researched account",
+  "what": "The site's plan block asks for one insight 'in the account's own words' and two or three priorities 'tied to the research'. A campaign page, an event or a page with no research has nothing to put there. The legacy skills plan from the visitor instead: where they arrive from, what they already know (awareness stage), what single action closes the decision, which argument pattern fits, and a reader → context → mechanism → application → proof → action chain.",
+  "why": "This decides what the agent writes in plan.md before anything else, for every page kind.",
+  "groups": [
+   {
+    "label": "Site: the message plan",
+    "rows": [
+     "D1-03",
+     "D1-04",
+     "D1-05",
+     "D1-06",
+     "D1-07",
+     "D1-08",
+     "D1-09",
+     "D1-10",
+     "D1-12"
+    ]
+   },
+   {
+    "label": "Legacy candidates: plan from the visitor",
+    "rows": [
+     "L1b-01",
+     "L1b-03",
+     "L1b-05",
+     "L1b-06",
+     "L1b-12",
+     "L3a-05",
+     "L2-06",
+     "L1-02"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P3",
+  "family": 1,
+  "topic": "STRUCTURE",
+  "severity": "high",
+  "status": "open",
+  "title": "Five sections and 600 words, or as long as the decision needs?",
+  "what": "The site sets a ceiling: up to five sections, usually five, rarely more than 600 words, each with a word budget. The legacy skills say length follows the decision: seven sections for a considered enterprise purchase, three for a giveaway, never pad and never cut what the decision needs; their five questions are 'responsibilities, not mandatory sections'.",
+  "why": "The 10-26 Pallet production page stopped at 5 sections and about 440 words, and read as shallow.",
+  "groups": [
+   {
+    "label": "Site: a fixed shape",
+    "rows": [
+     "D1-09",
+     "D1-16",
+     "D1-24",
+     "D1-02"
+    ]
+   },
+   {
+    "label": "Legacy candidates: length follows the decision",
+    "rows": [
+     "L1b-17",
+     "L1b-02",
+     "L1b-11",
+     "L3a-07",
+     "L5-06"
+    ]
+   },
+   {
+    "label": "Both agree: one question per section",
+    "rows": [
+     "D1-17",
+     "L1b-15",
+     "L1b-16"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P4",
+  "family": 1,
+  "topic": "SUBSTANCE",
+  "severity": "high",
+  "status": "open",
+  "title": "How much must a page explain, and may substance outgrow a clone's slots?",
+  "what": "The site asks for short, clear pages and rewrites that match the original slot ('a slot that held six words wants about six words back'). Its only substance checks are 'feature dumping' and the swap test. The legacy decision-material skill asks for a concrete worked application (trigger, product action, handoff), a decision map whose every item shows up visibly on the page, and says a shortage of slots is never a reason to drop the substance.",
+  "why": "This is the 'thin page' problem: the site agent fills slots at the original length, so the page carries little the buyer can use.",
+  "groups": [
+   {
+    "label": "Site: short, slot-sized",
+    "rows": [
+     "D1-02",
+     "D1-30",
+     "D1-27",
+     "D1-29"
+    ]
+   },
+   {
+    "label": "Legacy candidates: decision material",
+    "rows": [
+     "L5-02",
+     "L5-03",
+     "L5-04",
+     "L5-05",
+     "L5-08",
+     "L5-10",
+     "L3a-08",
+     "L3a-06",
+     "L1b-18",
+     "L3-04"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P5",
+  "family": 1,
+  "topic": "ACTION",
+  "severity": "high",
+  "status": "open",
+  "title": "One destination for every button, or one primary action plus useful secondary links?",
+  "what": "The site sends every button, including the header's, to the one destination the brief names, and flags any second destination as 'CTA competition'. The legacy skills choose the action from the reader's decision (explore, compare, register, buy), allow relevant secondary resources, place actions at decision points rather than in every band, and warn that a booking link or the seller's homepage button does not decide the page's purpose.",
+  "why": "Founder 2026-10-18: the one-destination rule is guidance only. The question is what the guidance should say, especially for segment, event and product pages.",
+  "groups": [
+   {
+    "label": "Site: one destination",
+    "rows": [
+     "D1-07",
+     "D1-22",
+     "D1-26",
+     "D2-05",
+     "D2-10",
+     "D2-11",
+     "D6-02"
+    ]
+   },
+   {
+    "label": "Legacy candidates: action from the decision",
+    "rows": [
+     "L1a-01",
+     "L1a-02",
+     "L1a-05",
+     "L1b-20",
+     "L1b-21",
+     "L1a-07",
+     "L5-11",
+     "L1-03"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P6",
+  "family": 1,
+  "topic": "IDENTITY",
+  "severity": "medium",
+  "status": "open",
+  "title": "Where do the account's name and logo go?",
+  "what": "The site puts the account in the header: 'Prepared for <account>' and the account's logo beside the seller's, and forbids the account's logo anywhere else. The legacy skills say the opposite: target identity belongs in the opening content (an eyebrow, account bar or lockup above the headline), never as a navigation item. For segment and product pages the legacy skills say no account markers at all.",
+  "why": "Every site today carries 'Prepared for …' in the header; a segment or product page has no single account to name.",
+  "groups": [
+   {
+    "label": "Site: in the header",
+    "rows": [
+     "D2-08",
+     "D2-06",
+     "D3-01",
+     "D3-02",
+     "D4-02",
+     "D6-01"
+    ]
+   },
+   {
+    "label": "Legacy candidates: in the opening content, not the navigation",
+    "rows": [
+     "L1b-08",
+     "L2-09",
+     "L3c-03"
+    ]
+   },
+   {
+    "label": "Legacy candidates: no markers on shared pages",
+    "rows": [
+     "L3b-04",
+     "L3b-06"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P7",
+  "family": 1,
+  "topic": "SHELL",
+  "severity": "medium",
+  "status": "open",
+  "title": "A fixed header and footer, or a choice from the page's traffic and trust?",
+  "what": "The site starts every page from the brand's account header template (or a plain header) and the plain footer, and uses the seller's own footer only when asked. The legacy skills make it a judgement each time: keep the seller's real navigation when the visitor will vet the seller or forward the page, strip it to a minimal campaign shell when the page serves one offer from one campaign.",
+  "why": "Product and segment pages often need the seller's real navigation for trust; a 1:1 outbound page usually does not.",
+  "groups": [
+   {
+    "label": "Site: fixed templates",
+    "rows": [
+     "D2-07",
+     "D2-12",
+     "D6-03"
+    ]
+   },
+   {
+    "label": "Legacy candidates: decide per page",
+    "rows": [
+     "L1-06",
+     "L1b-07",
+     "L1b-09",
+     "L1b-10",
+     "L3b-06"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P8",
+  "family": 1,
+  "topic": "PLAN",
+  "severity": "medium",
+  "status": "open",
+  "title": "Is the brief binding, or an agent's summary to read critically?",
+  "what": "The site treats the brief's goal, reader and offer as fixed and its facts, proof and structure as suggestions. The legacy skills say a delegation brief is an agent-authored summary: quote the person's actual words, keep user requirements apart from working choices, and do not read a pilot, demo or section count into a short request. The site agent never sees the person's own message, only the Head of ABM's brief and the session history.",
+  "why": "When the brief picks a weak offer or the wrong page kind, the site agent has no permission to question it.",
+  "groups": [
+   {
+    "label": "Site: the brief sets goal, reader, offer",
+    "rows": [
+     "A1-06",
+     "D1-13",
+     "H1-01"
+    ]
+   },
+   {
+    "label": "Legacy candidates: the person's words outrank the brief",
+    "rows": [
+     "L2-02",
+     "L6-07",
+     "L6-08",
+     "L2-03",
+     "L6-16"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P9",
+  "family": 1,
+  "topic": "ASK",
+  "severity": "medium",
+  "status": "open",
+  "title": "When may the agent ask before building a new page?",
+  "what": "The site agent may only ask on an edit, when the request names something that is not on the page. The legacy skills allow one consequential question before a costly build when the purpose would change the argument, but otherwise make reversible assumptions and say so; a plan is never an approval gate. The site agent has no clarification tool today.",
+  "why": "A campaign request with no clear reader, offer or destination is built on a guess.",
+  "groups": [
+   {
+    "label": "Site: ask only on edits",
+    "rows": [
+     "A1-09"
+    ]
+   },
+   {
+    "label": "Legacy candidates: one question before a costly build",
+    "rows": [
+     "L1a-04",
+     "L1b-04",
+     "L6-04"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P10",
+  "family": 1,
+  "topic": "PEOPLE",
+  "severity": "medium",
+  "status": "open",
+  "title": "Pages for one person",
+  "what": "The site forbids naming or describing anyone at the account, and its workspace carries no contact research. The legacy skills support a page for one buying-committee member: resolve the person, use their own sourced professional criterion, change the material compared with the account page, keep their name discreet, never use private or sensitive facets.",
+  "why": "Decides whether 'contact page' is one of the page kinds in P1.",
+  "groups": [
+   {
+    "label": "Site: never name people",
+    "rows": [
+     "A1-05",
+     "D1-23"
+    ]
+   },
+   {
+    "label": "Legacy candidates: contact pages",
+    "rows": [
+     "L4-01",
+     "L4-03",
+     "L4-05",
+     "L4-06",
+     "L3a-02",
+     "L3b-02",
+     "L4-07"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P11",
+  "family": 1,
+  "topic": "STRUCTURE",
+  "severity": "low",
+  "status": "open",
+  "title": "Video sections: remove them, or lead with them?",
+  "what": "The site lists brand videos among the sections to remove. The legacy argument patterns include a video-led page, as long as the headline states the promise and the page works without pressing play.",
+  "why": "Pallet's homepage leads with video; the 10-26 page dropped all of it. How the video is carried belongs to the imagery family; whether it may stay is decided here.",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D1-14",
+     "D5-01"
+    ]
+   },
+   {
+    "label": "Legacy candidates",
+    "rows": [
+     "L1b-13"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P12",
+  "family": 1,
+  "topic": "SCOPE",
+  "severity": "low",
+  "status": "open",
+  "title": "Re-aiming an existing page at a new audience or offer",
+  "what": "On an existing page the site changes only what was asked. The legacy skills cover changing a page's audience, offer or argument as its own case, where sections that no longer answer a question may be removed, while a scoped edit keeps everything else.",
+  "why": "'Make this page work for the logistics segment' is neither a small edit nor a new page.",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "A1-08"
+    ]
+   },
+   {
+    "label": "Legacy candidates",
+    "rows": [
+     "L1-01",
+     "L1b-19",
+     "L1-09"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P13",
+  "family": 1,
+  "topic": "STRUCTURE",
+  "severity": "low",
+  "status": "open",
+  "title": "Several directions for the same page",
+  "what": "The site has no rule for a request for several concepts or layouts. The legacy skill plans one row per direction, keeps brand invariants fixed, says three centred heroes with different headlines are still one composition, and reports honestly when only one page is finished.",
+  "why": "A gap, not a conflict.",
+  "groups": [
+   {
+    "label": "Legacy candidates",
+    "rows": [
+     "L1c-01",
+     "L1c-02",
+     "L1c-03",
+     "L1c-05"
+    ]
+   }
+  ]
+ }
+]

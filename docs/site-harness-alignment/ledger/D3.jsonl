@@ -1,0 +1,3 @@
+{"id": "D3-01", "src": "skill images-and-logos (site)", "loc": "4. Logos", "topic": "IDENTITY", "applies": "account", "strength": "must", "text": "The account's logo goes in the header, beside the seller's logo: the template's `account_logo` slot, or `accountLogo` in the plain header.", "note": ""}
+{"id": "D3-02", "src": "skill images-and-logos (site)", "loc": "4. Logos", "topic": "IDENTITY", "applies": "account", "strength": "must-not", "text": "Never put the account's logo anywhere else on the page.", "note": ""}
+{"id": "D3-03", "src": "skill images-and-logos (site)", "loc": "4. Logos", "topic": "PEOPLE", "applies": "always", "strength": "must-not", "text": "A row of the seller's customer logos must not suggest the account is already a customer.", "note": ""}

@@ -1,0 +1,1 @@
+{"id": "B1-01", "src": "tool descriptions (captured)", "loc": "fetch_logo", "topic": "IDENTITY", "applies": "account", "strength": "fact", "text": "Find a company's real published logos by its website domain … Returns the recommended logos and any others found, each a file you can place where the account's logo goes.", "note": ""}

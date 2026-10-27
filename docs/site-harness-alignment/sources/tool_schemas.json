@@ -1,0 +1,151 @@
+[
+ {
+  "name": "ls",
+  "description": "Lists all files in a directory.\n\nThis is useful for exploring the filesystem and finding the right file to read or edit.\nYou should almost ALWAYS use this tool before using the read_file or edit_file tools.",
+  "args": {
+   "path": "Absolute path to the directory to list. Must be absolute, not relative."
+  }
+ },
+ {
+  "name": "read_file",
+  "description": "Reads a file from the filesystem.\n\nAssume this tool is able to read all files. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.\n\nUsage:\n- By default, it reads up to 100 lines starting from the beginning of the file\n- **IMPORTANT for large files and codebase exploration**: Use pagination with offset and limit parameters to avoid context overflow\n    - First scan: read_file(file_path=\"...\", limit=100) to see file structure\n    - Read more sections: read_file(file_path=\"...\", offset=100, limit=200) for next 200 lines\n    - Only omit limit (read full file) when necessary for editing\n- Specify offset and limit: read_file(file_path=\"...\", offset=0, limit=100) reads first 100 lines\n- Results are returned using cat -n format, with line numbers starting at 1\n- Lines longer than 5,000 characters will be split into multiple lines with continuation markers (e.g., 5.1, 5.2, etc.). `limit` applies to source lines, so continuation rows do not consume the budget.\n- You have the capability to call multiple tools in a single response. It is always better to speculatively read multiple files as a batch that are potentially useful.\n- If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.\n- Image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, etc.), audio and video files, and PDFs are returned as multimodal content blocks (see https://docs.langchain.com/oss/python/langchain/messages#multimodal).\n\nFor multimodal reads (image, audio, video, PDF, etc.):\n- Use `read_file(file_path=...)`\n- Do NOT use `offset`/`limit` for images (pagination is text-only)\n- If file details were compacted from history, call `read_file` again on the same path\n\n- You should ALWAYS make sure a file has been read before editing it.",
+  "args": {
+   "file_path": "Absolute path to the file to read. Must be absolute, not relative.",
+   "offset": "Line number to start reading from (0-indexed). Use for pagination of large files.",
+   "limit": "Maximum number of lines to read. Use for pagination of large files."
+  }
+ },
+ {
+  "name": "write_file",
+  "description": "Writes to a new file in the filesystem.\n\nUsage:\n- The write_file tool will create the a new file.\n- Prefer to edit existing files (with the edit_file tool) over creating new ones when possible.",
+  "args": {
+   "file_path": "Absolute path where the file should be created. Must be absolute, not relative.",
+   "content": "The text content to write to the file. This parameter is required."
+  }
+ },
+ {
+  "name": "edit_file",
+  "description": "Performs exact string replacements in files.\n\nUsage:\n- You must read the file before editing. This tool will error if you attempt an edit without reading the file first.\n- When editing, preserve the exact indentation (tabs/spaces) from the read output. Never include line number prefixes in old_string or new_string.\n- ALWAYS prefer editing existing files over creating new ones.\n- Only use emojis if the user explicitly requests it.",
+  "args": {
+   "file_path": "Absolute path to the file to edit. Must be absolute, not relative.",
+   "old_string": "The exact text to find and replace. Must be unique in the file unless replace_all is True.",
+   "new_string": "The text to replace old_string with. Must be different from old_string.",
+   "replace_all": "If True, replace all occurrences of old_string. If False (default), old_string must be unique."
+  }
+ },
+ {
+  "name": "glob",
+  "description": "Find files matching a glob pattern.\n\nSupports standard glob patterns: `*` (any characters), `**` (any directories), `?` (single character).\nReturns a list of absolute file paths that match the pattern.\n\nExamples:\n- `**/*.py` - Find all Python files\n- `*.txt` - Find all text files in the backend's default root\n- `/subdir/**/*.md` - Find all markdown files under /subdir",
+  "args": {
+   "pattern": "Glob pattern to match files (e.g., '**/*.py', '*.txt', '/subdir/**/*.md').",
+   "path": "Base directory to search from. Defaults to the backend's default root."
+  }
+ },
+ {
+  "name": "grep",
+  "description": "Search for a text pattern across files.\n\nSearches for literal text (not regex) and returns matching files or content based on output_mode.\nSpecial characters like parentheses, brackets, pipes, etc. are treated as literal characters, not regex operators.\n\nExamples:\n- Search all files: `grep(pattern=\"TODO\")`\n- Search Python files only: `grep(pattern=\"import\", glob=\"*.py\")`\n- Show matching lines: `grep(pattern=\"error\", output_mode=\"content\")`\n- Search for code with special chars: `grep(pattern=\"def __init__(self):\")`",
+  "args": {
+   "pattern": "Text pattern to search for (literal string, not regex).",
+   "path": "Directory to search in. Defaults to current working directory.",
+   "glob": "Glob pattern to filter which files to search (e.g., '*.py').",
+   "output_mode": "Output format: 'files_with_matches' (file paths only, default), 'content' (matching lines with context), 'count' (match counts per file)."
+  }
+ },
+ {
+  "name": "compact_conversation",
+  "description": "Compact the conversation by summarizing older messages into a concise summary. Use this proactively when the conversation is getting long to free up context window space. This tool takes no arguments.",
+  "args": {}
+ },
+ {
+  "name": "write_section",
+  "description": "Write a new section as one React file (see the writing-a-section skill). It is checked for brand tokens and types; if it passes, place it in a page by its name.",
+  "args": {
+   "name": null,
+   "code": null
+  }
+ },
+ {
+  "name": "view_clone",
+  "description": "Look at one of the seller's captured sections on its own: a desktop (1440 wide) and a mobile (375 wide) picture, plus its catalog card (words, images, links).",
+  "args": {
+   "fragment_id": null
+  }
+ },
+ {
+  "name": "compare_section",
+  "description": "Show a seller's section (fragment_id) and your component (name, filled with props) side by side at 1440 and 375 wide, with the share of the area that differs, both heights, and the original's words that yours is missing.",
+  "args": {
+   "name": null,
+   "fragment_id": null,
+   "props": null
+  }
+ },
+ {
+  "name": "validate_page",
+  "description": "Check page.json and shell.json against the components, the catalog, the brand and the evidence. Returns VALID or INVALID with each error and its fix.",
+  "args": {}
+ },
+ {
+  "name": "render_page",
+  "description": "Render the site and return a desktop (1440 wide) and a mobile (375 wide) full-page screenshot of one page, with facts about broken images and overflow. route is \"/\" for page.json or \"/<name>\" for pages/<name>.json. Checks the page first, exactly as validate_page does, and refuses with each error while the site is invalid, so there is no need to validate right before a render.",
+  "args": {
+   "route": null
+  }
+ },
+ {
+  "name": "restore_version",
+  "description": "Bring back the site as it was at an earlier saved version (site.md lists them) into page.json, shell.json and pages/.",
+  "args": {
+   "version": null
+  }
+ },
+ {
+  "name": "view_asset",
+  "description": "Look at up to four images (files from brand/brand.md, images you generated, or images search_assets found), each with its description, before you choose one for a section.",
+  "args": {
+   "files": null
+  }
+ },
+ {
+  "name": "search_assets",
+  "description": "Search the seller's images by what they show and how they look. Write what you need in plain words, for example \"calm classroom, morning light\" or \"product dashboard screenshot\". Returns the best matches first (up to limit, 1 to 20), each with its file, type, title and a one-line description. Look at one with view_asset before you use it. kind narrows to image or logo.",
+  "args": {
+   "q": null,
+   "kind": null,
+   "limit": null
+  }
+ },
+ {
+  "name": "generate_image",
+  "description": "Make a new image for this site in the brand's style (see the images-and-logos skill). prompt says what it shows; aspect_ratio is the section's shape, such as \"16:9\", \"4:3\" or \"1:1\"; style_references are one to three of the brand's own photos from brand/brand.md. Returns the image's path and shows it to you.",
+  "args": {
+   "prompt": null,
+   "aspect_ratio": null,
+   "style_references": null
+  }
+ },
+ {
+  "name": "fetch_logo",
+  "description": "Find a company's real published logos by its website domain, for example \"lakeside.org\" (from Brandfetch and the company's own site). Returns the recommended logos and any others found, each a file you can place where the account's logo goes. Look at one with view_asset before you use it.",
+  "args": {
+   "domain": null,
+   "company_name": null
+  }
+ },
+ {
+  "name": "web_search",
+  "description": "Search the web. Set include_domains to the seller's domain to find its own published case studies and customer stories.",
+  "args": {
+   "query": null,
+   "include_domains": null,
+   "num_results": null
+  }
+ },
+ {
+  "name": "fetch_page",
+  "description": "Open a page and save its text under fetched/ as evidence. Use it before you put a number or a quote from that page on the page.",
+  "args": {
+   "url": null
+  }
+ }
+]
