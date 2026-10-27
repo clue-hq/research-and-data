@@ -1,4 +1,4 @@
-# Family 2 · Step 3 — one home per rule (draft for founder review)
+# Family 2 · Step 3 — one home per rule (approved 2026-10-28)
 
 Homes as in family 1 (S1): **BASE** `planning-a-page` · **CASE** the six case skills · **COPY** and **EVIDENCE**
 (the two family-2 aspect skills; working names `page-copy` and `evidence`) · **REVIEW** (family 5) · **MECH**

@@ -1,4 +1,4 @@
-# Family 3 · Step 3 — one home per rule (draft for founder review)
+# Family 3 · Step 3 — one home per rule (approved 2026-10-28)
 
 Homes as before (S1): **BASE** · **CASE** · **IMAGERY** (the family-3 aspect skill: today's `images-and-logos`,
 rewritten and widened to imagery and media) · **COPY**/**EVIDENCE** (family 2) · **REVIEW** (family 5) · **MECH**
@@ -23,7 +23,7 @@ Ploy appears only where the founder asked (M5), rewritten in our own words.
 | M2.3 the "must not show" line removed | IMAGERY | Deleted, not rewritten. |
 | M2.4 never presented as the account's; never imitate its logo or replicate its things | IMAGERY | |
 | M2.5–M2.7 prompt craft, look and retry, text on the calm area | IMAGERY | |
-| M2.8 nothing generated presented as real | IMAGERY | Replaces "Anything real… Never generate them." |
+| M2.8 no generated image presented as the seller's real logo or product | IMAGERY | Replaces "Anything real… Never generate them." Seller's logo and product only. |
 | M3.1–M3.3 keep the seller's image staging | IMAGERY | |
 | M4.0 the two existing lines stand | IMAGERY | |
 | M4.1 a screenshot shows the product, not a result | IMAGERY (+ COPY's claim rules decide the claims) | |
@@ -46,7 +46,7 @@ Ploy appears only where the founder asked (M5), rewritten in our own words.
 | D1-59 | Keep the clone's layout, images and rhythm | → IMAGERY (M3) and family 4 (layout). |
 | D2-16, D2-17, D6-04 | Images only from brand.md or generated | Rewrite to the one list (M5.1). |
 | D3-04, D3-07 | Brand images in brand.md; other images via search | → IMAGERY, merged into the one list (M5.1). |
-| D3-05 | "Anything real… Never generate them" | Rewrite: presented-as-real (M2.8). |
+| D3-05 | "Anything real… Never generate them" | Rewrite: never presented as the seller's real logo or product (M2.8). |
 | D3-06 | Image fits the words; screenshot shows what the copy says | Keep (IMAGERY, M4.0). |
 | D3-08 | Generate only when needed and nothing fits | Keep (IMAGERY, M2.1). |
 | D3-09 | Scene or mood; the "must not show" list | Rewrite: follow the seller's imagery type (M2.2); the list is deleted (M2.3); keep the account clause (M2.4). |
