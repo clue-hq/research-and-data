@@ -418,6 +418,78 @@ ISSUES = [
      ("H4", "shows a logo whole"), ("H4", "## The account's logo (header only)")]},
    {"label": "Legacy", "refs": [
      ("L8", "Distinguish a full wordmark/lockup"), ("L8", "returns proven family cells"), ("L8", "If identity is ambiguous")]}]},
+ {"id": "V1", "family": 4, "topic": "RHYTHM", "severity": "high", "status": "open",
+  "title": "Section rhythm: alternate light and dark with one dark section, or follow the seller's own rhythm?",
+  "what": "The site sets a fixed pattern for brand sections: choose surfaces so light and dark alternate, use at most one dark brand section, never two dark sections in a row (clones keep their own backgrounds). The legacy design skill says no universal pattern applies: record the seller's own sequence of surfaces, image fields and density — 'a brand may use several vivid fields or a single canvas' — and a new band inherits its neighbour's treatment and the page's rhythm; 'do not invent a rule such as one colored band per page'.",
+  "why": "A seller whose site runs two dark bands back to back, or lives on one canvas, gets a page that no longer looks like theirs.",
+  "cases": "",
+  "groups": [
+   {"label": "Site: a fixed pattern", "refs": [
+     ("D2", "Choose brand-section surfaces so light and dark alternate"), ("D2", "Use at most one dark brand section"),
+     ("D4", "No two dark sections in a row")]},
+   {"label": "Legacy: the seller's own rhythm", "refs": [
+     ("L12", "Record the observed sequence of surfaces"), ("L12", "do not invent a rule such as"),
+     ("L14", "What the capture preserved, the repair preserves")]}]},
+
+ {"id": "V2", "family": 4, "topic": "HERO", "severity": "high", "status": "open",
+  "title": "Which hero opens the page, and how it is composed",
+  "what": "The site says only 'The home page's hero usually opens the page' (the 10-26 Pallet page opened with a centred hero copied from a product page). The legacy skills say: retrieve sections by the job they must do and look beyond the homepage for product, use-case or customer-story sources; name each band's composition before building (centred statement, asymmetric split, editorial stack, full-bleed hero…), repeat a composition only where the content is symmetric; and the seller's own hero archetype (split? centred? what carries the weight?) is part of its grammar.",
+  "why": "The founder asked whether something pushes the agent to a centred hero every time; nothing in the text does, but nothing guides the choice either.",
+  "cases": "Product campaign pages may open on the product page's hero; one-to-one pages usually on the home hero adapted to the account.",
+  "groups": [
+   {"label": "Site", "refs": [("D2", "The home page's hero usually opens the page"), ("D2", "Choose a clone for its layout")]},
+   {"label": "Legacy", "refs": [
+     ("L14", "Retrieve in task order, not catalog order"), ("L14", "**Composition menu.**"),
+     ("L6", "Hero archetype"), ("L1c", "Three centered heroes")]}]},
+
+ {"id": "V3", "family": 4, "topic": "FIDELITY", "severity": "high", "status": "open",
+  "title": "New and rebuilt sections that look like the seller's",
+  "what": "The site asks a new section to 'look like the seller's sections around it — render and compare', a rebuilt one to keep the original's layout and compare up to three times, and an own header never to look generic. The legacy skills add method: name the seller section each new band descends from; learn the seller's grammar (containers, type hierarchy, density, surface changes, image purpose, button shape, how it rearranges on a phone) — 'a palette is not a grammar'; the logo-swap test (if swapping the logo would let a section fit any company, it isn't showing the brand); no decorative blobs, orbs or gradient meshes unless the brand uses them, restraint by default; and when rebuilding, rebuild what the band does, not tidy how it was written.",
+  "why": "Brand sections and agent-written sections are where pages drift into generic.",
+  "cases": "",
+  "groups": [
+   {"label": "Site", "refs": [
+     ("D6", "Make it look like the seller's sections around it"), ("D6", "It must look like the seller's site, never like a generic header"),
+     ("D5", "Keep the original's layout: columns, order"), ("D5", "Stop when it reads as the same section"), ("D1", "Keep its layout, images and rhythm")]},
+   {"label": "Legacy", "refs": [
+     ("L15", "A palette is not a grammar"), ("L12", "Tokens supply values; source components show"),
+     ("L14", "Kill test"), ("L14", "**Anti-slop.**"), ("L14", "You are rebuilding what the band DOES"),
+     ("L12", "Before a scoped change, record the current band's keeper properties")]}]},
+
+ {"id": "V4", "family": 4, "topic": "TYPE", "severity": "medium", "status": "open",
+  "title": "Type hierarchy across the page",
+  "what": "The site gives the agent the brand's type roles (measured from the seller's site or derived), heading sizes chosen by name (display, headline, title), sizes that change with the window as on the seller's site, and 'words fit their space'. The legacy skills add: judge the whole page, not each band — 'an accidentally tiny opening headline beside a much larger ordinary product heading is a mismatch'; keep the seller's deliberate scale contrast; never shrink type to fit an over-long argument (edit the copy); one main headline per page.",
+  "why": "Mixed clones and brand sections can leave the hero smaller than a later heading.",
+  "cases": "",
+  "groups": [
+   {"label": "Site", "refs": [
+     ("H4", "Each role is a pair of classes"), ("H4", "Our sections' headings choose from display"),
+     ("H4", "Sizes change with the window"), ("D4", "A rewritten headline should not wrap much worse")]},
+   {"label": "Legacy", "refs": [
+     ("L12", "Judge the page together"), ("L12", "Read family, weight, size"), ("L15", "Do not shrink text to fit"),
+     ("L14", "For a new typed band, start with the inspected seller grammar")]}]},
+
+ {"id": "V5", "family": 4, "topic": "BRAND", "severity": "medium", "status": "open",
+  "title": "Brand-only styling, buttons and styling by hand",
+  "what": "The site styles only by the brand's names ('never write a colour, a size, a class or a style'), checked by write_section; R7.5 now copies the header and footer's CSS style from the seller's page. Buttons follow the seller's own main-ask style, with outline or text styles for quieter actions. Styling a marketer did by hand (_edits) is kept unless the request changes the look. The legacy skills agree and add: keep the seller's observed button geometry, padding and border; recolour only when contrast needs it, within the brand's own system; use generic defaults only where the seller shows no evidence.",
+  "why": "Mostly agreement; the question is what to add.",
+  "cases": "",
+  "groups": [
+   {"label": "Site", "refs": [
+     ("A1", "Style comes only from the brand"), ("D6", "Style only with the brand's classes"), ("H4", "For the page's main ask, use the style"),
+     ("D2", "When you rewrite a section, keep its `_edits`"), ("D2", "When you add styling yourself")]},
+   {"label": "Legacy", "refs": [("L12", "Preserve observed button geometry"), ("L12", "Use generic design defaults only")]}]},
+
+ {"id": "V6", "family": 4, "topic": "CONTRAST", "severity": "low", "status": "open",
+  "title": "Readable text on surfaces and images",
+  "what": "The site makes buttons and cards readable automatically and tells the agent to give a header over a photo a semi-opaque fill. The legacy skill (scene-ad era) adds: judge a colour by how light it is, not by its name; at least 4.5:1 for body text and button labels; over a photo, check the actual area behind each line of text; when two strong colours fight, soften one or add space. (Text over a generated image: M2.7.)",
+  "why": "Brand sections and agent-written sections over images.",
+  "cases": "",
+  "groups": [
+   {"label": "Site", "refs": [("H4", "A button whose text or fill would not stand out"), ("D2", "Over a photo, give the header's own box")]},
+   {"label": "Legacy", "refs": [
+     ("L13", "Inspect the kit's real foreground and background"), ("L13", "Body copy and CTA labels need at least 4.5:1"),
+     ("L13", "For a photograph or generated image"), ("L13", "When two saturated areas fight")]}]},
 ]
 
 out = []

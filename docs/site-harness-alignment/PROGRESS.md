@@ -17,7 +17,7 @@ alignment (`docs/design-harness-alignment/`), done **one family at a time**:
    action, the account's identity, header/footer choice, the brief, asking. ← steps 1–3 done 2026-10-27 (P1–P13 ruled; homes approved in HOMES-family1.md)
 2. **Wording and evidence** — sourcing, claim strength, proof, what stays off the page, voice, headlines, copy craft. ← steps 1–3 done 2026-10-28 (W1–W12 ruled; HOMES-family2.md approved)
 3. **Imagery and media** — composition, choosing images, generation, logos, product screenshots, video and motion. ← steps 1–2 done 2026-10-28 (M1–M7 ruled); step 3 approved (HOMES-family3.md)
-4. Visual design and brand fidelity — hero, rhythm, type, source fidelity, contrast.
+4. **Visual design and brand fidelity** — rhythm, hero, looking like the seller, type, brand-only styling, contrast. ← step 1 done 2026-10-28 (V1–V6)
 5. Review — the self-check after render.
 6. Mechanics — only where a mechanics skill repeats or contradicts a judgement rule.
 
@@ -28,6 +28,10 @@ Site: D3 images-and-logos · D2 image lines · D4 image checks · D6 image/logo 
 H4 brand/brand.md (logos, assets, motion; account logo section) · H3 clone card images · D1 "keep its layout, images and rhythm".
 Legacy: L8 web-media-composition (+ asset-selection, composition-and-identity) · L9 web-product-story · L10 web-motion-fidelity (+ inventory-and-reconstruction, playback-verification, rich-card-controls) · L11 generative-imagery (ad-era).
 Ploy (discussion only, S3): brand-adherence, plan-design, build-site-page image and motion parts.
+
+## Sources — family 4
+Site: A1 brand-only rule · D2 clone choice, rhythm, header over a photo, styling by hand · D4 rhythm check · D5 rebuilding fidelity · D6 writing-a-section brand and fidelity rules · B1 view_clone, compare_section · H4 brand/brand.md surfaces, type, spacing, buttons, cards, links, brand rules · H5 catalog/sections.md and index.md.
+Legacy: L12 design-guidance · L13 color-and-contrast (scene era) · L14 web-source-readiness (+ authoring-vocabulary design guidance, faithful-repair) · L15 create-website (+ source-format-contract); L6 grammar audit and L1c layout rows from family 1.
 
 ## Row schema
 `id, src, loc, topic, applies, strength, text, note` (as the scene-ad ledger).
@@ -83,3 +87,4 @@ Legacy: L7 conversion-copywriting · L7a copy-craft · L7b website-copy-brief ·
 - 2026-10-28: family 2 home table drafted (HOMES-family2.md); founder moved on to family 3 without changes to it. Family 3 ledgered (73 rows: 32 site, 41 legacy; 377 in all); 7 conflict groups M1–M7.
 - 2026-10-28: M1–M7 ruled; family 3 step 2 complete; HOMES-family3.md drafted. Ploy consulted in family 3 only for M5 (founder's ask).
 - 2026-10-28: founder approved the family 2 and 3 home tables ("rest sounds good", replying to the message presenting both); M2.8 narrowed to the seller's logo and product only.
+- 2026-10-28: family 4 ledgered (57 rows: 29 site, 28 legacy; 436 in all); 6 conflict groups V1–V6.
