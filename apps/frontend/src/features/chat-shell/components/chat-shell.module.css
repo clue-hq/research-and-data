@@ -1961,6 +1961,14 @@
   min-width: 0;
 }
 
+/* That row turns the canvas's `flex: 1 1 auto` sideways: it grew a Tablet or Mobile canvas back to
+   the full width, so the site never showed its tablet or mobile layout. Here the width holds (it
+   still shrinks when the stage is narrower) and the auto margins centre it. */
+.siteStageBody > .webCanvasTablet,
+.siteStageBody > .webCanvasMobile {
+  flex-grow: 0;
+}
+
 /* DESIGN REVIEW (DR2): the page panel from the founder's Ploy reference. Built from the inspector
    rail's tokens; rows reuse `.layerRow*`, the search box `InspectorInput`. */
 .sitePagesPanel {
