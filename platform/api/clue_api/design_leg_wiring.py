@@ -85,6 +85,7 @@ from clue_api.chat.turn_controls import TurnStopRequested, lock_turn_control, st
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.chat.turn_stream import TurnStreamEmitter
 from clue_api.conversation_continuation import thread_message_refs
+from clue_api.design_comment_routing import commented_document_id
 from clue_api.design_memory import (
     DesignMemoryScopeError,
     freeze_design_memory,
@@ -1482,6 +1483,14 @@ class DesignLegTurnRunner:
                     documents=len(leg_documents),
                 )
                 exit_decision: ExitDecision | None = None
+            elif len(leg_documents) == 1 and commented_document_id(focus_refs) == str(
+                leg_documents[0].get("document_id")
+            ):
+                # Comments (2026-10-29): notes left on the leg's one page ARE the ask, on that
+                # page — nothing to judge. This is also the turn the worker just moved the leg
+                # for, so a judge could only second-guess where the person already pointed.
+                log.info("design_leg.comment_turn", leg_id=leg_id, turn_id=str(turn_id))
+                exit_decision = None
             else:
                 exit_decision = await self._judge_exit(
                     leg=leg,

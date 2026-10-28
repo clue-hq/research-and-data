@@ -173,6 +173,9 @@ export interface ChatStreamEvent {
   deltaIndex: number | null;
   /** Present on the four `leg.*` lifecycle frames; null everywhere else. */
   legId: string | null;
+  /** On `leg.opened`/`leg.reopened`: true when the server opened the leg on its own design turn
+   * (a comment moved it to the page it was left on), so this turn designs rather than delegates. */
+  legTurn: boolean;
   /** Present on `design.checkpoint`; null on every other frame. */
   checkpoint: DesignCheckpoint | null;
   /** Present on `design.op_batch`; null on every other frame. */
@@ -332,6 +335,7 @@ export function parseChatStreamEvent(
       runId: envelope.data.run_id ?? null,
       deltaIndex: envelope.data.delta_index ?? null,
       legId: envelope.data.leg_id ?? null,
+      legTurn: raw.leg_turn === true,
       checkpoint:
         envelope.data.type === "design.checkpoint" ? readCheckpoint(raw) : null,
       opBatch:

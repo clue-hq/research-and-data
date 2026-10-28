@@ -53,6 +53,14 @@ export function editTargetContextRefs(
   ];
 }
 
+/** Which comment lane the open artifact has: a site's, a web page's, or none (an ad, or
+ * nothing open). Comments (2026-10-29): the lane does NOT depend on a design leg — a page's
+ * comment box offers Add and Send to chat whatever the chat has open, and the server takes the
+ * comments to the page they were left on (opening, reopening or moving the leg to it). */
+export function commentLane(artifactKind: string | null): "site" | "web" | null {
+  return artifactKind === "site" || artifactKind === "web" ? artifactKind : null;
+}
+
 /** Slice 2 (R-A2): what a turn says when the annotations ARE the message —
  * "Send to chat" on an empty composer, or Send pressed with chips and no
  * prose. The notes themselves ride the context refs, so the message only has

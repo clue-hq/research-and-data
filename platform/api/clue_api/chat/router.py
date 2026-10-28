@@ -180,6 +180,7 @@ from clue_api.chat.schemas import (
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.conversation_capture import persist_user_turn, project_client_entity_id
 from clue_api.crm import write_answer as crm_write_answer
+from clue_api.design_comment_routing import commented_document_id
 from clue_api.design_leg_wiring import (
     design_document_card_fields,
     design_legs_for_threads,
@@ -2875,6 +2876,10 @@ def build_chat_router(
                     storage=storage,
                     project_id=project_id,
                 )
+                # Comments go to the page they were left on: the worker moves the thread's leg
+                # there before routing (``clue_api.design_comment_routing``), so design answers.
+                if commented_document_id(context_refs) is not None:
+                    routed_to = "design"
                 attachments = await _validated_submission_attachments(
                     conn,
                     workspace_id=who.workspace_id,

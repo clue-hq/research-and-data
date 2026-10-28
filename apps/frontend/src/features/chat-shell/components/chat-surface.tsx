@@ -54,6 +54,7 @@ import {
   ANNOTATIONS_ONLY_MESSAGE,
   annotationChips,
   annotationContextRefs,
+  commentLane,
   editTargetChips,
   editTargetContextRefs,
 } from "../model/edit-targets";
@@ -271,12 +272,13 @@ export function ChatSurface({
   //
   // The lane gate is the SAME one the chips use minus the document (which is
   // not known until the session exists, and which the canvas implies anyway —
-  // there is no comment box without a rendered document): outside an open
-  // design leg a `design_node` ref means nothing, so rather than send a turn
-  // that silently drops its annotations, the button is simply absent.
-  const annotationLaneOpen = chat.designLegOpen && shell.artifactKind === "web";
-  // C7: the site lane opens the same annotation lane beside an open design leg.
-  const siteAnnotationLaneOpen = chat.designLegOpen && shell.artifactKind === "site";
+  // there is no comment box without a rendered document). Comments
+  // (2026-10-29): it no longer waits for a design leg — a page's comments go to
+  // that page whatever the chat has open, because the server moves the leg there
+  // (`commentLane`).
+  const annotationLaneOpen = commentLane(shell.artifactKind) === "web";
+  // C7: the site lane opens the same annotation lane.
+  const siteAnnotationLaneOpen = commentLane(shell.artifactKind) === "site";
   const sendAnnotationRef = useRef<((note: string) => void) | null>(null);
   const dispatchSendAnnotation = useCallback((note: string) => {
     sendAnnotationRef.current?.(note);
@@ -506,9 +508,9 @@ export function ChatSurface({
   const targetChips = editTargetsEnabled
     ? editTargetChips(sceneSession.scene, sceneSession.selectedIds)
     : [];
-  // Slice 2 (R-A2), the web half of the same rule: an annotation is a noted
-  // `design_node` ref, so it rides a turn only beside the open design leg's
-  // own document.
+  // Slice 2 (R-A2): an annotation is a noted `design_node` ref on the open
+  // page. Unlike an ad's selection it does not need the open leg's document —
+  // the server takes it to its page (comments, 2026-10-29).
   const webAnnotationsEnabled =
     annotationLaneOpen && session.activeDocumentId !== null;
   const siteAnnotationsEnabled =

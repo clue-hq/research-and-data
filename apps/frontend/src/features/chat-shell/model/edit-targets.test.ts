@@ -5,6 +5,7 @@ import { HARVESTED_AD_PAGE } from "@/features/design-editor/adapter/__fixtures__
 import {
   annotationChips,
   annotationContextRefs,
+  commentLane,
   editTargetChips,
   editTargetContextRefs,
 } from "./edit-targets";
@@ -76,4 +77,15 @@ test("annotations become one document ref plus ordered noted node refs; chips ar
     { n: 2, label: "Make the headline shorter an\u2026" },
     { n: 3, label: "Remove" },
   ]);
+});
+
+// Comments (2026-10-29): a site or web page's comment box offers Add and Send to chat whatever
+// the chat has open — no design session, or one on another page or ad. The server takes the
+// comments to the page they were left on. An ad has no comment box (its selection chips stay
+// bound to an open leg on that ad).
+test("a site or web page always has its comment lane, whatever leg is open", () => {
+  assert.equal(commentLane("site"), "site");
+  assert.equal(commentLane("web"), "web");
+  assert.equal(commentLane("ad"), null);
+  assert.equal(commentLane(null), null);
 });

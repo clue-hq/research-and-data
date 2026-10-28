@@ -384,7 +384,9 @@ export function applyChatStreamEvent(
                 known: true,
                 open: true,
                 legId: event.legId,
-                openedByTurnId: event.turnId,
+                // A leg the server opened on a comment's own turn has no delegating turn: that
+                // turn is the design turn (2026-10-29).
+                openedByTurnId: event.legTurn ? null : event.turnId,
               };
       return state;
     }
