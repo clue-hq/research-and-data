@@ -139,6 +139,10 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # 2026-10-27 (main merged into the CRM line): no address added or removed; it moves with
     # `head-of-abm@v86` (main's prompt v19). v45 stays the replay input for turns pinned to it.
     "recipe0-stage0-v46.json",
+    # 2026-10-28 (site agent alignment, R1.2): no address added or removed; it moves with
+    # `head-of-abm@v87` (the page brief opens with who the page is for). v46 stays the replay
+    # input for turns pinned to it.
+    "recipe0-stage0-v47.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly

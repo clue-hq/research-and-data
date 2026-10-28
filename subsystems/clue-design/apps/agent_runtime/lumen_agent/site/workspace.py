@@ -777,6 +777,8 @@ def saved_line(
         return "no, the save was refused"
     if status == "applied":
         return "nothing to save"
+    if status == "clarification_requested":
+        return "nothing, it asked a question first"
     if stop_reason == "site_invalid":
         return "no, the page was still invalid"
     if stop_reason == "cancelled_by_request":

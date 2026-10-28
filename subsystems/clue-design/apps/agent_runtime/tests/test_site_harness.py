@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -20,7 +21,7 @@ from lumen_agent.site.harness import (
     build_site_agent,
     clear_superseded_results,
     run_site_turn,
-    system_prompt_with_skills,
+    site_system_prompt,
 )
 from lumen_agent.site.tools import SiteTools
 from lumen_agent.site.workspace import materialize_workspace
@@ -348,22 +349,58 @@ def test_clearing_waits_until_the_session_passes_the_threshold() -> None:
     assert isinstance(large[2].content, str) and "cleared" in large[2].content
 
 
-def test_the_skills_ride_in_the_system_prompt_with_the_e5_skills_by_default(tmp_path: Path) -> None:
+class _Recording(ScriptedModel):
+    """Keeps the messages of every model call, so a test can read the system prompt the agent saw."""
+
+    seen: list = []
+
+    def _generate(self, messages, *args, **kwargs):
+        type(self).seen.append(messages)
+        return super()._generate(messages, *args, **kwargs)
+
+
+def _first_system_prompt(tmp_path: Path, *, live: bool = False) -> tuple[str, Path]:
     workspace = tmp_path / "workspace"
-    materialize_workspace(workspace, inputs_for(), site=garner_site())
-    prompt = system_prompt_with_skills(workspace)
-    assert "## Your skills" in prompt and "### Skill: building-with-puck" in prompt and "Reuse first" in prompt
-    assert "### Skill: images-and-logos" in prompt and "Generate only a scene or a mood" in prompt
-    assert "### Skill: writing-a-section" in prompt and "### Skill: rebuilding-a-section" in prompt
-    assert "### Skill: writing-a-section" not in system_prompt_with_skills(workspace, allow_new_sections=False)
+    inputs = inputs_for(live_sites=live)
+    materialize_workspace(workspace, inputs, site=garner_site())
+    tools = SiteTools(workspace=workspace, inputs=inputs, base_site=garner_site(), retry_delay_s=0)
+    _Recording.seen = []
+    agent, _, _ = build_site_agent(tools, model=_Recording(messages=iter([AIMessage(content="Done.")])),
+                                   model_id="openai:x-ai/grok-4.6", live=live)
+    agent.invoke({"messages": [{"role": "user", "content": "build"}]}, {"configurable": {"thread_id": "t"}})
+    return _Recording.seen[0][0].text, workspace
 
 
-def test_live_workspaces_get_the_interactive_skill_and_others_do_not(tmp_path: Path) -> None:
-    on = system_prompt_with_skills(tmp_path, live=True)
-    off = system_prompt_with_skills(tmp_path, live=False)
-    assert "### Skill: making-a-section-interactive" in on
-    assert "making-a-section-interactive" not in off
-    assert off == system_prompt_with_skills(tmp_path)  # flag off: byte-identical
+def test_the_skills_are_listed_not_pasted(tmp_path: Path) -> None:
+    # Ruling S2 (2026-10-27): the prompt lists each skill (name, when to use it, path); the agent reads one
+    # when it needs it. No skill's text rides in the system prompt any more.
+    prompt, _ = _first_system_prompt(tmp_path)
+    assert "## Your skills" in prompt
+    assert "**building-with-puck**" in prompt and "Read `/skills/building-with-puck/SKILL.md`" in prompt
+    assert "Choose each section in this order" not in prompt and "Never show an image larger" not in prompt
+    assert "### Skill:" not in prompt
+
+
+def test_the_section_writing_skills_are_always_listed_and_the_interactive_one_only_on_live_sites(tmp_path: Path) -> None:
+    # Ruling X2.2–X2.3: skills-e5 is part of the fixed list; skills-live depends on what the workspace publishes.
+    static, _ = _first_system_prompt(tmp_path / "static")
+    live, _ = _first_system_prompt(tmp_path / "live", live=True)
+    for prompt in (static, live):
+        assert "Read `/skills-e5/writing-a-section/SKILL.md`" in prompt
+        assert "Read `/skills-e5/rebuilding-a-section/SKILL.md`" in prompt
+    assert "making-a-section-interactive" not in static
+    assert "Read `/skills-live/making-a-section-interactive/SKILL.md`" in live
+
+
+def test_every_skill_the_prompt_names_exists_in_the_workspace(tmp_path: Path) -> None:
+    # Ruling S2.2: a pointer never leads nowhere.
+    prompt, workspace = _first_system_prompt(tmp_path, live=True)
+    listed = set(re.findall(r"Read `(/[^`]+/SKILL\.md)`", prompt))
+    for path in listed:
+        assert (workspace / path.lstrip("/")).is_file(), path
+    # ...and no skill is silently dropped (a header the middleware cannot parse is skipped without an error).
+    on_disk = {"/" + str(p.relative_to(workspace)) for p in workspace.glob("skills*/*/SKILL.md")}
+    assert listed == on_disk, sorted(on_disk - listed)
 
 
 RENDER_LINE = "- `render_page`: a desktop and a mobile screenshot of one page.\n"
@@ -371,40 +408,35 @@ LIVE_RENDER_LINE = (
     "- `render_page`: a desktop and a mobile screenshot of one page; its notes name any place the server and the "
     "browser drew a section differently.\n"
 )
-LIVE_STEP_1 = (
-    "1. Your skills are below this prompt: `account-page-copy`, `building-with-puck`,\n"
-    "   `images-and-logos` and `page-review`, and for new sections `writing-a-section` and\n"
-    "   `rebuilding-a-section`, and, on this site, `making-a-section-interactive` when a section needs\n"
-    "   to respond to the visitor. Follow them.\n"
-)
+STEP_1_OLD = "1. Your skills are below this prompt"
 
 
-def test_a_live_prompt_names_the_interactive_skill_and_the_hydration_notes(tmp_path: Path) -> None:
+def test_a_live_prompt_names_the_hydration_notes(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     materialize_workspace(workspace, inputs_for(), site=garner_site())
-    today = system_prompt_with_skills(workspace)
-    live = system_prompt_with_skills(workspace, live=True)
-    off = system_prompt_with_skills(workspace, live=False)
-    base = live.split("## Your skills")[0]
-    assert LIVE_RENDER_LINE in base and LIVE_STEP_1 in base and RENDER_LINE not in base
-    assert off == today and RENDER_LINE in off and LIVE_RENDER_LINE not in off and LIVE_STEP_1 not in off
-    assert "making-a-section-interactive" not in off and "drew a section differently" not in off
+    today = site_system_prompt(workspace)
+    live = site_system_prompt(workspace, live=True)
+    off = site_system_prompt(workspace, live=False)
+    assert LIVE_RENDER_LINE in live and RENDER_LINE not in live
+    assert off == today and RENDER_LINE in off and LIVE_RENDER_LINE not in off
+    assert "drew a section differently" not in off
+    for prompt in (live, off):
+        assert STEP_1_OLD not in prompt and "## Your skills" not in prompt
     # The claims swap still works in both modes.
     for prompt in (live, off):
         assert "research/claims.md" not in prompt
     (workspace / "research" / "claims.md").write_text("# Claims\n")
-    for prompt in (system_prompt_with_skills(workspace, live=True), system_prompt_with_skills(workspace)):
+    for prompt in (site_system_prompt(workspace, live=True), site_system_prompt(workspace)):
         assert "check its claim in `research/claims.md`" in prompt
-    assert LIVE_STEP_1 in system_prompt_with_skills(workspace, live=True)
 
 
 def test_the_prompt_names_the_claims_file_only_when_the_workspace_has_one(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     materialize_workspace(workspace, inputs_for(), site=garner_site())
-    without = system_prompt_with_skills(workspace)
+    without = site_system_prompt(workspace)
     assert "research/claims.md" not in without and "[c4, c9]" not in without
     (workspace / "research" / "claims.md").write_text("# Claims\n")
-    with_claims = system_prompt_with_skills(workspace)
+    with_claims = site_system_prompt(workspace)
     assert "`research/claims.md` lists each claim with what it" in with_claims
     assert "check its claim in `research/claims.md`" in with_claims
 
@@ -416,3 +448,40 @@ def test_a_read_without_a_limit_gets_the_whole_file(tmp_path: Path) -> None:
     ])
     (tools.workspace / "research" / "long.md").write_text("\n".join(f"line {n}" for n in range(1, 251)))
     assert "line 250" in _results(_invoke(agent))["call_1"]
+
+
+QUESTION = {"id": "audience", "question": "Who is this page for?", "why_it_matters": "It decides the page's whole angle.",
+            "default": "I'll write it for freight brokers."}
+
+
+def test_a_turn_that_asks_saves_nothing_and_returns_the_questions(tmp_path: Path) -> None:
+    # Ruling R9.4 (2026-10-27): the site agent may ask before building; asking ends the turn.
+    content = json.dumps(SITE["pages"]["/"]["content"])
+    result = _run(tmp_path, [
+        AIMessage(content="", tool_calls=[call("request_clarification", {"questions": [QUESTION]}, 1)]),
+        AIMessage(content="", tool_calls=[call("edit_file", {"file_path": "/page.json", "old_string": '"content": []',
+                                                             "new_string": f'"content": {content}'}, 2)]),
+        AIMessage(content="Built it anyway."),
+    ], site=_empty_site())
+    assert result.status == "clarification_requested" and result.stop_reason == "clarification_requested"
+    assert result.clarification == {"questions": [{**QUESTION, "options": [], "allow_freeform": True}]}
+    assert result.site == _empty_site()
+    assert "Who is this page for?" in result.summary and "freight brokers" in result.summary
+
+
+def test_a_question_without_a_default_gets_an_error_the_agent_can_fix(tmp_path: Path) -> None:
+    agent, guard, _, tools = _agent(tmp_path, [
+        AIMessage(content="", tool_calls=[call("request_clarification", {"questions": [{**QUESTION, "default": ""}]}, 1)]),
+        AIMessage(content="Done."),
+    ])
+    results = _results(_invoke(agent))
+    assert "default" in results["call_1"] and tools.clarification is None
+
+
+def test_the_ask_tool_is_withheld_after_a_turn_that_asked(tmp_path: Path) -> None:
+    # One question round: the turn that answers the questions designs, it does not ask again.
+    from lumen_agent.site.tools import site_tool_set
+    workspace = tmp_path / "workspace"
+    names = lambda inputs: {t.name for t in site_tool_set(SiteTools(workspace=workspace, inputs=inputs, base_site=garner_site()))}  # noqa: E731
+    assert "request_clarification" in names(inputs_for())
+    assert "request_clarification" not in names(inputs_for(clarification_already_requested=True))

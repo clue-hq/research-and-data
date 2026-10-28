@@ -48,7 +48,7 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
 def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
     """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 46
+    assert CONVERSATION_RECIPE_VERSION == 47
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -1281,3 +1281,16 @@ def test_main_merge_mints_recipe_v46_without_rewriting_v45() -> None:
     )
     assert (v45["version"], v46["version"]) == (45, 46)
     assert {**v46, "version": 45} == v45
+
+
+def test_site_alignment_mints_recipe_v47_without_rewriting_v46() -> None:
+    """Site agent alignment R1.2 (2026-10-28): v47 moves with `head-of-abm@v87` and admits or
+    removes no address; v46 stays the exact replay input for turns pinned to it."""
+
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v46 = json.loads((root / "recipe0-stage0-v46.json").read_text())
+    v47 = json.loads((root / "recipe0-stage0-v47.json").read_text())
+    assert "recipe0-stage0-v47.json" in SYSTEM_RECIPE_FILENAMES
+    assert (v46["version"], v47["version"]) == (46, 47)
+    assert {**v47, "version": 46} == v46
+

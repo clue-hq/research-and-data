@@ -137,3 +137,6 @@ class SiteTurnInputs:
     #: The workspace publishes live sites (LUMEN_SITE_LIVE_WORKSPACES): the agent is taught
     #: interactive sections (skills-live/) and its previews show the page alive.
     live_sites: bool = False
+    #: The document's previous turn stopped to ask (ruling R9.3): this turn designs from the answer,
+    #: so it is not given request_clarification.
+    clarification_already_requested: bool = False

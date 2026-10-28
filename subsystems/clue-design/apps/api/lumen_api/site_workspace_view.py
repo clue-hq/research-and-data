@@ -24,6 +24,7 @@ from sqlalchemy import text
 from .agent_cloned_sections import DurableAgentClonedSectionRegistry
 from .database import NotFoundError
 from .fragments import FragmentRefused, read_web_fragment
+from .fragments.campaign_shell import COMPOSED_CAMPAIGN_SHELL
 from .font_library import site_library_fonts
 from .site_brand import (
     _record_digest, asset_store_file, captured_image_descriptions, clone_from_fragment, clone_video_renditions,
@@ -146,16 +147,24 @@ def fetch_account_logos(
     return logos
 
 
+#: Composed sections that are not the seller's own: bands an agent composed for an earlier page and the
+#: ABM campaign shells. A new site is not offered them (founder ruling 2026-10-28, A); a page that already
+#: uses one keeps it through ``pinned_site_clones``. The seller's header and footer templates
+#: (``site_template``) are the seller's own and stay offered.
+NOT_THE_SELLERS_OWN = frozenset({"agent", COMPOSED_CAMPAIGN_SHELL})
+
+
 def list_site_clones(blobs: Any, cache_dir: Any) -> list[dict]:
     """The released clones the catalog offers: approved, lineage-resolved (a superseded row gives way
-    to its repair), degraded ones listed WITH their note. Every role is offered, the seller's nav and
-    footer bands and the composed ABM campaign shells included (founder answer, open question 2 (a),
-    2026-10-12): which ones fit a page is the agent's judgement, guided by its skill."""
+    to its repair), degraded ones listed WITH their note. Every role of the seller's own sections is
+    offered, its nav and footer bands and its header and footer templates included (founder answer,
+    open question 2 (a), 2026-10-12): which ones fit a page is the agent's judgement, guided by its
+    skill. Sections composed for earlier pages are left out (``NOT_THE_SELLERS_OWN``)."""
 
     registry = DurableAgentClonedSectionRegistry(blobs=blobs, cache_dir=cache_dir)
     clones: list[dict] = []
     for section in registry.list_sections().get("sections") or []:
-        if section.get("superseded_by"):
+        if section.get("superseded_by") or section.get("composed") in NOT_THE_SELLERS_OWN:
             continue
         try:
             loaded = read_web_fragment(blobs.storage, workspace_id=blobs.workspace_id, fragment_id=str(section["fragment_id"]))
@@ -195,16 +204,15 @@ def pinned_site_clones(site: Mapping[str, Any], blobs: Any, *, listed: set[str])
 
 
 def site_sections_for_turn(store: Any, blobs: Any, site: Mapping[str, Any]) -> dict:
-    """The sections a turn may place: each name the document pins at its pinned digest, plus the
-    newest section of every other name in the workspace (sections are per workspace)."""
+    """The sections a turn may place: each name the document pins, at its pinned digest. A section
+    written for another site in the workspace is not offered (founder ruling 2026-10-28, B): a new site
+    starts clean, and a section this turn writes joins it in the turn itself."""
 
     from lumen_agent.site.inputs import SiteSection
 
     pinned = {str(name): str(digest) for name, digest in (site.get("agent_sections") or {}).items()}
     pinned_rows = {row["digest"]: row for row in store.get_site_sections(list(pinned.values()))}
     chosen = {name: pinned_rows[digest] for name, digest in pinned.items() if digest in pinned_rows}
-    for row in store.list_latest_site_sections():
-        chosen.setdefault(str(row["name"]), row)
     sections = {}
     for name, row in chosen.items():
         try:

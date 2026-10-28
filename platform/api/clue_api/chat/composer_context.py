@@ -87,7 +87,8 @@ __all__ = [
 # v85 re-pins `crm-writing` at v7 and `read_crm_targets` at its new output: "Clue tier" is now
 # "Clue fit level" (R-14.6).
 # v86 carries main's prompt v19 (the design brief carries no copy; a menu of angles for variants).
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v86"
+# v87 adds no tool: the design brief for a page opens with who the page is for (`manual-*@v33`, R1.2).
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v87"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 """The catalog's model for the conversation profile; ``HEAD_OF_ABM_AGENT_MODEL`` overrides it."""
 

@@ -1134,7 +1134,9 @@ def test_f_a_b_a_section_recorded_in_one_workspace_is_invisible_to_another(clien
     b_module, b_source, b_css = quote_module(marker + "b")
     b_ref = record_section(client, other.workspace_id, "StepsBand", b_module, b_source, b_css).references
 
-    # (a) Each holds only its own — by digest, by the newest-of-each-name listing, and in a turn.
+    # (a) Each holds only its own — by digest, by the newest-of-each-name listing, and in a turn. Each
+    # tenant's site pins BOTH sections (founder ruling 2026-10-28, B: a turn is offered only what its
+    # document pins), and still only its own is offered: the other workspace's digest reads as nothing.
     store = HybridRepository()
     assert [row["name"] for row in store.get_site_sections([digest, b_ref["digest"]])] == ["QuoteBand"]
     assert [row["name"] for row in store.list_latest_site_sections()] == ["QuoteBand"]
@@ -1142,7 +1144,9 @@ def test_f_a_b_a_section_recorded_in_one_workspace_is_invisible_to_another(clien
     assert [row["name"] for row in other.store.list_latest_site_sections()] == ["StepsBand"]
     for tenant_store in (store, other.store):
         document_id = f"site_bv1a_{uuid4().hex[:10]}"
-        tenant_store.create_document(plain_site(document_id), doc_kind="site")
+        site = plain_site(document_id)
+        site["agent_sections"] = {"QuoteBand": digest, "StepsBand": b_ref["digest"]}
+        tenant_store.create_document(site, doc_kind="site")
         script = model.next(
             AIMessage(content="", tool_calls=[call("read_file", {"file_path": "/catalog/seller-components.md"}, 1)]),
             AIMessage(content="Nothing to change."),
@@ -1355,15 +1359,18 @@ def test_g_the_section_tool_under_governance(client: TestClient, workspace_id: s
 
 
 def place_a_recorded_section(client: TestClient, model: ModelSeam, garner: Garner, workspace_id: str) -> dict:
-    """Task 14 records a section; Task 8 offers it to the next turn (catalog/seller-components.md);
-    the agent places it; Task 6 validates it by its STORED schema; Task 9 draws it in the hardened
-    page; Task 12 persists the site through Lane A's save."""
+    """Task 14 records a section; Task 8 offers it to the site's next turn (catalog/seller-components.md)
+    because the site pins it (founder ruling 2026-10-28, B: a turn is offered only what its document
+    pins); the agent places it; Task 6 validates it by its STORED schema; Task 9 draws it in the
+    hardened page; Task 12 persists the site through Lane A's save."""
     marker = uuid4().hex
     module_js, source, css = quote_module(marker)
     digest = record_section(client, workspace_id, "QuoteBand", module_js, source, css).references["digest"]
     store = HybridRepository()
     document_id = f"site_bv1a_{uuid4().hex[:10]}"
-    store_site(garner.site(document_id))
+    site = garner.site(document_id)
+    site["agent_sections"] = {**(site.get("agent_sections") or {}), "QuoteBand": digest}
+    store_site(site)
     quote = {"type": "QuoteBand", "props": {"id": "quote", "surface": "page", "quote": "Fewer surprises for SCSD."}}
     script = model.next(
         AIMessage(content="", tool_calls=[call("read_file", {"file_path": "/catalog/seller-components.md"}, 1)]),
@@ -1377,6 +1384,24 @@ def place_a_recorded_section(client: TestClient, model: ModelSeam, garner: Garne
     )
     turn = run_turn(client.app, store, document_id, "Add the quote band under the proof.")
     return {"store": store, "document_id": document_id, "digest": digest, "quote": quote, "turn": turn, "script": script}
+
+
+def test_g_a_section_written_for_another_site_is_not_offered_to_a_new_one(client: TestClient, model: ModelSeam,
+                                                                         garner: Garner, workspace_id: str) -> None:
+    """Founder ruling 2026-10-28 (B): a section recorded in the workspace for another site is not
+    offered to a new site's turn, so a new site starts clean."""
+    module_js, source, css = quote_module(uuid4().hex)
+    record_section(client, workspace_id, "QuoteBand", module_js, source, css)
+    store = HybridRepository()
+    document_id = f"site_bv1a_{uuid4().hex[:10]}"
+    store_site(garner.site(document_id))
+    script = model.next(
+        AIMessage(content="", tool_calls=[call("read_file", {"file_path": "/catalog/seller-components.md"}, 1)]),
+        AIMessage(content="Nothing to change."),
+    )
+    turn = run_turn(client.app, store, document_id, "Which sections can I use?")
+    assert turn.status == "succeeded"
+    assert "QuoteBand" not in script.text_of("call_1")
 
 
 @needs_chromium

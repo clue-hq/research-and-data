@@ -11942,6 +11942,12 @@ def _site_turn_response(result: Any, outcome: Any, *, base_version: int) -> Json
 
     common = {"schema_version": 1, "doc_kind": "site", "stop_reason": result.stop_reason,
               "operations": [], "preview_paths": []}
+    if result.status == "clarification_requested":
+        # Ruling R9.4: it stopped to ask before building. Nothing was saved; the question rides in the
+        # scene agent's shape, which the leg's clarification card and thread line already read.
+        return {**common, "status": "clarification_requested", "summary": result.summary,
+                "clarification": result.clarification or {"questions": []},
+                "current_version": base_version, "saved_version": None}
     if result.status != "applied":
         code = f"site_turn.{result.stop_reason or 'failed'}"
         failed = failed_agent_turn_response(code, result.summary, "; ".join(result.errors)[:500])
@@ -12493,6 +12499,7 @@ def _execute_site_turn_job(
             inputs = replace(
                 inputs,
                 live_sites=live,
+                clarification_already_requested=payload.previous_turn_outcome == "clarification_requested",
                 sections=DurableSiteSectionPort(
                     store=store, invocations=invocations, run_id=envelope.run_id, brand=inputs.brand, interactive=live
                 ),
@@ -12522,7 +12529,7 @@ def _execute_site_turn_job(
         if response.get("saved_version") is not None and event_sink is not None:
             # Contract 7: the forwarder turns this into the chat's design.checkpoint frame.
             event_sink("site_document_saved", {"document_id": document_id, "version": int(response["saved_version"])})
-        status = "succeeded" if response.get("status") == "applied" else "failed"
+        status = "succeeded" if response.get("status") in ("applied", "clarification_requested") else "failed"
         return status, {**response, "doc_kind": "site"}, "result", {"status": response.get("status")}
     except Exception as error:  # pragma: no cover - defensive
         failed = failed_agent_turn_response("agent_runtime.failed", "Website turn crashed before returning a result.", str(error))

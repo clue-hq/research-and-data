@@ -29,6 +29,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from lumen_api.site_kit_cli import SiteKitCliError, validate_site_files
+from pydantic import BaseModel, Field, ValidationError
+
+from ..models.schemas import ClarificationQuestion
 
 from .inputs import SiteSection, SiteTurnInputs
 from .workspace import LOGO_CELLS, record_component, turn_brand, write_site_files
@@ -97,7 +100,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "kind narrows to image or logo."
     ),
     "generate_image": (
-        "Make a new image for this site in the brand's style (see the images-and-logos skill). "
+        "Make a new image for this site in the brand's style (see the imagery-and-media skill). "
         "prompt says what it shows; aspect_ratio is the section's shape, such as \"16:9\", \"4:3\" or "
         "\"1:1\"; style_references are one to three of the brand's own photos from brand/brand.md. "
         "Returns the image's path and shows it to you."
@@ -109,14 +112,32 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "before you use it."
     ),
     "web_search": (
-        "Search the web. Set include_domains to the seller's domain to find its own published case "
-        "studies and customer stories."
+        "Search the web: to find the seller's own published case studies and customer stories (set "
+        "include_domains to the seller's domain), to understand its product, and for a little context "
+        "about the page's audience. Results shape your argument; a snippet is never evidence. A fact "
+        "reaches the page only from a page you opened with fetch_page."
     ),
     "fetch_page": (
-        "Open a page and save its text under fetched/ as evidence. Use it before you put a number or "
-        "a quote from that page on the page."
+        "Open a page and save its text under fetched/ as evidence. A fact from the web, and any number "
+        "or quote, reaches the page only from a page you opened this way."
+    ),
+    "request_clarification": (
+        "Ask the person one short question before you build, then stop: calling this ends the request "
+        "and saves nothing. Use it only on a new page that cannot be right without the answer, when the "
+        "brief, the person's message, the research and the seller's files do not tell you (for example "
+        "who the page is for, or the action when there is none at all). Give the question a default: "
+        "what you will do if they don't answer. Never ask to approve a plan."
     ),
 }
+
+
+class SiteClarification(BaseModel):
+    """request_clarification's arguments (ruling R9.2–R9.3): exactly one question, with its default.
+    The payload keeps the scene agent's shape ({"questions": [...]}) so the chat card reads it."""
+
+    questions: list[ClarificationQuestion] = Field(
+        min_length=1, max_length=1, description="Exactly one question, with its default."
+    )
 
 
 def digest_of_file(file: str) -> str | None:
@@ -210,6 +231,8 @@ class SiteTools:
         self._seen: Counter[str] = Counter()
         self._initial_files = self._site_files()
         self.events: list[dict] = []
+        #: The question this turn asked, {"questions": [...]}, or None; asking ends the turn.
+        self.clarification: dict | None = None
 
     # --- helpers ---------------------------------------------------------------------------
 
@@ -653,7 +676,7 @@ class SiteTools:
     def generate_image(
         self, prompt: str, aspect_ratio: str = "16:9", style_references: list[str] | None = None
     ) -> list[dict] | str:
-        """Make a new image for this site, in the brand's style (see the images-and-logos skill)."""
+        """Make a new image for this site, in the brand's style (see the imagery-and-media skill)."""
 
         from lumen_agent.tools.view import _image_bytes_block
 
@@ -694,12 +717,12 @@ class SiteTools:
         size = f"{result.width}x{result.height}" if result.width and result.height else "size unknown"
         return [
             {"type": "text", "text": f"{file} ({size}). Look at it before you use it: put this path in an image "
-             "slot or image prop, or leave it out if it breaks the images-and-logos rules."},
+             "slot or image prop, or leave it out if it breaks the imagery-and-media rules."},
             _image_bytes_block(result.image_bytes, max_px=VIEW_ASSET_PX),
         ]
 
     def fetch_logo(self, domain: str, company_name: str | None = None) -> str:
-        """Find a company's real published logos by its website domain (see the images-and-logos skill)."""
+        """Find a company's real published logos by its website domain (see the imagery-and-media skill)."""
 
         domain = (domain or "").strip()
         if not domain:
@@ -761,6 +784,21 @@ class SiteTools:
         self._record("fetch", url=url, status=status)
         return f"Saved to fetched/{saved.name} (status {status}).\n\n{text[:FETCH_LIMIT]}"
 
+    def request_clarification(self, questions: list) -> str:
+        """Ask the person one question and end the turn (ruling R9.4); nothing is saved."""
+
+        try:
+            asked = SiteClarification.model_validate(
+                {"questions": [q.model_dump() if isinstance(q, BaseModel) else q for q in questions]}
+            )
+        except ValidationError as error:
+            problems = "; ".join(f"{'.'.join(str(p) for p in item['loc'])}: {item['msg']}" for item in error.errors())
+            return (f"NOT ASKED: {problems}. Give exactly one question with a non-empty id, question, "
+                    "why_it_matters and default.")
+        self.clarification = {"questions": [q.model_dump(mode="json") for q in asked.questions]}
+        self._record("clarification", questions=len(asked.questions))
+        return "Asked. Stop here: the person's answer comes with the next request."
+
     def web_search(self, query: str, include_domains: list[str] | None = None, num_results: int = 8) -> str:
         """The platform's web search. Set include_domains to the seller's domain for its case studies."""
 
@@ -783,8 +821,12 @@ def site_tool_set(tools: SiteTools) -> list:
 
     from langchain_core.tools import StructuredTool
 
+    withheld = {"request_clarification"} if tools.inputs.clarification_already_requested else set()
     return [
-        StructuredTool.from_function(getattr(tools, name), name=name, description=description)
+        StructuredTool.from_function(
+            getattr(tools, name), name=name, description=description,
+            **({"args_schema": SiteClarification} if name == "request_clarification" else {}),
+        )
         for name, description in TOOL_DESCRIPTIONS.items()
-        if callable(getattr(tools, name, None))
+        if callable(getattr(tools, name, None)) and name not in withheld
     ]

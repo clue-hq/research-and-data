@@ -213,6 +213,9 @@ class SiteTurnRequest(BaseModel):
     base_version: int = 0
     #: The parts the person pointed at, in submission order (empty when they pointed at nothing).
     targets: list[SiteTurnTarget] = Field(default_factory=list)
+    #: "clarification_requested" when this document's previous turn stopped to ask (ruling R9.3); the
+    #: runtime then withholds request_clarification so this turn designs from the answer.
+    previous_turn_outcome: str | None = None
 
 
 class WebOperationsRequest(BaseModel):

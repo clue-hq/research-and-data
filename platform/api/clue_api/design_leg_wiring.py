@@ -2765,7 +2765,9 @@ class DesignLegTurnRunner:
         # field at all (the documented residual below), so deriving one there would be a
         # query whose answer nothing reads.
         previous_outcome = submission.previous_turn_outcome
-        if kind == "agent_turn" and document_id is not None:
+        # Site turns derive it too (ruling R9.3, 2026-10-27): a site turn may stop to ask, and the
+        # turn that answers must design rather than ask again.
+        if kind in ("agent_turn", "site_turn") and document_id is not None:
             async with self._conn_factory() as conn:
                 latest = await design_runs.latest_terminal_run_for_document(
                     conn, workspace_id=workspace_id, document_id=str(document_id)
@@ -2792,6 +2794,12 @@ class DesignLegTurnRunner:
                 # The executor re-reads the document and persists under CAS on the version it read.
                 "base_version": int(document.get("current_version") or 0),
                 **({"targets": site_targets} if site_targets else {}),
+                # Only when the previous turn asked: an ordinary site request stays byte-identical.
+                **(
+                    {"previous_turn_outcome": previous_outcome}
+                    if previous_outcome == "clarification_requested"
+                    else {}
+                ),
             }
         elif kind == "web_turn":
             request = {

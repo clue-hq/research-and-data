@@ -1,6 +1,6 @@
 ---
 name: writing-a-section
-description: Use when you have been asked to add something that no clone and no brand section can carry.
+description: "Read when neither a clone (as it is, or rebuilt) nor a brand section can carry what the page needs, and you write a section of your own with write_section: the file, the kit's pieces, the brand-only styling rules, and a header or footer of your own."
 ---
 
 # Writing a new section
@@ -48,7 +48,8 @@ The kit gives you these pieces, with exactly these props:
   (brand/brand.md, Cards). With `href` the whole card is a link. Give it a name with `el` so the
   marketer can click it and change its fill, stroke, corners, padding, gap and width.
 - `<kit.Eyebrow>…</kit.Eyebrow>`: the small label above a heading.
-- `<kit.Image src="…" alt="…" el="…" />`: an image from brand/brand.md, by its file path. Add
+- `<kit.Image src="…" alt="…" el="…" />`: an image by its file path, from the page's image list
+  (`imagery-and-media`, "The images a page may use"). Add
   `fit="fill"` to make it cover a box you position, for a background photo, or `fit="contain"` to
   show the whole image. A logo is always shown whole. Give it a name with `el` so the marketer can
   select it, move it, and change its fit, stroke and corners. Name it after the prop that holds its
@@ -56,7 +57,9 @@ The kit gives you these pieces, with exactly these props:
   Write `alt` as a few plain words saying what the picture shows; leave it empty (`alt=""`) for a
   picture that is only decoration.
 - Motion: add a class from brand/brand.md (Motion) to an element, for example
-  `className="brand-motion-pulse"`. Write no transition or animation of your own.
+  `className="brand-motion-pulse"`. Move only through the brand's motion classes, or to rebuild
+  motion the seller's own site actually has (`imagery-and-media`, "Motion and video"; on live sites,
+  `making-a-section-interactive`). Invent no motion of your own.
 
 ## Rules
 
@@ -67,8 +70,8 @@ The kit gives you these pieces, with exactly these props:
   brand's spacing classes (`py-section`, `mt-stack-tight`, brand/brand.md) or Tailwind's scale
   (`mt-6`, `gap-8`). No colour values, pixel sizes, `style` or `className` props: write_section
   refuses them.
-- Props are content: plain text, brand choices (surface, heading role), images from
-  brand/brand.md.
+- Props are content: plain text, brand choices (surface, heading role), images from the page's
+  image list.
 - Mark every prop a marketer reads as words on the page (a heading, a paragraph, a quote, a button's
   words, a card's title) with `.meta({ edit: "inline" })`. The marketer can then click those words
   and type. While they do, such a prop is not text but an editable piece of the page: put it into
@@ -96,7 +99,8 @@ The kit gives you these pieces, with exactly these props:
   list and its place: ``el={`cards.${index}`}``. Name the text inside an item after the item
   (``cards.${index}.title``), so its styling moves with it. Boxes that are not drawn from a list
   keep their place.
-- Make it look like the seller's sections around it. Render and compare.
+- Make it look like the seller's sections around it. Render and compare. Its surface and
+  composition follow the seller's cadence (`page-design`).
 - Place it in page.json by its name, like any other section.
 
 ## A header or footer of your own
@@ -108,11 +112,13 @@ When no template fits the site, you may write the header or the footer as a sect
   link style (brand/brand.md, Buttons and Links). Look at the seller's own header (its nav band in
   `catalog/`) and follow its layout and spacing. It must look like the seller's site, never like a
   generic header with their logo dropped in.
-- The seller's logo: `kit.Image` with a logo file from brand/brand.md. The account's logo and line:
-  props you fill for this account (for example `accountLogo` and `accountLine`), the line marked for
-  editing in place.
+- The seller's logo: `kit.Image` with a logo file from brand/brand.md. On a page that names the
+  account (`page-kinds`), the account's logo and line are props you fill (for example `accountLogo`
+  and `accountLine`), the line marked for editing in place. The line follows the relationship words in
+  `page-copy` ("Talking about the prospect"): "Prepared for", never "partner" or "working together".
+  On a page with no account, leave the account's logo and line out.
 - The site's pages: `kit.menu` lists them in order, each with `label`, `href` and `key`. Draw each with
   `kit.Link` and give it `el={item.key}`, so the person can style and hide them.
-- One button, with `kit.Button`, to the one destination for the offer.
-- Keep it short. A header is one row: logos, the account line, the menu, the button. A footer is the
+- One button, with `kit.Button`, to the page's primary action.
+- Keep it short. A header is one row: logos, the line, the menu, the button. A footer is the
   seller's mark, the legal line and the legal links.

@@ -1,0 +1,1396 @@
+[
+ {
+  "id": "P1",
+  "family": 1,
+  "topic": "KIND",
+  "severity": "high",
+  "status": "RULED 2026-10-27 (R1, R1.1–R1.4)",
+  "title": "The site agent is told every page is for one named account",
+  "what": "The system prompt's first line, the only argument skill and its final check all assume one company and one reader. A campaign page reaches the agent with the artifact's title standing in for the account name and a research file that says 'no written research for this account yet'. Nothing names the page kind; only the Head of ABM's brief can say it. The legacy skills cover six kinds: one account, one person, a few accounts, a whole segment, an event, a product page. The site's own header rules already know about 'a site for several accounts'.",
+  "why": "Founder ruling R1 (2026-10-27): the site agent must handle every kind of landing page. Still open: how the page kind reaches the agent, and which kinds it supports (see P10 for pages about one person).",
+  "groups": [
+   {
+    "label": "Site: one named account",
+    "rows": [
+     "A1-01",
+     "D1-01",
+     "D1-02",
+     "D1-25",
+     "D1-29",
+     "H1-02"
+    ]
+   },
+   {
+    "label": "Site: the few places a group is mentioned",
+    "rows": [
+     "D2-08",
+     "D2-09",
+     "D2-11"
+    ]
+   },
+   {
+    "label": "Legacy candidates: every page kind",
+    "rows": [
+     "L1-01",
+     "L3-03",
+     "L3b-01",
+     "L3b-03",
+     "L3b-04",
+     "L3b-05",
+     "L3b-06",
+     "L3b-07"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P2",
+  "family": 1,
+  "topic": "ARGUMENT",
+  "severity": "high",
+  "status": "RULED 2026-10-27 (R2.1–R2.4)",
+  "title": "The message plan only fits a researched account",
+  "ruled": "R2.1–R2.4",
+  "what": "The site's plan block asks for one insight 'in the account's own words' and two or three priorities 'tied to the research'. A campaign page, an event or a page with no research has nothing to put there. The legacy skills plan from the visitor instead: where they arrive from, what they already know (awareness stage), what single action closes the decision, which argument pattern fits, and a reader → context → mechanism → application → proof → action chain.",
+  "why": "This decides what the agent writes in plan.md before anything else, for every page kind.",
+  "groups": [
+   {
+    "label": "Site: the message plan",
+    "rows": [
+     "D1-03",
+     "D1-04",
+     "D1-05",
+     "D1-06",
+     "D1-07",
+     "D1-08",
+     "D1-09",
+     "D1-10",
+     "D1-12"
+    ]
+   },
+   {
+    "label": "Legacy candidates: plan from the visitor",
+    "rows": [
+     "L1b-01",
+     "L1b-03",
+     "L1b-05",
+     "L1b-06",
+     "L1b-12",
+     "L3a-05",
+     "L2-06",
+     "L1-02"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P3",
+  "family": 1,
+  "topic": "STRUCTURE",
+  "severity": "high",
+  "status": "RULED 2026-10-27 (R3.1–R3.4)",
+  "title": "Five sections and 600 words, or as long as the decision needs?",
+  "what": "The site sets a ceiling: up to five sections, usually five, rarely more than 600 words, each with a word budget. The legacy skills say length follows the decision: seven sections for a considered enterprise purchase, three for a giveaway, never pad and never cut what the decision needs; their five questions are 'responsibilities, not mandatory sections'.",
+  "why": "The 10-26 Pallet production page stopped at 5 sections and about 440 words, and read as shallow.",
+  "groups": [
+   {
+    "label": "Site: a fixed shape",
+    "rows": [
+     "D1-09",
+     "D1-16",
+     "D1-24",
+     "D1-02"
+    ]
+   },
+   {
+    "label": "Legacy candidates: length follows the decision",
+    "rows": [
+     "L1b-17",
+     "L1b-02",
+     "L1b-11",
+     "L3a-07",
+     "L5-06"
+    ]
+   },
+   {
+    "label": "Both agree: one question per section",
+    "rows": [
+     "D1-17",
+     "L1b-15",
+     "L1b-16"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P4",
+  "family": 1,
+  "topic": "SUBSTANCE",
+  "severity": "high",
+  "status": "RULED 2026-10-27 (R4.1–R4.7)",
+  "title": "How much must a page explain, and may substance outgrow a clone's slots?",
+  "what": "The site asks for short, clear pages and rewrites that match the original slot ('a slot that held six words wants about six words back'). Its only substance checks are 'feature dumping' and the swap test. The legacy decision-material skill asks for a concrete worked application (trigger, product action, handoff), a decision map whose every item shows up visibly on the page, and says a shortage of slots is never a reason to drop the substance.",
+  "why": "This is the 'thin page' problem: the site agent fills slots at the original length, so the page carries little the buyer can use.",
+  "groups": [
+   {
+    "label": "Site: short, slot-sized",
+    "rows": [
+     "D1-02",
+     "D1-30",
+     "D1-27",
+     "D1-29"
+    ]
+   },
+   {
+    "label": "Legacy candidates: decision material",
+    "rows": [
+     "L5-02",
+     "L5-03",
+     "L5-04",
+     "L5-05",
+     "L5-08",
+     "L5-10",
+     "L3a-08",
+     "L3a-06",
+     "L1b-18",
+     "L3-04"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P5",
+  "family": 1,
+  "topic": "ACTION",
+  "severity": "high",
+  "status": "RULED 2026-10-27 (R5.1–R5.5)",
+  "title": "One destination for every button, or one primary action plus useful secondary links?",
+  "what": "The site sends every button, including the header's, to the one destination the brief names, and flags any second destination as 'CTA competition'. The legacy skills choose the action from the reader's decision (explore, compare, register, buy), allow relevant secondary resources, place actions at decision points rather than in every band, and warn that a booking link or the seller's homepage button does not decide the page's purpose.",
+  "why": "Founder 2026-10-18: the one-destination rule is guidance only. The question is what the guidance should say, especially for segment, event and product pages.",
+  "groups": [
+   {
+    "label": "Site: one destination",
+    "rows": [
+     "D1-07",
+     "D1-22",
+     "D1-26",
+     "D2-05",
+     "D2-10",
+     "D2-11",
+     "D6-02"
+    ]
+   },
+   {
+    "label": "Legacy candidates: action from the decision",
+    "rows": [
+     "L1a-01",
+     "L1a-02",
+     "L1a-05",
+     "L1b-20",
+     "L1b-21",
+     "L1a-07",
+     "L5-11",
+     "L1-03"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P6",
+  "family": 1,
+  "topic": "IDENTITY",
+  "severity": "medium",
+  "status": "RULED 2026-10-27 (R6.1–R6.4)",
+  "title": "Where do the account's name and logo go?",
+  "what": "The site puts the account in the header: 'Prepared for <account>' and the account's logo beside the seller's, and forbids the account's logo anywhere else. The legacy skills say the opposite: target identity belongs in the opening content (an eyebrow, account bar or lockup above the headline), never as a navigation item. For segment and product pages the legacy skills say no account markers at all.",
+  "why": "Every site today carries 'Prepared for …' in the header; a segment or product page has no single account to name.",
+  "groups": [
+   {
+    "label": "Site: in the header",
+    "rows": [
+     "D2-08",
+     "D2-06",
+     "D3-01",
+     "D3-02",
+     "D4-02",
+     "D6-01"
+    ]
+   },
+   {
+    "label": "Legacy candidates: in the opening content, not the navigation",
+    "rows": [
+     "L1b-08",
+     "L2-09",
+     "L3c-03"
+    ]
+   },
+   {
+    "label": "Legacy candidates: no markers on shared pages",
+    "rows": [
+     "L3b-04",
+     "L3b-06"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P7",
+  "family": 1,
+  "topic": "SHELL",
+  "severity": "medium",
+  "status": "RULED 2026-10-27 (R7.1–R7.5)",
+  "title": "A fixed header and footer, or a choice from the page's traffic and trust?",
+  "what": "The site starts every page from the brand's account header template (or a plain header) and the plain footer, and uses the seller's own footer only when asked. The legacy skills make it a judgement each time: keep the seller's real navigation when the visitor will vet the seller or forward the page, strip it to a minimal campaign shell when the page serves one offer from one campaign.",
+  "why": "Product and segment pages often need the seller's real navigation for trust; a 1:1 outbound page usually does not.",
+  "groups": [
+   {
+    "label": "Site: fixed templates",
+    "rows": [
+     "D2-07",
+     "D2-12",
+     "D6-03"
+    ]
+   },
+   {
+    "label": "Legacy candidates: decide per page",
+    "rows": [
+     "L1-06",
+     "L1b-07",
+     "L1b-09",
+     "L1b-10",
+     "L3b-06"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P8",
+  "family": 1,
+  "topic": "PLAN",
+  "severity": "medium",
+  "status": "RULED 2026-10-27 (R8: no change)",
+  "title": "Is the brief binding, or an agent's summary to read critically?",
+  "what": "The site treats the brief's goal, reader and offer as fixed and its facts, proof and structure as suggestions. The legacy skills say a delegation brief is an agent-authored summary: quote the person's actual words, keep user requirements apart from working choices, and do not read a pilot, demo or section count into a short request. The site agent does receive the person's own message (last, after the brief and the session history), and the brief's wrapper already calls it 'an agent-authored summary' — which contradicts the system prompt's 'keep to those'.",
+  "why": "When the brief picks a weak offer or the wrong page kind, the site agent has no permission to question it.",
+  "groups": [
+   {
+    "label": "Site: the brief sets goal, reader, offer",
+    "rows": [
+     "A1-06",
+     "D1-13",
+     "H1-01"
+    ]
+   },
+   {
+    "label": "Site message wrapper: the brief is a summary; the person's message comes last",
+    "rows": [
+     "G1-01",
+     "G1-02"
+    ]
+   },
+   {
+    "label": "Legacy candidates: the person's words outrank the brief",
+    "rows": [
+     "L2-02",
+     "L6-07",
+     "L6-08",
+     "L2-03",
+     "L6-16"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P9",
+  "family": 1,
+  "topic": "ASK",
+  "severity": "medium",
+  "status": "RULED 2026-10-27 (R9.1–R9.4)",
+  "title": "When may the agent ask before building a new page?",
+  "what": "The site agent may only ask on an edit, when the request names something that is not on the page. The legacy skills allow one consequential question before a costly build when the purpose would change the argument, but otherwise make reversible assumptions and say so; a plan is never an approval gate. The site agent has no clarification tool today.",
+  "why": "A campaign request with no clear reader, offer or destination is built on a guess.",
+  "groups": [
+   {
+    "label": "Site: ask only on edits",
+    "rows": [
+     "A1-09"
+    ]
+   },
+   {
+    "label": "Legacy candidates: one question before a costly build",
+    "rows": [
+     "L1a-04",
+     "L1b-04",
+     "L6-04"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P10",
+  "family": 1,
+  "topic": "PEOPLE",
+  "severity": "medium",
+  "status": "RULED 2026-10-27 (R10.1–R10.4)",
+  "title": "Pages for one person",
+  "what": "The site forbids naming or describing anyone at the account, and its workspace carries no contact research. The legacy skills support a page for one buying-committee member: resolve the person, use their own sourced professional criterion, change the material compared with the account page, keep their name discreet, never use private or sensitive facets.",
+  "why": "Decides whether 'contact page' is one of the page kinds in P1.",
+  "groups": [
+   {
+    "label": "Site: never name people",
+    "rows": [
+     "A1-05",
+     "D1-23"
+    ]
+   },
+   {
+    "label": "Legacy candidates: contact pages",
+    "rows": [
+     "L4-01",
+     "L4-03",
+     "L4-05",
+     "L4-06",
+     "L3a-02",
+     "L3b-02",
+     "L4-07"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P11",
+  "family": 1,
+  "topic": "STRUCTURE",
+  "severity": "low",
+  "status": "RULED 2026-10-27 (R11.1–R11.4)",
+  "title": "Video sections: remove them, or lead with them?",
+  "what": "The site lists brand videos among the sections to remove. The legacy argument patterns include a video-led page, as long as the headline states the promise and the page works without pressing play.",
+  "why": "Pallet's homepage leads with video; the 10-26 page dropped all of it. How the video is carried belongs to the imagery family; whether it may stay is decided here.",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D1-14",
+     "D5-01"
+    ]
+   },
+   {
+    "label": "Legacy candidates",
+    "rows": [
+     "L1b-13"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P12",
+  "family": 1,
+  "topic": "SCOPE",
+  "severity": "low",
+  "status": "RULED 2026-10-27 (R12.1–R12.3)",
+  "title": "Re-aiming an existing page at a new audience or offer",
+  "what": "On an existing page the site changes only what was asked. The legacy skills cover changing a page's audience, offer or argument as its own case, where sections that no longer answer a question may be removed, while a scoped edit keeps everything else.",
+  "why": "'Make this page work for the logistics segment' is neither a small edit nor a new page.",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "A1-08"
+    ]
+   },
+   {
+    "label": "Legacy candidates",
+    "rows": [
+     "L1-01",
+     "L1b-19",
+     "L1-09"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "P13",
+  "family": 1,
+  "topic": "STRUCTURE",
+  "severity": "low",
+  "status": "RULED 2026-10-27 (R13.1–R13.4)",
+  "title": "Several directions for the same page",
+  "what": "The site has no rule for a request for several concepts or layouts. The legacy skill plans one row per direction, keeps brand invariants fixed, says three centred heroes with different headlines are still one composition, and reports honestly when only one page is finished.",
+  "why": "A gap, not a conflict.",
+  "groups": [
+   {
+    "label": "Legacy candidates",
+    "rows": [
+     "L1c-01",
+     "L1c-02",
+     "L1c-03",
+     "L1c-05"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W1",
+  "family": 2,
+  "topic": "SOURCING",
+  "severity": "high",
+  "status": "RULED 2026-10-28 (W1.1–W1.5)",
+  "title": "Which words and facts may the page use?",
+  "what": "The site allows only three sources for a number or a quote: the research, the seller's files, a page the agent fetched. It does not name the seller's own captured sections, although every clone keeps the seller's published words, stats, customer names and quotes unless changed; nor the brief's facts, which the Head of ABM sends with their sources; nor the audience context R1.3a now allows from web searches. The legacy skills treat the clone's own copy and proof strips as captured evidence, and supplied facts as usable at their stated scope without upgrading them to verified.",
+  "why": "Under the site rule, keeping a clone's stat strip or testimonial is technically unsupported, and so is a fact the brief carries.",
+  "cases": "One-to-one leans on account research; general, event and product pages lean on the seller's files and clones; R1.3a adds audience context for untagged pages.",
+  "groups": [
+   {
+    "label": "Site: three sources",
+    "rows": [
+     "A1-13",
+     "B1-02",
+     "D1-39",
+     "D1-41",
+     "A1-12"
+    ]
+   },
+   {
+    "label": "Site data: what the clones already carry",
+    "rows": [
+     "H3-01"
+    ]
+   },
+   {
+    "label": "Legacy: captured copy and supplied facts are evidence at their scope",
+    "rows": [
+     "L7a-20",
+     "L1b-26",
+     "L6-19",
+     "L1b-28",
+     "L3c-06"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W2",
+  "family": 2,
+  "topic": "CLAIMS",
+  "severity": "high",
+  "status": "RULED 2026-10-28 (W2.1–W2.5)",
+  "title": "May the page say what the product 'could' do for this reader?",
+  "what": "Both sides use a claim ladder from product fact to forecast, and both forbid a forecast. They differ on the step below it. The site allows 'what it could mean for this account (\"could\")'. The legacy one-account shape uses 'would'. The legacy copy skill says could, may and helps still assert an outcome and supply no evidence; its fourth step is an invitation such as 'Explore how usage-based billing fits your expansion plans', a capability joined to the reader's task with no invented outcome.",
+  "why": "This decides how every benefit sentence on a personalised page is phrased.",
+  "cases": "Mainly one-to-one, one-to-few and contact pages; general and product pages speak about the audience, not one account.",
+  "groups": [
+   {
+    "label": "Site: 'could' for what it might mean",
+    "rows": [
+     "D1-44",
+     "D1-45"
+    ]
+   },
+   {
+    "label": "Legacy: 'would' in the one-account shape",
+    "rows": [
+     "L3a-10"
+    ]
+   },
+   {
+    "label": "Legacy: no outcome without evidence, whatever the verb",
+    "rows": [
+     "L7a-10",
+     "L7a-11",
+     "L3c-07",
+     "L7a-12"
+    ]
+   },
+   {
+    "label": "Both: the same checks",
+    "rows": [
+     "D1-50",
+     "D1-51"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W3",
+  "family": 2,
+  "topic": "CLAIMS",
+  "severity": "high",
+  "status": "RULED 2026-10-28 (W3.1–W3.4)",
+  "title": "A number that needs a condition: drop it, or keep the condition beside it?",
+  "what": "The site drops any figure that needs a condition to be true ('leave it out rather than explain it'). The legacy skills keep the number with its subject, unit, time window and material conditions in the same visible sentence. Both agree that naming whose result it is is the qualification, with no disclaimer sentence.",
+  "why": "The site rule removes strong but conditional proof; the legacy rule makes sentences longer, against R4.7's 20-word paragraphs.",
+  "cases": "Proof-heavy cases (product campaign, general campaign) feel this most.",
+  "groups": [
+   {
+    "label": "Site: drop it",
+    "rows": [
+     "D1-36",
+     "D1-33"
+    ]
+   },
+   {
+    "label": "Legacy: keep the condition in the sentence",
+    "rows": [
+     "L7a-14",
+     "L7a-25",
+     "L3c-07"
+    ]
+   },
+   {
+    "label": "Both: attribution is the qualification",
+    "rows": [
+     "D1-42",
+     "L1b-27",
+     "D1-52"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W4",
+  "family": 2,
+  "topic": "OFFPAGE",
+  "severity": "medium",
+  "status": "RULED 2026-10-28 (W4.1–W4.6)",
+  "title": "What never reaches the page, and do product limits count as caveats?",
+  "what": "Both sides keep notes off the page: the brief's Notes for Design, the research's Watch-outs and Context only, approach notes, claim ids, caveats and strategy. The legacy skills add three things: never lift the brief's or research's sentences onto the page (write your own); a test for a leaked note ('a sentence that says what the page is not… is almost always a note that leaked'); and an exception — genuine product limits and proof conditions that affect the reader's choice stay visible. The site says caveats go to plan.md, never the page.",
+  "why": "The rule is repeated in eight places today; the product-limits exception is the one real disagreement.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site: off the page",
+    "rows": [
+     "A1-15",
+     "A1-10",
+     "D1-34",
+     "D1-35",
+     "D1-47",
+     "H2-02"
+    ]
+   },
+   {
+    "label": "Legacy: write your own words; spot leaked notes",
+    "rows": [
+     "L7a-03",
+     "L7a-05",
+     "L7b-01",
+     "L3a-15"
+    ]
+   },
+   {
+    "label": "Legacy: genuine limits stay visible",
+    "rows": [
+     "L7b-07",
+     "L3a-16",
+     "L5-12"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W5",
+  "family": 2,
+  "topic": "EVIDENCE",
+  "severity": "medium",
+  "status": "RULED 2026-10-28 (W5.1–W5.4)",
+  "title": "Reading research: facts, inferences and the research lane's own arguments",
+  "what": "The research files tag statements as (inference), (quote), (qualified) or (gap), with notes, and claims.md includes value-narrative claims that are the research lane's own argument for a persona. The site prompt never says what these mean. The legacy skills say: separate sourced facts from analyst interpretations — job openings do not prove a staffing problem, an initiative does not prove budget, a technology fingerprint does not prove an integration; a report saying 'verified' does not make it so.",
+  "why": "An inference written up as a fact is the fastest way to a false claim about the account.",
+  "cases": "One-to-one, one-to-few and contact pages (the cases with research).",
+  "groups": [
+   {
+    "label": "Site data: what the research files contain",
+    "rows": [
+     "H2-01",
+     "H2-05",
+     "H2-03",
+     "A1-14"
+    ]
+   },
+   {
+    "label": "Legacy: facts versus interpretations",
+    "rows": [
+     "L7b-02",
+     "L3a-03",
+     "L3a-16",
+     "L3a-17"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W6",
+  "family": 2,
+  "topic": "SOURCING",
+  "severity": "medium",
+  "status": "RULED 2026-10-28 (W6.1–W6.4)",
+  "title": "How much evidence bookkeeping goes into plan.md?",
+  "what": "The site's plan lists proof as case studies with links. The legacy skills ask for an evidence map: every prominent factual sentence paired in the plan with its supporting excerpt, subject, units, time window and status, and 'never fill it from memory'.",
+  "why": "More bookkeeping catches mutated numbers; it also costs time on every page.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D1-08"
+    ]
+   },
+   {
+    "label": "Legacy: an evidence map",
+    "rows": [
+     "L7-02",
+     "L7b-03",
+     "L3c-05",
+     "L6-18"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W7",
+  "family": 2,
+  "topic": "VOICE",
+  "severity": "medium",
+  "status": "RULED 2026-10-28 (W7.1–W7.5)",
+  "title": "Whose voice, and whose words?",
+  "what": "The site asks the agent to write like the clone's author and in the reader's words, with at most one or two of the account's own figures. The legacy skills rank voice sources — a brand voice or style guide when one exists, then the brand card, then the clone's own copy — and allow the reader's own phrases verbatim ('recognition is persuasion'). The site has no rule for a voice document in seller/.",
+  "why": "The seller's pinned documents may hold a voice guide the agent never consults.",
+  "cases": "Event and product pages may follow the ad's or invite's own wording (conversion scent).",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D1-30",
+     "D1-43",
+     "D1-33",
+     "D1-49",
+     "D1-55"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L7a-21",
+     "L7a-08",
+     "L7a-09",
+     "L7-01"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W8",
+  "family": 2,
+  "topic": "COPY",
+  "severity": "medium",
+  "status": "RULED 2026-10-28 (W8.1–W8.4)",
+  "title": "Concise statements, not slogans",
+  "what": "R4.6 (no over-explaining) and R4.7 (no paragraph over 20 words) now set the length. The legacy skills warn the other way: do not shrink copy into slogans, write the explanation and not just headings and buttons, and cash out words like 'unlock' into something checkable. The two fit together if 'concise' means short specific statements, not short vague ones.",
+  "why": "Family 1 left this to be reconciled here.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D1-31"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L3a-09",
+     "L7b-05",
+     "L7a-01",
+     "L7a-18",
+     "L7a-12"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W9",
+  "family": 2,
+  "topic": "HEADLINE",
+  "severity": "low",
+  "status": "RULED 2026-10-28 (W9.1–W9.4)",
+  "title": "Headlines",
+  "what": "The site's hero rule and two checks (mystery box, redundant subheadline) agree with the legacy skills, which add five tests (one-read meaning, reader ownership, specificity, evidence, fit), a formula (outcome or system + reader context + qualifier), and 'product nouns and verbs, not category slogans, forced puns or repeated account names'.",
+  "why": "Agreement; the question is how much of the legacy craft to bring over.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D1-17",
+     "D1-48",
+     "D1-56"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L7a-06",
+     "L7a-07",
+     "L7b-04"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W10",
+  "family": 2,
+  "topic": "COPY",
+  "severity": "low",
+  "status": "RULED 2026-10-28 (W10.1–W10.6)",
+  "title": "Buttons, forms and promises",
+  "what": "Both say a button names what happens. The legacy skills add: two to five words, field labels as plain nouns, success and error copy, and never promise a response time, consent handling or delivery the page does not actually provide.",
+  "why": "Small additions.",
+  "cases": "Event pages: registration wording; product pages: the ad's offer.",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D1-57",
+     "D1-58",
+     "D1-22"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L7a-16",
+     "L7a-17",
+     "L7-05"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W11",
+  "family": 2,
+  "topic": "VOICE",
+  "severity": "low",
+  "status": "RULED 2026-10-28 (W11.1–W11.5)",
+  "title": "Talking about the prospect",
+  "what": "Both say: frame toward what improves, never tell them their setup is broken. The legacy skills add: never show buying-committee labels, and never describe the prospect's own product negatively (the Head of ABM's brief template already says this).",
+  "why": "Small additions.",
+  "cases": "One-to-one, one-to-few and contact pages.",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D1-46",
+     "D1-54",
+     "D1-53"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L7a-22",
+     "L7a-23",
+     "L7a-13"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "W12",
+  "family": 2,
+  "topic": "COPY",
+  "severity": "low",
+  "status": "RULED 2026-10-28 (W12: no rule)",
+  "title": "Wording the person asked for exactly",
+  "what": "The site has no rule. The legacy skills keep wording the person asked for exactly (a headline, a tagline, a button), and when that wording claims something unsupported, they say so instead of silently rewriting it.",
+  "why": "A gap.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Legacy",
+    "rows": [
+     "L7a-03",
+     "L7a-26"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "M1",
+  "family": 3,
+  "topic": "MOTION",
+  "severity": "high",
+  "status": "RULED 2026-10-28 (M1.1–M1.6)",
+  "title": "The seller's moving parts: copy them, rebuild them, or leave them still?",
+  "what": "brand/brand.md tells the agent that the seller's videos, canvas and scripted animations 'need a script… Do not imitate them', and that nothing moves except the kit's buttons, links and cards ('write no transition or animation of your own'). That text predates two changes: published sites now run JavaScript (founder 2026-10-15), and R11.1 keeps the seller's ambient video. The live-site skill now lets a section run React effects (tabs, carousels, scroll reveals). Clone cards list images but not videos, so the agent cannot see a clone's video. The legacy motion skill uses a ladder: reuse the source's own CSS and media when it works; else a supported equivalent (tabs, carousel, accordion); else a custom-built component; else a compact still version with no dead space or dead controls — and every moving region needs a usable reduced-motion state.",
+  "why": "This is half of why the 10-26 Pallet page lost all its motion; R11 decided what may stay, this decides how.",
+  "cases": "Product and general campaign pages lean on the seller's motion most; one-to-one pages keep it as part of the seller's look.",
+  "groups": [
+   {
+    "label": "Site data: brand.md motion text",
+    "rows": [
+     "H4-06",
+     "H4-04",
+     "H4-05"
+    ]
+   },
+   {
+    "label": "Site: what the agent can see and do",
+    "rows": [
+     "H3-02",
+     "D7-02",
+     "D7-01",
+     "D5-01"
+    ]
+   },
+   {
+    "label": "Legacy: the motion ladder",
+    "rows": [
+     "L10-02",
+     "L10-07",
+     "L10-05",
+     "L10-08",
+     "L10-03"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "M2",
+  "family": 3,
+  "topic": "GENERATE",
+  "severity": "high",
+  "status": "RULED 2026-10-28 (M2.1–M2.7)",
+  "title": "When to generate an image, and how well",
+  "what": "The site generates only as a last resort ('only when a section needs one and none of the brand's images fits'), only a scene or a mood, never anything presented as real, styled from one to three brand photos, one retry, else no image. The legacy web media skill agrees ('generation is optional… authentic reused imagery is a complete valid outcome'). The legacy generative-imagery skill, written mainly for ads, says the opposite: generation 'is not a fallback… it is one of your two hands' for atmosphere — and it carries real craft the site lacks: a five-question prompt (what, style, exact brand colours, composition with a calm area, what must not appear), describing the brand's own imagery in plain words, the test 'would the brand's own design team have made this?', and text on an image only over a calm area or a scrim.",
+  "why": "Decides how often site pages carry generated imagery, and how good it is when they do.",
+  "cases": "Pages with no account (general, event, product) have fewer authentic images to draw on.",
+  "groups": [
+   {
+    "label": "Site: last resort, scene or mood only",
+    "rows": [
+     "D3-08",
+     "D3-09",
+     "D3-10",
+     "D3-05",
+     "D3-11"
+    ]
+   },
+   {
+    "label": "Legacy web: generation is optional",
+    "rows": [
+     "L8-05",
+     "L8-11",
+     "L8-13"
+    ]
+   },
+   {
+    "label": "Legacy (ads): one of two hands, with prompt craft",
+    "rows": [
+     "L11-01",
+     "L11-03",
+     "L11-04",
+     "L11-07",
+     "L11-08"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "M3",
+  "family": 3,
+  "topic": "IMAGERY",
+  "severity": "medium",
+  "status": "RULED 2026-10-28 (M3.1–M3.3)",
+  "title": "Keeping the seller's image composition",
+  "what": "The site says keep a clone's layout, images and rhythm. The legacy skills spell out what that means for images: keep crop, focal point, transparency, corners already baked into the image, and layer order; separate what is inside an image from what the page adds (double rounding cuts controls; a panel behind a cut-out destroys it); never replace characteristic scenery or a photographic background with a flat colour because finding the asset was inconvenient.",
+  "why": "Rebuilt sections and brand sections are where images get flattened or re-cropped.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D1-59"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L8-01",
+     "L8-04",
+     "L8-08",
+     "L8-10"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "M4",
+  "family": 3,
+  "topic": "PRODUCTUI",
+  "severity": "medium",
+  "status": "RULED 2026-10-28 (M4.0–M4.5)",
+  "title": "Product screenshots that carry the story",
+  "what": "The site has two lines: a screenshot must show what the copy says, and product screens are never generated. The legacy product-story skill adds: pair each screenshot with the task it shows and the explanation beside it; keep the brand background behind the interface and never cover the interface; keep the interface readable on a phone ('a surviving background with no UI is failure'); never edit its numbers or crop out the feature the copy describes; a product switcher is one linked component.",
+  "why": "W8.3 (explain the actual product) depends on product visuals doing their job.",
+  "cases": "Product and general campaign pages carry the most product imagery.",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D3-06",
+     "D3-05"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L9-02",
+     "L9-03",
+     "L9-05",
+     "L8-09",
+     "L10-06"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "M5",
+  "family": 3,
+  "topic": "ASSETS",
+  "severity": "medium",
+  "status": "RULED 2026-10-28 (M5.1–M5.5)",
+  "title": "Which images a page may use, and finding them",
+  "what": "Three site texts say images come only from brand/brand.md or generation ('the only images and logos a page may use'), while the images skill and two tool descriptions also allow the seller's uploads and earlier pages' images found with search_assets. The legacy skills add: state each image's role before using it; one empty search does not mean the brand has no imagery (try other words); if nothing fits, a smaller honest placement or no image.",
+  "why": "An internal inconsistency in what the agent is told.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site: brand.md or generated only",
+    "rows": [
+     "D2-16",
+     "D2-17",
+     "H4-03",
+     "D6-04"
+    ]
+   },
+   {
+    "label": "Site: search_assets images too",
+    "rows": [
+     "D3-07",
+     "B1-04",
+     "B1-05"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L8-02",
+     "L8-06",
+     "L8-07"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "M6",
+  "family": 3,
+  "topic": "ASSETS",
+  "severity": "low",
+  "status": "RULED 2026-10-28 (M6.1–M6.3)",
+  "title": "Image sharpness",
+  "what": "The site has no rule beyond 'no broken image'. The legacy skill gives the arithmetic: an image painted 600 × 400 on a 2× screen needs 1200 × 800 real pixels; a better same-role source, a smaller honest placement, or no image beats a blurry one.",
+  "why": "A gap.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D4-05"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L8-03"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "M7",
+  "family": 3,
+  "topic": "LOGOS",
+  "severity": "low",
+  "status": "RULED 2026-10-28 (M7.1–M7.5)",
+  "title": "Logos",
+  "what": "Mostly agreement: the site fetches the account's logo by domain, looks before placing, hides it when none is found, skips look-alike companies, and shows logos whole. The legacy skills add: tell a full lockup from a bare mark; pick the light or dark version for its background; when identity is unclear leave the logo out; never draw, recolour or generate a logo; don't repeat the seller's wordmark as proof.",
+  "why": "Small additions; placement was ruled in R6.",
+  "cases": "One-to-one, one-to-few and contact pages place the account's logo; others don't (R6.3).",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D3-12",
+     "D3-13",
+     "H4-02",
+     "H4-07"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L8-14",
+     "L8-15",
+     "L8-16"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "V1",
+  "family": 4,
+  "topic": "RHYTHM",
+  "severity": "high",
+  "status": "RULED 2026-10-28 (V1.1–V1.5)",
+  "title": "Section rhythm: alternate light and dark with one dark section, or follow the seller's own rhythm?",
+  "what": "The site sets a fixed pattern for brand sections: choose surfaces so light and dark alternate, use at most one dark brand section, never two dark sections in a row (clones keep their own backgrounds). The legacy design skill says no universal pattern applies: record the seller's own sequence of surfaces, image fields and density — 'a brand may use several vivid fields or a single canvas' — and a new band inherits its neighbour's treatment and the page's rhythm; 'do not invent a rule such as one colored band per page'.",
+  "why": "A seller whose site runs two dark bands back to back, or lives on one canvas, gets a page that no longer looks like theirs.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site: a fixed pattern",
+    "rows": [
+     "D2-20",
+     "D2-21",
+     "D4-07"
+    ]
+   },
+   {
+    "label": "Legacy: the seller's own rhythm",
+    "rows": [
+     "L12-04",
+     "L12-03",
+     "L14-08"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "V2",
+  "family": 4,
+  "topic": "HERO",
+  "severity": "high",
+  "status": "RULED 2026-10-28 (V2.1–V2.4)",
+  "title": "Which hero opens the page, and how it is composed",
+  "what": "The site says only 'The home page's hero usually opens the page' (the 10-26 Pallet page opened with a centred hero copied from a product page). The legacy skills say: retrieve sections by the job they must do and look beyond the homepage for product, use-case or customer-story sources; name each band's composition before building (centred statement, asymmetric split, editorial stack, full-bleed hero…), repeat a composition only where the content is symmetric; and the seller's own hero archetype (split? centred? what carries the weight?) is part of its grammar.",
+  "why": "The founder asked whether something pushes the agent to a centred hero every time; nothing in the text does, but nothing guides the choice either.",
+  "cases": "Product campaign pages may open on the product page's hero; one-to-one pages usually on the home hero adapted to the account.",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D2-02",
+     "D2-18"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L14-02",
+     "L14-06",
+     "L6-09",
+     "L1c-05"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "V3",
+  "family": 4,
+  "topic": "FIDELITY",
+  "severity": "high",
+  "status": "RULED 2026-10-28 (V3.1: existing rules stay)",
+  "title": "New and rebuilt sections that look like the seller's",
+  "what": "The site asks a new section to 'look like the seller's sections around it — render and compare', a rebuilt one to keep the original's layout and compare up to three times, and an own header never to look generic. The legacy skills add method: name the seller section each new band descends from; learn the seller's grammar (containers, type hierarchy, density, surface changes, image purpose, button shape, how it rearranges on a phone) — 'a palette is not a grammar'; the logo-swap test (if swapping the logo would let a section fit any company, it isn't showing the brand); no decorative blobs, orbs or gradient meshes unless the brand uses them, restraint by default; and when rebuilding, rebuild what the band does, not tidy how it was written.",
+  "why": "Brand sections and agent-written sections are where pages drift into generic.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D6-08",
+     "D6-09",
+     "D5-02",
+     "D5-03",
+     "D1-59"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L15-01",
+     "L12-01",
+     "L14-05",
+     "L14-04",
+     "L14-08",
+     "L12-09"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "V4",
+  "family": 4,
+  "topic": "TYPE",
+  "severity": "medium",
+  "status": "RULED 2026-10-28 (V4.1–V4.3)",
+  "title": "Type hierarchy across the page",
+  "what": "The site gives the agent the brand's type roles (measured from the seller's site or derived), heading sizes chosen by name (display, headline, title), sizes that change with the window as on the seller's site, and 'words fit their space'. The legacy skills add: judge the whole page, not each band — 'an accidentally tiny opening headline beside a much larger ordinary product heading is a mismatch'; keep the seller's deliberate scale contrast; never shrink type to fit an over-long argument (edit the copy); one main headline per page.",
+  "why": "Mixed clones and brand sections can leave the hero smaller than a later heading.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "H4-09",
+     "H4-11",
+     "H4-10",
+     "D4-04"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L12-07",
+     "L12-06",
+     "L15-04",
+     "L14-07"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "V5",
+  "family": 4,
+  "topic": "BRAND",
+  "severity": "medium",
+  "status": "RULED 2026-10-28 (V5.1–V5.2)",
+  "title": "Brand-only styling, buttons and styling by hand",
+  "what": "The site styles only by the brand's names ('never write a colour, a size, a class or a style'), checked by write_section; R7.5 now copies the header and footer's CSS style from the seller's page. Buttons follow the seller's own main-ask style, with outline or text styles for quieter actions. Styling a marketer did by hand (_edits) is kept unless the request changes the look. The legacy skills agree and add: keep the seller's observed button geometry, padding and border; recolour only when contrast needs it, within the brand's own system; use generic defaults only where the seller shows no evidence.",
+  "why": "Mostly agreement; the question is what to add.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "A1-16",
+     "D6-07",
+     "H4-13",
+     "D2-23",
+     "D2-24"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L12-08",
+     "L12-02"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "V6",
+  "family": 4,
+  "topic": "CONTRAST",
+  "severity": "low",
+  "status": "RULED 2026-10-28 (V6: no change)",
+  "title": "Readable text on surfaces and images",
+  "what": "The site makes buttons and cards readable automatically and tells the agent to give a header over a photo a semi-opaque fill. The legacy skill (scene-ad era) adds: judge a colour by how light it is, not by its name; at least 4.5:1 for body text and button labels; over a photo, check the actual area behind each line of text; when two strong colours fight, soften one or add space. (Text over a generated image: M2.7.)",
+  "why": "Brand sections and agent-written sections over images.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "H4-14",
+     "D2-22"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L13-01",
+     "L13-04",
+     "L13-05",
+     "L13-03"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "Q1",
+  "family": 5,
+  "topic": "CHECKLIST",
+  "severity": "high",
+  "status": "RULED 2026-10-28 (Q1.1–Q1.3)",
+  "title": "What the self-check after a render covers",
+  "what": "The site's page-review has six items (first screen, nothing broken, no repeats, words fit, rhythm, then account-page-copy's final check on the words). Families 1–4 have since sent it new checks: every number and quote traces to the plan (W6.3), honest reporting on motion (M1.5), the product interface readable on a phone (M4.6), a brand section not foreign next to the clones (V1.5), headings judged across the page (V4.2), more than one primary offer (R5.5), the swap and utility tests (R4.4), the final-check wording items reworded to the W rulings; and some old items are gone (no two dark sections in a row, form creep). The legacy review adds: read the page as an argument (what each section contributes), a thin page is a defect even when everything renders, check each button's label against where it actually goes, check overflow and the contrast of text and logos at both widths, and an image's role and crop.",
+  "why": "The checklist has to be rebuilt from the four families' rulings; the question is what else, if anything, it should carry.",
+  "cases": "One-to-one, one-to-few and contact pages add the account checks (swap test, proof line, no named people except contact pages).",
+  "groups": [
+   {
+    "label": "Site: page-review today",
+    "rows": [
+     "D4-08",
+     "D4-01",
+     "D4-05",
+     "D4-03",
+     "D4-04",
+     "D4-07",
+     "D4-09"
+    ]
+   },
+   {
+    "label": "Site: account-page-copy's final check",
+    "rows": [
+     "D1-60"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L16-01",
+     "L16-14",
+     "L16-06",
+     "L16-18",
+     "L16-16",
+     "L16-11"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "Q2",
+  "family": 5,
+  "topic": "LOOP",
+  "severity": "medium",
+  "status": "RULED 2026-10-28 (Q2.1–Q2.3)",
+  "title": "How many render-and-fix rounds, and what triggers one",
+  "what": "The site: validate until valid (after the same error three times, change approach or leave the part out); render and fix only what fails, all in one go, up to three renders; no re-render to compare small differences; on an edit, validate, render only if the change is visible; render each page that changed; the harness will not let a turn end on an invalid page (two reminders, then 'completed with errors'). The legacy review agrees and adds: on a small edit, check only that change and its neighbours, never re-plan or regenerate the page. Length is no longer capped (R3.1), so pages may be longer than the three-render budget was set for.",
+  "why": "Mostly agreement; one question is whether three renders still fits longer pages.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "A1-18",
+     "A1-19",
+     "D4-10",
+     "A1-20",
+     "H6-01"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L16-03"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "Q3",
+  "family": 5,
+  "topic": "VERDICT",
+  "severity": "medium",
+  "status": "RULED 2026-10-28 (Q3.1–Q3.4)",
+  "title": "The final report and an honest status",
+  "what": "The site ends with 'a short report: what you built, what you left out and why, and anything still open', and page-review asks to 'say what you checked and anything you could not fix'. The legacy review sets three outcomes (accepted; completed with warnings — a usable page with a named unmet requirement; failed), says to name unmet requirements prominently rather than as polish, to call something unverified rather than invent a defect, and to keep the report short: result and scope, changes, what was checked, what is open.",
+  "why": "The report is what the person reads; it should say plainly what is done and what is not.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "A1-04",
+     "D4-11"
+    ]
+   },
+   {
+    "label": "Legacy",
+    "rows": [
+     "L16-09",
+     "L16-10",
+     "L16-12",
+     "L16-13"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "X1",
+  "family": 6,
+  "topic": "MECHANICS",
+  "severity": "high",
+  "status": "RULED 2026-10-28 (X1.1–X1.4)",
+  "title": "When the agent rebuilds a seller section or writes its own",
+  "what": "R4.3 set the order: the clone's slots, then the clone rebuilt as a component, then a brand section, then a section of the agent's own — and the agent decides when the material needs more room. The mechanics text still says otherwise: rebuilding-a-section is 'Use when you are asked to rebuild…'; writing-a-section is 'Use when you have been asked to add something that no clone and no brand section can carry'; building-with-puck's 'Reuse first' and account-page-copy go clone → brand section → leave the point out, with no rebuilt clone and no own section.",
+  "why": "With these descriptions the agent may never rebuild a clone on its own, which is what R4.3 and M1.2 rely on.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site mechanics text",
+    "rows": [
+     "D5-04",
+     "D6-11",
+     "D2-01",
+     "D1-15"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "X2",
+  "family": 6,
+  "topic": "READING",
+  "severity": "medium",
+  "status": "RULED 2026-10-28 (X2.1–X2.4)",
+  "title": "How the system prompt delivers and lists skills after S2",
+  "what": "The system prompt says 'Your skills are below this prompt… Follow them', and the harness pastes them in. Under S2 the prompt lists skills and a reading rule instead. The harness also delivers two folders conditionally: skills-e5 (writing and rebuilding sections) only when new sections are allowed for the workspace, skills-live only on live sites. R0.1 fixed the set by page kind; these vary by workspace capability.",
+  "why": "The reading rule and the skill list have to match what is actually delivered.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "A1-21",
+     "A1-22",
+     "H7-01"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "X3",
+  "family": 6,
+  "topic": "MECHANICS",
+  "severity": "medium",
+  "status": "RULED 2026-10-28 (X3.1–X3.5)",
+  "title": "Section writing strong enough to rebuild the seller's sections and motion (M1.8)",
+  "what": "M1.8 asks the agent's own section writing to be strong enough to rebuild the seller's motion. Today: the kit has no video piece, so a rebuilt section cannot carry the seller's video; writing-a-section still says 'write no transition or animation of your own'; making-a-section-interactive has an accordion example but nothing on rebuilding the seller's own motion or on a still state for visitors who ask for less motion; rebuilding-a-section still swaps video for an image (already ruled out by R11.1).",
+  "why": "R11.1, M1.2 and M1.4 depend on these mechanics.",
+  "cases": "",
+  "groups": [
+   {
+    "label": "Site",
+    "rows": [
+     "D6-12",
+     "D6-10",
+     "D7-05",
+     "D5-01"
+    ]
+   }
+  ]
+ }
+]

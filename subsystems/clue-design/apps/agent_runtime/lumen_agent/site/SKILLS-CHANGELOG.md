@@ -153,3 +153,16 @@ fails without it).
   the legal line, privacy and terms in one row) unless the person asks for the seller's own footer or
   something richer. The footer templates stay available. Failing case: sites took the seller's busy
   captured footer by default; the founder wants the simple layout, editable by the agent and the person.
+- 2026-10-28 · site agent alignment, step 4 (draft, uncommitted until the step 5 trials; rulings in
+  `docs/site-harness-alignment/RULINGS.md`, blueprint in `SKILL-SET-MAP.md`). The skill set is rebuilt
+  from the founder's rulings R1–R13, W1–W12, M1–M7, V1–V6, Q1–Q3, X1–X3 and S1–S5. New:
+  planning-a-page (the eight questions and the plan format), page-kinds (one SKILL.md and seven
+  references: one-to-one, contact, one-to-few, general-campaign, event, product-campaign,
+  decision-material), page-copy, evidence, imagery-and-media (replaces images-and-logos), page-design.
+  Rewritten: page-review (five checks, done lines, 3 renders per page). Edited: building-with-puck
+  (four-step reuse order, primary action, inherited buttons, header and footer by page kind, rhythm
+  moved to page-design), writing-a-section, rebuilding-a-section (keep the clone when its video
+  matters; no "closest brand image"), making-a-section-interactive (rebuilding the seller's motion, a
+  switcher example). Retired: account-page-copy, images-and-logos. System prompt rewritten for every
+  page kind; web_search and fetch_page descriptions. Failing cases: the alignment ledger (479 rows)
+  rather than single runs; the trials test it.

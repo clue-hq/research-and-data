@@ -340,14 +340,19 @@ class TurnLimitsConfig:
 # The two places the system prompt names research/claims.md. A workspace built without claims (R1's
 # comparison arm) gets the research line without them and no claims rule.
 CLAIMS_RESEARCH_LINE = (
-    "- `research/`: what we know about the account (its overview and insights). Each statement ends\n"
-    "  with the claims behind it, like `[c4, c9]`. `research/claims.md` lists each claim with what it\n"
+    "- `research/`: what we know about the account, when the page is for one (its overview and\n"
+    "  insights). Each statement ends with the claims behind it, like `[c4, c9]`, and may carry a tag:\n"
+    "  (quote) is the account's own words, (qualified) is true only with its note, (inference) is the\n"
+    "  research's own reading, and (gap) is unknown. `research/claims.md` lists each claim with what it\n"
     "  says, its source link and any notes. The \"Watch-outs\" and \"Context only\" sections are background\n"
-    "  for your judgement: never put them on the page.\n"
+    "  for your judgement: never put them on the page. The `evidence` skill says how to use all of this.\n"
 )
 PLAIN_RESEARCH_LINE = (
-    "- `research/`: what we know about the account (its overview and insights). The \"Watch-outs\" and\n"
-    "  \"Context only\" sections are background for your judgement: never put them on the page.\n"
+    "- `research/`: what we know about the account, when the page is for one (its overview and\n"
+    "  insights). A statement may carry a tag: (quote) is the account's own words, (qualified) is true\n"
+    "  only with its note, (inference) is the research's own reading, and (gap) is unknown. The\n"
+    "  \"Watch-outs\" and \"Context only\" sections are background for your judgement: never put them on\n"
+    "  the page. The `evidence` skill says how to use all of this.\n"
 )
 CLAIMS_RULE = (
     "- For a number or a quote from the research, check its claim in `research/claims.md`. Use the\n"
@@ -363,46 +368,53 @@ LIVE_RENDER_PAGE_LINE = (
     "browser drew a section differently.\n"
 )
 SKILLS_STEP = (
-    "1. Your skills are below this prompt: `account-page-copy`, `building-with-puck`,\n"
-    "   `images-and-logos` and `page-review`, and for new sections `writing-a-section` and\n"
-    "   `rebuilding-a-section`. Follow them.\n"
+    "1. Your skills are listed at the end of this prompt: each one's name, when to use it, and its\n"
+    "   path. Read a skill with `read_file` when it fits what you are doing, and follow it. On a new\n"
+    "   site, read the skills for planning and building before you write `plan.md`; on a later\n"
+    "   request, read only the skills that request touches.\n"
 )
-LIVE_SKILLS_STEP = (
-    "1. Your skills are below this prompt: `account-page-copy`, `building-with-puck`,\n"
-    "   `images-and-logos` and `page-review`, and for new sections `writing-a-section` and\n"
-    "   `rebuilding-a-section`, and, on this site, `making-a-section-interactive` when a section needs\n"
-    "   to respond to the visitor. Follow them.\n"
-)
+
+#: The skills section the skills middleware appends to the system prompt (ruling S2, 2026-10-27):
+#: each skill's name, when to use it, and its path; the agent reads a skill when it needs it. Our
+#: wording, through the library's own option, as the scene agent does (scene alignment I7).
+SITE_SKILLS_SECTION = """## Your skills
+
+Each skill below has its name, when to use it, and its path.
+
+{skills_locations}{skills_load_warnings}
+
+{skills_list}
+
+When a skill fits the work in front of you, read it in one call with
+read_file(file_path=..., limit=1000) and follow it. Read only the skills this request needs."""
+
+
+def site_skill_sources(*, live: bool = False) -> list[tuple[str, str]]:
+    """The workspace folders the skills middleware lists: the site skills and the section-writing
+    skills always (ruling X2.2), the interactive-section skill only where the workspace publishes
+    live sites (X2.3)."""
+
+    return [("/skills/", "Site"), ("/skills-e5/", "Section"), *([("/skills-live/", "Live-site")] if live else [])]
 
 
 def _base_prompt(workspace: Path, *, live: bool = False) -> str:
     text = (SITE_DIR / "system_prompt.md").read_text()
     assert RENDER_PAGE_LINE in text and SKILLS_STEP in text, "system_prompt.md drifted from harness.py"
     if live:
-        text = text.replace(RENDER_PAGE_LINE, LIVE_RENDER_PAGE_LINE).replace(SKILLS_STEP, LIVE_SKILLS_STEP)
+        text = text.replace(RENDER_PAGE_LINE, LIVE_RENDER_PAGE_LINE)
     if (workspace / "research" / "claims.md").exists():
         return text
     assert CLAIMS_RESEARCH_LINE in text and CLAIMS_RULE in text, "system_prompt.md drifted from harness.py"
     return text.replace(CLAIMS_RESEARCH_LINE, PLAIN_RESEARCH_LINE).replace(CLAIMS_RULE, "")
 
 
-def system_prompt_with_skills(workspace: Path, *, allow_new_sections: bool = True, live: bool = False) -> str:
-    """The system prompt with the skills after it, read from the package so every call and every
-    session sends the same text (the spike's, E5 on by default). ``live``: the workspace publishes
-    live sites, so two prompt lines name render_page's hydration notes and the interactive-section
-    skill, and the skills-live/ skills follow, when new sections are allowed."""
+def site_system_prompt(workspace: Path, *, live: bool = False) -> str:
+    """The system prompt, read from the package so every call and every session sends the same text.
+    Skills are not pasted: the skills middleware lists them and the agent reads one when it needs it
+    (ruling S2). ``live``: the workspace publishes live sites, so the render line names
+    render_page's hydration notes."""
 
-    folders = [
-        "skills",
-        *(["skills-e5"] if allow_new_sections else []),
-        *(["skills-live"] if live and allow_new_sections else []),
-    ]
-    skills = [
-        f"### Skill: {path.parent.name} ({'/' + folder + '/' + path.parent.name}/SKILL.md)\n\n{path.read_text().strip()}"
-        for folder in folders
-        for path in sorted((SITE_DIR / folder).glob("*/SKILL.md"))
-    ]
-    return _base_prompt(workspace, live=live).rstrip() + "\n\n## Your skills\n\n" + "\n\n".join(skills) + "\n"
+    return _base_prompt(workspace, live=live)
 
 
 # --- the working copy (site-turn durability, 2026-10-16) -----------------------------------------
@@ -561,7 +573,6 @@ def build_site_agent(
     checkpointer: Any = None,
     limits: TurnLimitsConfig = TurnLimitsConfig(),
     compaction: Any = None,
-    allow_new_sections: bool = True,
     live: bool = False,
     working_copy: WorkingCopy | None = None,
 ):
@@ -573,6 +584,7 @@ def build_site_agent(
     from deepagents.backends import FilesystemBackend
     from deepagents.middleware.filesystem import FilesystemMiddleware
     from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
+    from deepagents.middleware.skills import SkillsMiddleware
     from langchain.agents import create_agent
     from langchain.agents.middleware import ContextEditingMiddleware
     from langgraph.checkpoint.memory import InMemorySaver
@@ -589,6 +601,7 @@ def build_site_agent(
         working_copy.bind(turn_limits=turn_limits, guard=guard)
     middleware = [
         *([working_copy] if working_copy is not None else []),
+        SkillsMiddleware(backend=backend, sources=site_skill_sources(live=live), system_prompt=SITE_SKILLS_SECTION),
         FilesystemMiddleware(
             backend=backend,
             _permissions=[FilesystemPermission(operations=["write"], paths=READ_ONLY, mode="deny")],
@@ -600,13 +613,14 @@ def build_site_agent(
         WholeFileReads(),
         OrderedToolCalls(),
         RoundShape(limit=limits.max_calls_per_round),
+        StopWhenAsked(tools),
         turn_limits,
         guard,
     ]
     agent = create_agent(
         model,
         tools=site_tool_set(tools),
-        system_prompt=system_prompt_with_skills(tools.workspace, allow_new_sections=allow_new_sections, live=live),
+        system_prompt=site_system_prompt(tools.workspace, live=live),
         middleware=middleware,
         checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),
         name="clue-site-agent",
@@ -616,13 +630,36 @@ def build_site_agent(
 
 @dataclass(frozen=True)
 class SiteTurnResult:
-    #: "applied" (the site is valid or untouched) or "failed".
+    #: "applied" (the site is valid or untouched), "clarification_requested" (it asked, R9.4) or "failed".
     status: str
     summary: str
     site: dict
     stop_reason: str | None
     errors: list[str]
     model_calls: list[dict]
+    #: The question it asked, {"questions": [...]}, when status is "clarification_requested".
+    clarification: dict | None = None
+
+
+def clarification_summary(clarification: dict) -> str:
+    """The turn's reply when it stopped to ask: the question, why it matters, and the default."""
+
+    lines = ["Before I build this, one question:"]
+    for item in clarification.get("questions") or []:
+        lines.append(f"- {item['question']} ({item['why_it_matters']}) If you don't answer, {item['default']}")
+    return "\n".join(lines)
+
+
+class StopWhenAsked(AgentMiddleware):
+    """Asking ends the turn (ruling R9.4): once request_clarification has run, no further model call."""
+
+    def __init__(self, tools: SiteTools) -> None:
+        super().__init__()
+        self._site_tools = tools
+
+    @hook_config(can_jump_to=["end"])
+    def before_model(self, state, runtime):
+        return {"jump_to": "end"} if self._site_tools.clarification is not None else None
 
 
 def _final_text(messages: list) -> str:
@@ -758,6 +795,10 @@ def run_site_turn(
         tools._record("crashed", error=detail)
         return SiteTurnResult("failed", CRASHED_SUMMARY, dict(site), "crashed", [detail], calls())
 
+    if tools.clarification is not None:
+        tools._record("asked")
+        return SiteTurnResult("clarification_requested", clarification_summary(tools.clarification), dict(site),
+                              "clarification_requested", [], calls(), clarification=tools.clarification)
     summary = _final_text((state or {}).get("messages") or [])
     if guard.status == "completed with errors":
         first = guard.errors[0] if guard.errors else ""
