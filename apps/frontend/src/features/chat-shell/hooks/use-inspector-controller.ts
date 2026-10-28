@@ -413,6 +413,29 @@ export function useInspectorController(
     [addressing, live, selectionType],
   );
 
+  /**
+   * Shows `value` on the canvas without saving it — the colour square's live
+   * preview while it is dragged. Its own event, so a lane that does not listen for
+   * previews (web, site) never treats one as a write; `setValue` saves on release.
+   */
+  const previewValue = useCallback(
+    <Key extends keyof InspectorPresentationState>(
+      key: Key,
+      value: InspectorPresentationState[Key],
+    ) => {
+      dispatchInspectorEvent(
+        "clue:inspector-property-preview",
+        {
+          property: key,
+          selectionType,
+          value,
+        },
+        addressing,
+      );
+    },
+    [addressing, selectionType],
+  );
+
   const setNestedValue = useCallback(
     <Key extends "padding" | "position" | "radius">(
       key: Key,
@@ -534,6 +557,7 @@ export function useInspectorController(
   }, [addressing, selectionType]);
 
   return {
+    previewValue,
     requestAction,
     setNestedValue,
     setPaddingAxis,

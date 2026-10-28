@@ -341,11 +341,12 @@ function ShapeControls({
   inert: boolean;
   radii: boolean;
 }) {
-  const { setNestedValue, setRadiusAll, setValue, state } = controller;
+  const { previewValue, setNestedValue, setRadiusAll, setValue, state } = controller;
   const paletteOptions = useScenePaletteOptions();
   const fillRow = useAdColorRow({
     hydratedValue: state.backgroundColor,
     onHex: (hex) => setValue("backgroundColor", hex),
+    onPreview: (hex) => previewValue("backgroundColor", hex),
     onToken: (label) => setValue("tokenBackgroundColor", label),
     paletteOptions,
   });
@@ -353,7 +354,7 @@ function ShapeControls({
     <DummySection label="Shape" {...section}>
       <div className={styles.dummyInspectorStack}>
         <InspectorField label="Fill">
-          <ColorControl color={fillRow.color} disabled={inert} onColorChange={fillRow.onColorChange} onTokenChange={fillRow.onTokenChange} options={paletteOptions} showOpacity={false} />
+          <ColorControl color={fillRow.color} disabled={inert} onColorChange={fillRow.onColorChange} onColorPreview={fillRow.onColorPreview} onTokenChange={fillRow.onTokenChange} options={paletteOptions} showOpacity={false} />
         </InspectorField>
         {radii ? (
           <>
@@ -417,11 +418,12 @@ function StrokeControls({
   controller: AdInspectorController;
   inert: boolean;
 }) {
-  const { setValue, state } = controller;
+  const { previewValue, setValue, state } = controller;
   const paletteOptions = useScenePaletteOptions();
   const strokeRow = useAdColorRow({
     hydratedValue: state.strokeColor,
     onHex: (hex) => setValue("strokeColor", hex),
+    onPreview: (hex) => previewValue("strokeColor", hex),
     onToken: (label) => setValue("tokenStrokeColor", label),
     paletteOptions,
   });
@@ -429,7 +431,7 @@ function StrokeControls({
     <DummySection label="Stroke" {...section}>
       <div className={styles.dummyInspectorStack}>
         <InspectorField label="Color">
-          <ColorControl color={strokeRow.color} disabled={inert} onColorChange={strokeRow.onColorChange} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} showOpacity={false} />
+          <ColorControl color={strokeRow.color} disabled={inert} onColorChange={strokeRow.onColorChange} onColorPreview={strokeRow.onColorPreview} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} showOpacity={false} />
         </InspectorField>
         <InspectorField label="Width">
           <InspectorInput ariaLabel="Stroke width" disabled={inert} onCommitValue={(value) => setValue("strokeWidth", value)} prefix="W" value={state.strokeWidth} />

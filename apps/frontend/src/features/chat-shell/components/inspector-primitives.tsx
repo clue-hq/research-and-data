@@ -21,6 +21,7 @@ import {
 } from "../hooks/use-inspector-controller";
 import { resolveInspectorThemeColors } from "../model/inspector-theme-colors";
 import { ArtifactTitle } from "./artifact-title";
+import { colorToCommitOnRelease } from "./color-drag-commit";
 import { fieldCommit, fieldDisplay, textareaCommitKey } from "./inspector-field-draft";
 import { REPLACE_IMAGE_MENU_ROWS, replaceImageMenuAction } from "./replace-image-menu.logic";
 import styles from "./chat-shell.module.css";
@@ -1105,6 +1106,7 @@ export function ColorControl({
   none = false,
   noneAriaLabel = "Color is none",
   onColorChange,
+  onColorPreview,
   onOpacityChange,
   onTokenChange,
   opacity = "100%",
@@ -1127,6 +1129,10 @@ export function ColorControl({
   none?: boolean;
   noneAriaLabel?: string;
   onColorChange?: (color: string) => void;
+  /** Shows a colour on the canvas WITHOUT saving it, while the Custom tab's square or
+   * hue slider is being dragged; `onColorChange` saves once when the drag ends. Absent
+   * (the web and site lanes), only the picker's own swatch follows the drag. */
+  onColorPreview?: (color: string) => void;
   onOpacityChange?: (opacity: string) => void;
   /** W3.2 (R2): fired with the token LABEL on a theme-tab pick — the live
    * write path; hex (custom tab) stays visual-only per §3. */
@@ -1187,17 +1193,45 @@ export function ColorControl({
     }
   };
 
-  const commitCustomColor = (nextColor: HsvColor) => {
+  /**
+   * The square and the hue slider move only this control's own swatch while the
+   * pointer moves; `finishCustomColor` writes the document once, when the gesture
+   * ends. Production 2026-10-28: a save per pointer move wrote ~45 versions in a
+   * six-second drag, and the edits made meanwhile were refused as version conflicts.
+   */
+  const pendingCustomColorRef = useRef<string | null>(null);
+  // The colour the gesture started from. With a canvas preview, `color` is already
+  // the previewed colour by the time the pointer is released.
+  const gestureStartColorRef = useRef<string | null>(null);
+
+  const previewCustomColor = (nextColor: HsvColor) => {
     if (disabled) return;
     const nextHex = hsvToHex(nextColor);
+    gestureStartColorRef.current ??= color;
     setCustomColor(nextColor);
     setDraftColor(nextHex);
+    pendingCustomColorRef.current = nextHex;
+    onColorPreview?.(nextHex);
+  };
+
+  const finishCustomColor = () => {
+    const pending = pendingCustomColorRef.current;
+    const start = gestureStartColorRef.current ?? color;
+    pendingCustomColorRef.current = null;
+    gestureStartColorRef.current = null;
+    const nextHex = colorToCommitOnRelease(start, pending);
+    if (nextHex === null) return;
+    // Refused mid-gesture (an agent turn started): put the canvas back.
+    if (disabled) {
+      onColorPreview?.(start);
+      return;
+    }
     onColorChange?.(nextHex);
   };
 
   const updateSaturationAndValue = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
-    commitCustomColor({
+    previewCustomColor({
       ...customColor,
       s: clamp(((event.clientX - bounds.left) / bounds.width) * 100, 0, 100),
       v: 100 - clamp(((event.clientY - bounds.top) / bounds.height) * 100, 0, 100),
@@ -1334,7 +1368,11 @@ export function ColorControl({
                         if (event.currentTarget.hasPointerCapture(event.pointerId)) {
                           event.currentTarget.releasePointerCapture(event.pointerId);
                         }
+                        finishCustomColor();
                       }}
+                      // A capture lost without a pointerup (the popover closing, the
+                      // window losing focus) still ends the gesture with one save.
+                      onLostPointerCapture={() => finishCustomColor()}
                       type="button"
                     >
                       <span
@@ -1348,7 +1386,10 @@ export function ColorControl({
                         aria-label="Color hue"
                         max="360"
                         min="0"
-                        onChange={(event) => commitCustomColor({ ...customColor, h: Number(event.target.value) })}
+                        onBlur={() => finishCustomColor()}
+                        onChange={(event) => previewCustomColor({ ...customColor, h: Number(event.target.value) })}
+                        onKeyUp={() => finishCustomColor()}
+                        onPointerUp={() => finishCustomColor()}
                         type="range"
                         value={Math.round(customColor.h)}
                       />
@@ -1446,6 +1487,7 @@ export function BackgroundFillControl({
   fill,
   onFillChange,
   onSolidColorChange,
+  onSolidColorPreview,
   onTokenChange,
   options,
   solidColor,
@@ -1459,6 +1501,8 @@ export function BackgroundFillControl({
   fill: InspectorBackgroundFill;
   onFillChange: (fill: InspectorBackgroundFill) => void;
   onSolidColorChange: (color: string) => void;
+  /** The solid colour's canvas preview while the picker's square is dragged. */
+  onSolidColorPreview?: (color: string) => void;
   /** AD4.0 step 3 (§1.6): a brand pick on the SOLID swatch, reported as the
    * token's label. The gradient stops deliberately do not take it — a stop has
    * no token row in the write table, so a brand pick there commits the colour
@@ -1563,6 +1607,7 @@ export function BackgroundFillControl({
           color={solidColor}
           disabled={disabled}
           onColorChange={onSolidColorChange}
+          onColorPreview={onSolidColorPreview}
           onTokenChange={onTokenChange}
           options={options}
         />

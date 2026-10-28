@@ -11,7 +11,7 @@ import { rootFrameId } from "../adapter/scene-hydrate";
 import type { ScenePalette } from "../adapter/scene-palette";
 import { panelWriteIntent } from "../adapter/scene-panel-freeze";
 import type { SceneCanvasControls } from "../components/scene-artifact-canvas";
-import type { Node, PageId, Scene } from "../engine/scene/contracts";
+import type { Node, Operation, PageId, Scene } from "../engine/scene/contracts";
 import { getPage } from "../engine/scene/sceneQueries";
 import type { KitTokenMaps } from "../engine/scene/tokenColors";
 import { freezeLayoutEdit } from "../engine/scene/structuredEdits";
@@ -285,6 +285,7 @@ export function useSceneInspectorWrites({
   // Latest-value refs so the one listener reads current state without
   // re-arming (written passively, per this repo's react-hooks rules).
   const applyOpsRef = useRef(edits.applyOps);
+  const canApplyRef = useRef(edits.canApply);
   const reportNoteRef = useRef(edits.reportNote);
   const artifactIdRef = useRef(artifactId);
   const controlsRef = useRef(canvasControls);
@@ -300,6 +301,7 @@ export function useSceneInspectorWrites({
   const sceneRef = useRef(scene);
   useEffect(() => {
     applyOpsRef.current = edits.applyOps;
+    canApplyRef.current = edits.canApply;
     reportNoteRef.current = edits.reportNote;
     artifactIdRef.current = artifactId;
     controlsRef.current = canvasControls;
@@ -466,9 +468,63 @@ export function useSceneInspectorWrites({
       }
       applyOpsRef.current([operation], `inspector: ${detail.property}`);
     };
+
+    // The colour square's live preview (founder 2026-10-29): the operation a write
+    // would build, applied to the canvas ENGINE only and never queued for saving — the
+    // picker sends the real write once, when the drag ends. Anything a write would
+    // refuse (the agent lock, a locked node), anything that needs the panel's
+    // freeze-on-grab, or anything that maps to no operation is simply not shown.
+    const onPreview = (event: Event) => {
+      const detail = (event as CustomEvent).detail as {
+        artifactId?: unknown;
+        documentVersion?: unknown;
+        property?: unknown;
+        selectionId?: unknown;
+        selectionType?: unknown;
+        value?: unknown;
+      } | null;
+      if (!detail || typeof detail.property !== "string") return;
+      const controls = controlsRef.current.current;
+      if (!controls || !canApplyRef.current()) return;
+      const canvas = canvasWriteTarget(detail, {
+        artifactId: artifactIdRef.current,
+        pageId: pageIdRef.current,
+        primaryNodeId: primaryNodeIdRef.current,
+        scene: sceneRef.current,
+      });
+      let operation: Operation | null = null;
+      if (canvas) {
+        operation = sceneCanvasChangeToOperation(
+          { property: detail.property, selectionId: canvas.selectionId, value: detail.value },
+          canvas.scene,
+          canvas.pageId,
+          paletteRef.current,
+        );
+      } else {
+        if (typeof detail.selectionId !== "string") return;
+        if (primaryNodeIdRef.current !== detail.selectionId) return;
+        const live = controls.sceneSnapshot() ?? sceneRef.current;
+        const node = live?.nodes[detail.selectionId];
+        if (!live || !node) return;
+        if (panelWriteIntent(live, detail.selectionId, detail.property, detail.value) !== "write") return;
+        operation = sceneChangeToOperation(
+          { property: detail.property, selectionId: detail.selectionId, value: detail.value },
+          node,
+          live,
+          paletteRef.current,
+          tokenMapsRef.current,
+          controls.presentationSnapshot?.()?.nodes[node.id] ?? null,
+        );
+      }
+      if (operation) controls.applyOperations([operation]);
+    };
+
     window.addEventListener("clue:inspector-property-change", onChange);
-    return () =>
+    window.addEventListener("clue:inspector-property-preview", onPreview);
+    return () => {
       window.removeEventListener("clue:inspector-property-change", onChange);
+      window.removeEventListener("clue:inspector-property-preview", onPreview);
+    };
   }, [documentId]);
 
   // ── AD3.3: the two ways a user asks for a history step ───────────────────

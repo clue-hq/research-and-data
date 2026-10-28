@@ -72,11 +72,15 @@ export function useScenePaletteOptions() {
 export function useAdColorRow({
   hydratedValue,
   onHex,
+  onPreview,
   onToken,
   paletteOptions,
 }: {
   hydratedValue: string;
   onHex: (hex: string) => void;
+  /** Shows a hex on the canvas without saving it, while the picker's square is
+   * dragged; `onHex` saves once on release. */
+  onPreview: (hex: string) => void;
   onToken: (label: string) => void;
   paletteOptions: readonly ThemeColorOption[] | undefined;
 }) {
@@ -90,6 +94,7 @@ export function useAdColorRow({
   return {
     color: scenePaletteColor(palette, value) ?? value,
     onColorChange: onHex,
+    onColorPreview: onPreview,
     // Absent options mean the picker is showing the DUMMY's fixture palette,
     // whose labels name no token this document has — so no token handler is
     // offered at all (under A23 that tab is empty, so there is nothing to pick
