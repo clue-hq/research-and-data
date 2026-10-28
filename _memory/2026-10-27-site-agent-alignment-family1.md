@@ -33,3 +33,15 @@ style check (R7.5); video in clone cards, rebuilt sections, Safari range request
 Next: family 1 step 3 (one home per rule), then family 2 ledger.
 Uncommitted elsewhere in trenton: docs/superpowers/specs/2026-10-27-site-agent-judgement-skills-reconciliation.md
 (rough first-pass notes, superseded by the ledger).
+
+## 2026-10-28 · step 4 drafted (whole set, uncommitted)
+- Written in `subsystems/clue-design/apps/agent_runtime/lumen_agent/site/`: system prompt (rewritten earlier
+  today), skills planning-a-page, page-kinds (+ references/one-to-one, contact, one-to-few, general-campaign,
+  event, product-campaign, decision-material), page-copy, evidence, imagery-and-media, page-design, page-review;
+  mechanics skills edited; tools.py web_search/fetch_page/generate_image descriptions; account-page-copy and
+  images-and-logos removed (git rm). SKILLS-CHANGELOG entry added.
+- Founder rule: skill/prompt text stays uncommitted until the step 5 trials; founder reviews the wording.
+- Today's mechanics shaped the text: no kit.Video, no contact research in the workspace, header templates
+  cannot hide the account line (new SKILL-SET-MAP §7 item).
+- Tests: test_site_package (new contract test: every named skill and page-kinds reference exists) and
+  test_site_harness updated; full site test pass run at the end (see the next entry for the result).

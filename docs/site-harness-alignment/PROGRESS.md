@@ -102,3 +102,17 @@ Legacy: L7 conversion-copywriting · L7a copy-craft · L7b website-copy-brief ·
 - 2026-10-28: family 6 homes approved; steps 1–3 complete for all six families. SKILL-SET-MAP.md compiled (step 4 blueprint); two homes corrected (R7.5 → code check; R4.4 explain-before-evaluating → decision-material).
 - 2026-10-28: code fix 1 done (e3a005c5d): skills listed, not pasted (S2/X2); contract test caught images-and-logos silently skipped (YAML), fixed. S5: case skills consolidated into page-kinds with references (Deep Agents docs). Next: code fix 2 (site clarification tool, R9.4).
 - 2026-10-28: code fix 2 done (69a329feb): site request_clarification (one question, ends the turn via before_model jump_to end — the LangChain-documented pattern; return_direct only ends when every call in the batch has it), design API passes clarification_requested as a finished run, platform derives the one-round guard for site turns; 'When to ask' section added to the system prompt (wording approved). Tests: site runtime 109, design API site files 82, platform leg/site files green. Founder: no test runs after each prompt edit — draft the whole set, then test.
+- 2026-10-28: step 4 drafted in full (uncommitted until the step 5 trials): system prompt; new planning-a-page,
+  page-kinds (+7 references), page-copy, evidence, imagery-and-media, page-design; page-review rewritten;
+  building-with-puck, writing-a-section, rebuilding-a-section, making-a-section-interactive edited; web_search and
+  fetch_page descriptions; account-page-copy and images-and-logos retired. Written for today's mechanics: no
+  kit.Video (keep a clone whose video matters), no contact research (a contact page falls back to a role-aimed
+  page), header templates cannot hide the line (new §7 item). Contract test added: every skill and page-kinds
+  reference the set names exists. Site tests updated (package, harness).
+- 2026-10-28: R1.2 minted (founder-approved wording): head-of-abm v87 = v86's surface with manual-*@v33 (manual-siblings'
+  page brief opens with "Who this page is for", where the reader arrives from, "why this reader", and the one-person
+  naming exception), stage0-interview v60 (paths repointed), conversation recipe 47; code pins (registry, composer,
+  conversation turns, recipe wiring, manual build) and tests moved; manifest digest re-pinned. Tests: catalog 8,
+  manual builder 11, manual drift 13, registry wiring 52, recipe contracts 39, comprehensive 16, s4e 5 — all pass.
+  Uncommitted, like the skill text, until the trials.
+

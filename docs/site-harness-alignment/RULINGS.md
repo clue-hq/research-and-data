@@ -362,3 +362,46 @@ One section per conflict group, in the order ruled. Wording comes later (step 4)
 - **S5.3** Skill descriptions are written as the docs advise: what the skill does and when to read it, with distinct keywords so no two overlap; SKILL.md bodies under ~5,000 tokens.
 - **S5.4** Later, with a deepagents upgrade (≥0.7.23), the harness may pin `planning-a-page` on a new document; until then the system prompt's step-1 line and the description carry it.
 - Fix 1 wording approved (system prompt step 1 and the skills section).
+
+## Step 4 review rulings — 2026-10-28
+- **R7.6** (refines R7.1–R7.3, R6.2–R6.3) The header reuses the seller's own header: it looks and behaves like
+  the header on the seller's site (e.g. cluehq.ai's floating header at the top centre gives a one-to-one page a
+  floating header at the top centre), changed slightly where the page needs it. Order: the seller's nav clone as
+  it is → that header rebuilt (account line and logo added, menu trimmed or removed, a centred line, or the line
+  hidden) → the brand's header templates as the fallback → the plain header → the agent's own. One-to-few and
+  general pages may carry a line (e.g. centred) or none, by judgement. (Founder: "it should be able to imitate,
+  replicate, or reuse the header from the actual website, and it should be able to change it slightly if need
+  be. Using a template as a fallback is fine.") Mechanics already allow it: the nav band is in the catalog and a
+  ClonedSection or an agent section can be the header.
+- **Review fixes approved**: the proof line (W3.4) is the one exception to the leaked-note test (W4.3); the motion
+  ladder's still step "does not apply to ambient video, which keeps the clone" (founder's wording); Ploy-derived
+  examples in `page-copy` rewritten as our own (S3); event links go in the page, not the header (R7.3).
+- **M1.4a** (refines M1.4, X3.3; founder chose (a)) The still state covers what moves on its own (loops, carousels
+  that advance by themselves, scroll reveals): for visitors who ask for less motion it stops and shows all its
+  content. A control the visitor drives (tabs, a switcher, an accordion) is not motion and may show one item at a
+  time for everyone.
+- **R7.7** (refines R7.1–R7.3; founder 2026-10-28) The footer by page kind: a page for a whole audience uses the
+  seller's own footer clone as it is (role `footer`, in the catalog); every other kind (one account, one person,
+  a few named accounts, event, product campaign) uses the plain footer (`SiteFooter`). The person's request wins.
+  Plain footer if the seller has no footer clone.
+- **R7.8** (refines R7.6; founder 2026-10-28) The header by page kind, always the seller's own: a page for a whole
+  audience uses the seller's header clone as it is (its menu links to the seller's pages); a page for one account,
+  one person or a few named accounts uses the seller's header trimmed — rebuilt with its look and layout, dropdowns
+  and other links removed, the logo and one button kept, and a short line added where the layout has room
+  ("Prepared for …"; a group line or none for a few accounts; the account's logo beside the seller's for one
+  account or person); event and product-campaign pages use it trimmed to the logo and one button, no line. The
+  templates, then the plain header, then the agent's own, only when the seller has no header clone. ("edit the
+  cloned header to remove the extra options and add a text field … keep the logo and one CTA"; founder: "trimmed
+  header for event and product too".)
+- **R7.9** (founder 2026-10-28) The header never includes a sign-in button, even when cloned as it is: a "Sign in"
+  or "Log in" link or button is replaced with the page's primary action (its words and its link); a rebuilt header
+  leaves it out.
+- **V4.4** (founder 2026-10-28) The seller's fonts: the plan notes the seller's heading font and body font; every
+  section the agent writes or rebuilds uses them (through the type roles), a reused section in another font gets
+  them back through `_edits`, and `page-review` checks and corrects every heading and body text (home:
+  `page-design` "The seller's fonts", `page-review` group 4, the plan format in `planning-a-page`).
+- **A and B** (founder 2026-10-28, code): (A) the site catalog leaves out sections composed for earlier pages
+  (`composed: agent`) and the ABM campaign shells; the seller's header and footer templates stay; a page already
+  using one keeps it. (B) a site turn is offered only the sections its own document pins, not the newest section of
+  every name in the workspace.
+

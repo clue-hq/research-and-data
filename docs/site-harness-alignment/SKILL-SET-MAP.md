@@ -239,6 +239,7 @@ numbers trace to the plan, W6.3), buttons, looks like the seller's (V1.4–V1.5,
 | Image tools report width × height | M6.3 | `site/tools.py` |
 | Header and footer style vs the seller's page (check, then fix if needed) | R7.5 | site-kit header/footer |
 | Carousel brand section (then tabs) | M1.7 | site-kit sections (product work) |
+| Header templates: a page with no account can hide the line (empty today shows "Prepared for you"; no path to hide it); now only the fallback's gap: R7.6 sends pages with no account to the seller's own header first | R6.3, R7.6 | `lumen_api/fragments/site_templates.py`, site-kit |
 
 ## 8. Consistency check
 
