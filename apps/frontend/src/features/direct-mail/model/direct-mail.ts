@@ -1,3 +1,4 @@
+import { OutreachPageSchema } from "./outreach-page";
 import { z } from "zod";
 import handwritingMetrics from "./handwriting-metrics.json";
 import { CampaignAssetSchema, CreditEntrySchema, GiftBudgetSchema, NoteTemplateSchema, QrConnectionSchema, WebUrlSchema } from "./direct-mail-context";
@@ -13,9 +14,10 @@ export type Stage = z.infer<typeof StageSchema>;
 const InsightSchema = z.object({ title: z.string(), detail: z.string(), source: z.string(), date: z.string(), excerpt: z.string(), sourceUrl: WebUrlSchema.optional() });
 const EventSchema = z.object({ id: z.string(), title: z.string(), detail: z.string(), at: z.string(), kind: z.enum(["standard", "exception"]) });
 const ShipmentSchema = z.object({ carrier: z.string(), trackingNumber: z.string(), trackingUrl: z.string().nullable(), expected: z.string(), status: z.string() }).nullable();
-const ApprovalSchema = z.object({ revision: z.number(), at: z.string(), gift: GiftSchema, note: z.string(), signature: z.string(), card: CardAssetSchema, style: StyleSchema, address: AddressSchema, estimatedCents: Cents, budgetCents: Cents });
+const ApprovalSchema = z.object({ page: OutreachPageSchema.optional(), revision: z.number(), at: z.string(), gift: GiftSchema, note: z.string(), signature: z.string(), card: CardAssetSchema, style: StyleSchema, address: AddressSchema, estimatedCents: Cents, budgetCents: Cents });
 export const MailerSchema = z.object({
   id: z.string(), revision: z.number().int().positive(), reviewedRevision: z.number().nullable(),
+  campaignId: z.string().optional(), pageId: z.string().optional(),
   projectId: z.string(), projectName: z.string(), campaign: z.string(), threadId: z.string(),
   accountId: z.string(), contactId: z.string(),
   recipient: z.object({ name: z.string(), role: z.string(), company: z.string(), initials: z.string() }),
@@ -31,7 +33,7 @@ export const MailerSchema = z.object({
   proposalRequest: z.object({ kind: z.enum(["gifts", "insight"]), feedback: z.string(), requestedAt: z.string() }).nullable(),
   assets: z.array(CampaignAssetSchema).optional(), qr: QrConnectionSchema.optional(), sourceLabel: z.string().optional(),
 });
-export const StateSchema = z.object({ schemaVersion: z.literal(1), mailers: z.array(MailerSchema), cards: z.array(CardAssetSchema), styles: z.array(StyleSchema), giftBudgets: z.array(GiftBudgetSchema).optional(), noteTemplates: z.array(NoteTemplateSchema).optional(), creditBalanceCents: Cents.optional(), creditEntries: z.array(CreditEntrySchema).optional(), pilotLoadError: z.string().optional() });
+export const StateSchema = z.object({ schemaVersion: z.literal(1), pages: z.array(OutreachPageSchema).optional(), mailers: z.array(MailerSchema), cards: z.array(CardAssetSchema), styles: z.array(StyleSchema), giftBudgets: z.array(GiftBudgetSchema).optional(), noteTemplates: z.array(NoteTemplateSchema).optional(), creditBalanceCents: Cents.optional(), creditEntries: z.array(CreditEntrySchema).optional(), pilotLoadError: z.string().optional() });
 export type DirectMailState = z.infer<typeof StateSchema>;
 export type Mailer = z.infer<typeof MailerSchema>;
 export type Gift = z.infer<typeof GiftSchema>;
@@ -107,6 +109,10 @@ export function readiness(mailer: Mailer, state: DirectMailState): string[] {
   if (total === null) issues.push("A complete cost estimate is needed.");
   else if (total > mailer.budgetCents) issues.push("The estimated total exceeds the spending limit.");
   if (mailer.proposalRequest) issues.push("Resolve the requested recommendation changes before approving.");
+  if (mailer.pageId) {
+    const page = state.pages?.find(p => p.id === mailer.pageId && p.mailerId === mailer.id && p.accountId === mailer.accountId && p.contactId === mailer.contactId);
+    if (!page || page.reviewedVersion !== page.version) issues.push("Review the current landing page before approving this outreach.");
+  }
   return issues;
 }
 
@@ -155,7 +161,7 @@ export function approveMailers(state: DirectMailState, items: ApprovalItem[]): {
       const balance = next.creditBalanceCents ?? 200000;
       if (balance < charge) throw new Error("Not enough gifting credits. Add credits before approving this mailer.");
       const at = new Date().toISOString();
-      mailer.approval = { revision, at, gift: structuredClone(selectedGift(mailer)!), note: mailer.note, signature: mailer.signature,
+      mailer.approval = { ...(mailer.pageId ? {page: structuredClone(next.pages?.find(p => p.id === mailer.pageId))} : {}), revision, at, gift: structuredClone(selectedGift(mailer)!), note: mailer.note, signature: mailer.signature,
         card: structuredClone(next.cards.find((card) => card.id === mailer.cardId)!),
         style: structuredClone(next.styles.find((style) => style.id === mailer.styleId)!),
         address: structuredClone(mailer.address), estimatedCents: estimate(mailer)!, budgetCents: mailer.budgetCents };

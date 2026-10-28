@@ -1,3 +1,4 @@
+import { withWalkthroughWorkspace } from "@/features/account-materials/data/walkthrough.fixture";
 import { withMaterialsWorkspace } from "@/features/account-materials/data/materials.fixture";
 import { createBrowserRecordStore } from "@/features/preview/data/browser-record-store";
 import { assignAccountOwners, WorkspaceSchema, type AccountRevision, type WorkspaceState } from "../model/workspace";
@@ -10,7 +11,7 @@ export interface WorkspaceRepository {
 }
 type Store = { read():Promise<WorkspaceState>; transact<R>(change:(state:WorkspaceState) => { state:WorkspaceState;result:R }):Promise<R> };
 const EVENT = "clue-orchestration-v2";
-export function createWorkspaceRepository(store:Store = createBrowserRecordStore("clue-orchestration-preview-v2",(value) => withMaterialsWorkspace(parseWorkspace(value)),() => withMaterialsWorkspace(createWorkspaceFixture()))):WorkspaceRepository {
+export function createWorkspaceRepository(store:Store = createBrowserRecordStore("clue-orchestration-preview-v2",(value) => withWalkthroughWorkspace(withMaterialsWorkspace(parseWorkspace(value))),() => withWalkthroughWorkspace(withMaterialsWorkspace(createWorkspaceFixture())))):WorkspaceRepository {
   return {
     read:() => store.read(),
     async assignOwners(items,ownerId) {

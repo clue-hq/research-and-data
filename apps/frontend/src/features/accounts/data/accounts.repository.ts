@@ -1,3 +1,4 @@
+import { withWalkthroughWorkspace } from "@/features/account-materials/data/walkthrough.fixture";
 import { isFrontendPreviewMode } from "@/features/preview/data/preview-mode";
 import { materialAccountRows, withMaterialsWorkspace } from "@/features/account-materials/data/materials.fixture";
 import { createWorkspaceFixture } from "@/features/orchestration/data/workspace.fixture";
@@ -38,7 +39,7 @@ export interface AccountsRepository {
  */
 export const fixtureAccountsRepository: AccountsRepository = {
   async list(query = {}) {
-    const fixtureRows = isFrontendPreviewMode() ? materialAccountRows(accountFixtures, withMaterialsWorkspace(createWorkspaceFixture())) : accountFixtures;
+    const fixtureRows = isFrontendPreviewMode() ? materialAccountRows(accountFixtures, withWalkthroughWorkspace(withMaterialsWorkspace(createWorkspaceFixture()))) : accountFixtures;
     const normalizedSearch = query.search?.trim().toLocaleLowerCase();
     const searched = normalizedSearch
       ? fixtureRows.filter((account) =>

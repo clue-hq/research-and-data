@@ -1,5 +1,7 @@
 "use client";
 
+import { useMaterialsEnabled } from "@/features/account-materials/hooks/use-materials-enabled";
+import { withWalkthroughChat } from "./walkthrough-chat.repository";
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { FIXTURE_TRANSPORT, type ChatTransport } from "./chat-api";
 import { createChatRepositories, type ChatRepositories } from "./chat-repositories";
@@ -72,5 +74,6 @@ export function useChatViewerIdentity(): ChatViewerIdentity {
 /** One repository set per transport, memoised so adapters keep their state. */
 export function useChatRepositories(): ChatRepositories {
   const transport = useChatTransport();
-  return useMemo(() => createChatRepositories(transport), [transport]);
+  const walkthrough=useMaterialsEnabled();
+  return useMemo(() => {const repositories=createChatRepositories(transport);return walkthrough && transport.mode==="fixture" ? withWalkthroughChat(repositories) : repositories;}, [transport,walkthrough]);
 }

@@ -1,76 +1,39 @@
-"use client";
+'use client';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Search } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ProductImage } from '@/features/direct-mail/components/product-image';
+import { ApprovalDialog } from '@/features/direct-mail/components/mail-ui';
+import { selectedGift, type Mailer } from '@/features/direct-mail/model/direct-mail';
+import { useOutreachBrowser } from '../hooks/use-outreach-browser';
+import { WALKTHROUGH_NAME } from '../model/outreach';
+import { OutreachReview } from './outreach-review';
+import { LegacyMaterialsBrowser } from './legacy-materials-browser';
+import s from './outreach.module.css';
 
-import { useMemo, useState, type ReactNode } from "react";
-import { useSearchParams } from "next/navigation";
-import { FileText, Gift, Globe, Image as ImageIcon, Search } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { SelectField } from "@/components/ui/select-field";
-import { useDirectMail } from "@/features/direct-mail/hooks/use-direct-mail";
-import { isDraft, estimate, money, selectedGift } from "@/features/direct-mail/model/direct-mail";
-import { MailerReview } from "@/features/direct-mail/components/mailer-review";
-import { MailerTracking } from "@/features/direct-mail/components/mailer-tracking";
-import { ProductImage } from "@/features/direct-mail/components/product-image";
-import { useWorkspace } from "@/features/orchestration/hooks/use-workspace";
-import { ArtifactPreview } from "@/features/orchestration/components/artifact-library";
-import { buildMaterials, materialKinds, queryMaterials, materialEntry, type Material } from "../model/materials";
-import mailStyles from "@/features/direct-mail/components/direct-mail.module.css";
-import s from "./materials.module.css";
-
-const icons = {gift:Gift,note:FileText,page:Globe,ad:ImageIcon};
-
-/** Shared browser for chat Gallery, account Artifacts and the workspace library. */
-export function MaterialsBrowser({ projectId, accountId:fixedAccount, initialAccount, onBackToAccounts, designFiles, title="Gallery" }: {
- projectId?:string; accountId?:string; initialAccount?:string; onBackToAccounts?:()=>void; designFiles?:ReactNode; title?:string;
-}) {
- const c=useDirectMail(), w=useWorkspace(), params=useSearchParams();
- const entry=materialEntry({fixedAccount,tableAccount:initialAccount,routeAccount:params.get("materialsAccount"),routeMaterial:params.get("material")});
- const [account,setAccount]=useState(entry.accountId);
- const [contact,setContact]=useState("all"), [kind,setKind]=useState("all"), [status,setStatus]=useState("all");
- const [search,setSearch]=useState(""), [page,setPage]=useState(1), [design,setDesign]=useState(false);
- const [selectedId,setSelected]=useState<string|null>(entry.materialId);
- const rows=useMemo(()=>w.data && c.data ? buildMaterials(w.data,c.data).filter(r=>!projectId || r.projectId===projectId):[],[w.data,c.data,projectId]);
- const scopedAccount=fixedAccount ?? account;
- const result=queryMaterials(rows,{accountId:scopedAccount,contactId:contact,kind,status,search,page});
- const accounts=Array.from(new Map(rows.map(r=>[r.accountId,{value:r.accountId,label:r.accountName}])).values()).sort((a,b)=>a.label.localeCompare(b.label));
- const people=Array.from(new Map(rows.filter(r=>r.contactId && (scopedAccount==="all" || r.accountId===scopedAccount)).map(r=>[r.contactId!,{value:r.contactId!,label:r.recipient!}])).values());
- const selection=rows.find(r=>r.id===selectedId && (scopedAccount==="all" || r.accountId===scopedAccount));
- const accountPlan=w.data?.accounts.find(a=>a.id===scopedAccount);
- const error=c.error ?? w.error;
- function change(set:(value:string)=>void,value:string) {set(value);setPage(1);}
- function open(row:Material) {setSelected(row.id);}
- const related=selection ? rows.filter(r=>r.accountId===selection.accountId && (!r.contactId || r.contactId===selection.contactId)) : [];
- return <section className={`${s.surface} ${mailStyles.screen}`} aria-label="Account materials">
-  <div className={s.scroll}>
-   <header className={s.header}>
-    <div className={s.breadcrumb}>
-     {onBackToAccounts ? <button onClick={onBackToAccounts}>Target accounts</button> : null}
-     <button onClick={()=>{setSelected(null);setDesign(false);if(!selectedId && !fixedAccount)setAccount("all");}} aria-label="Back to materials">{title}</button>
-     {selection ? <span>{selection.accountName} · {materialKinds[selection.kind]}</span> : scopedAccount!=="all" ? <span>{accountPlan?.name ?? accounts.find(a=>a.value===scopedAccount)?.label ?? "Account"}</span> : null}
-    </div>
-    {designFiles ? <Button variant="transparent" size="sm" onClick={()=>{setDesign(!design);setSelected(null);}}>{design ? "Campaign materials" : "Design files & documents"}</Button> : null}
-   </header>
-   {error ? <div role="alert" className={mailStyles.notice}>{error}<Button variant="transparent" size="sm" onClick={()=>{void c.reload();void w.reload();}}>Retry</Button></div> : null}
-   {!w.data || !c.data ? <p className={s.empty} role="status">{error ? "Materials could not be loaded." : "Loading materials…"}</p> : design ? designFiles : selection ? <div className={s.detail}>
-    <div className={s.context}><div><strong>{selection.accountName}</strong><span>{selection.recipient ?? "Account-wide material"}</span></div><Button variant="transparent" size="sm" onClick={()=>setSelected(null)}>Back to materials</Button></div>
-    <nav className={s.related} aria-label="Connected materials">{related.map(row=><button key={row.id} aria-current={row.id===selection.id?"page":undefined} onClick={()=>open(row)}>{materialKinds[row.kind]}{row.kind==="gift" && row.mailer && !isDraft(row.mailer)?" & tracking":""}</button>)}</nav>
-    {selection.mailer && (selection.kind==="gift" || selection.kind==="note") ? <>
-     {isDraft(selection.mailer) ? <MailerReview key={selection.id} controller={c} saved={selection.mailer} initialStep={selection.kind==="note"?1:0} onBack={()=>setSelected(null)} onOpenPage={related.some(r=>r.kind==="page") ? ()=>{open(related.find(r=>r.kind==="page")!);} : undefined} queueHref="/direct-mail" /> : <MailerTracking controller={c} mailer={selection.mailer} onOpenPage={related.some(r=>r.kind==="page") ? ()=>{open(related.find(r=>r.kind==="page")!);} : undefined} />}
-    </> : selection.asset ? <div className={s.creative}><ArtifactPreview asset={selection.asset} data={w.data} mail={c.data} /><section className={mailStyles.section}><h2>Connected to this material</h2><p className={mailStyles.small}>{selection.kind==="ad" ? "An account-wide ad introduces the campaign. Each recipient’s gift links to their own landing page." : "This page is the destination for the recipient’s card. The printed QR is assigned and checked during preparation."}</p><p className={`${mailStyles.caption} mt-2`}>{selection.mailer ? `Sender: ${selection.mailer.approval?.signature.split("\n")[0] ?? selection.mailer.signature.split("\n")[0]}` : "Audience: target account buying committee"}</p></section></div> : null}
-   </div> : selectedId ? <div className={s.empty}><p>This material is unavailable in this account.</p><Button variant="transparent" size="sm" onClick={()=>setSelected(null)}>Back to materials</Button></div> : <div className={s.content}>
-    <div className={mailStyles.heading}><div><h1 className={mailStyles.title}>{accountPlan?.name ?? title}</h1><p className={`${mailStyles.small} ${mailStyles.subtle}`}>{accountPlan ? `${people.length} ${people.length===1?"recipient":"recipients"} · ${rows.filter(r=>r.accountId===scopedAccount).length} materials` : "Gifts, notes and campaign creative, together by account."}</p></div>{accountPlan ? <div className={s.owner}><span>Account owner</span><strong>{w.data.people.find(p=>p.id===accountPlan.ownerId)?.name}</strong><span>{accountPlan.territory} territory</span></div> : null}</div>
-    {accountPlan?.id==="snowflake" ? <p className={`${mailStyles.caption} ${s.demoCaption}`}>Illustrative campaign · recipient names and research are fictional.</p> : null}
-    <nav className={mailStyles.tabs} aria-label="Material status">{[["all","All materials"],["review","Needs review"],["approved","Approved"],["tracking","In fulfillment"]].map(([value,label])=><button key={value} className={mailStyles.tab} aria-current={status===value?"page":undefined} onClick={()=>change(setStatus,value)}>{label}</button>)}</nav>
-    <div className={mailStyles.toolbar}><label className={mailStyles.search}><Search size={15}/><input aria-label="Search materials" value={search} placeholder="Search materials or recipients" onChange={e=>change(setSearch,e.target.value)}/></label><div className={s.filters}>
-     {!fixedAccount ? <SelectField ariaLabel="Materials account" value={account} options={[{value:"all",label:"All accounts"},...accounts]} onValueChange={value=>{change(setAccount,value);setContact("all");}}/> : null}
-     <SelectField ariaLabel="Materials recipient" value={contact} options={[{value:"all",label:"All recipients"},...people]} onValueChange={value=>change(setContact,value)}/>
-     <SelectField ariaLabel="Material type" value={kind} options={[{value:"all",label:"All types"},...Object.entries(materialKinds).map(([value,label])=>({value,label}))]} onValueChange={value=>change(setKind,value)}/>
-    </div></div>
-    {result.total ? <div className={mailStyles.tableWrap}><table className={`${mailStyles.table} ${s.table}`}><caption className="sr-only">Account campaign materials</caption><thead><tr><th>Material</th><th>Account / recipient</th><th>Status</th><th>Details</th><th><span className="sr-only">Open material</span></th></tr></thead><tbody>{result.rows.map(row=>{
-     const Icon=icons[row.kind], gift=row.mailer && selectedGift(row.mailer);
-     return <tr key={row.id}><td><button className={s.materialButton} aria-label={`Preview ${materialKinds[row.kind]} for ${row.recipient ?? row.accountName}`} onClick={()=>open(row)}><span className={s.thumbnail}>{row.kind==="gift" && gift ? <ProductImage src={gift.image} alt="" className={s.image}/> : row.kind==="note" && row.mailer ? <FileText size={21} strokeWidth={1.3}/> : <Icon size={21} strokeWidth={1.3}/>}</span><span><strong>{row.kind==="gift" ? gift?.name ?? "3 gift options" : row.title}</strong><span>{materialKinds[row.kind]}</span></span></button></td><td><button className={s.accountLink} onClick={()=>{if(!fixedAccount){change(setAccount,row.accountId);setContact("all");}}}>{row.accountName}</button><p className={mailStyles.caption}>{row.recipient ?? "Shared across the account"}</p></td><td><span className={s.status} data-review={row.status==="Needs review" || row.status==="Ready to approve"}>{row.status}</span></td><td className={mailStyles.small}>{row.kind==="gift" && row.mailer ? money(estimate(row.mailer)) : `Version ${row.version}`}<p className={mailStyles.caption}>{row.kind==="gift" ? "Estimated total" : row.kind==="page" ? "Not published" : row.kind==="ad" ? "Not launched" : row.mailer?.approval ? "Approved with gift" : "Included with gift"}</p></td><td><Button variant="transparent" size="sm" aria-label={`Open ${materialKinds[row.kind]} for ${row.recipient ?? row.accountName}`} onClick={()=>open(row)}>{row.mailer && row.kind==="gift" && !isDraft(row.mailer)?"Track":"Review"}</Button></td></tr>;
-    })}</tbody></table></div> : <div className={s.empty}><p>No materials match this view.</p><p className={mailStyles.caption}>Prepared gifts and creative appear here when they are linked to an account.</p><Button variant="transparent" size="sm" onClick={()=>{setSearch("");setKind("all");setStatus("all");setContact("all");}}>Clear filters</Button></div>}
-    <footer className={mailStyles.pagination}><span>{result.total} materials</span><div className={mailStyles.row}><Button variant="transparent" size="sm" disabled={result.page===1} onClick={()=>setPage(result.page-1)}>Previous</Button><span>{result.page} / {result.pages}</span><Button variant="transparent" size="sm" disabled={result.page===result.pages} onClick={()=>setPage(result.page+1)}>Next</Button></div></footer>
-   </div>}
-  </div>
- </section>;
+/** One account/recipient review shared by chat, account artifacts and Direct Mail. */
+export function MaterialsBrowser({projectId,accountId,initialAccount,initialRecipient,onBackToAccounts,designFiles,title='Gallery'}:{projectId?:string;accountId?:string;initialAccount?:string;initialRecipient?:string;onBackToAccounts?:()=>void;designFiles?:ReactNode;title?:string}) {
+ const b=useOutreachBrowser(projectId,accountId,initialAccount,initialRecipient),{c,w}=b;
+ const [selected,setSelected]=useState<string[]>([]),[approval,setApproval]=useState<Mailer[]|null>(null),[approvalError,setApprovalError]=useState<string|null>(null);
+ const scrollRef=useRef<HTMLDivElement>(null);
+ useEffect(()=>{scrollRef.current?.scrollTo({top:0});},[b.recipient?.id,b.tab,b.account?.id,b.files,b.legacy]);
+ const owner=w.data?.people.find(p=>p.id===w.data?.accounts.find(a=>a.id===b.account?.id)?.ownerId);
+ const selectedMailers=c.data?.mailers.filter(m=>selected.includes(m.id)&&m.stage==='ready')??[];
+ const error=c.error??w.error;
+ async function approve(){if(!approval)return;const result=await c.run(()=>c.repository.approve(approval.map(m=>({id:m.id,revision:m.revision}))));if(result?.results.every(x=>x.ok)){setApproval(null);setSelected([]);}else if(result)setApprovalError(result.results.filter(x=>!x.ok).map(x=>x.message).join(' '));}
+ return <section className={s.surface} aria-label="Campaign materials">
+ <header className={s.bar}><div className={s.crumbs}>{onBackToAccounts?<button onClick={onBackToAccounts}>Target accounts</button>:null}<button onClick={()=>{b.change({materialsAccount:'all',recipient:null,review:null,catalog:null});}}>{title}</button><span>{WALKTHROUGH_NAME}</span></div><div className={s.inline}>{designFiles?<Button variant="transparent" size="sm" onClick={()=>b.change({catalog:b.files?null:'files'})}>{b.files?'Recipient outreach':'Files & documents'}</Button>:null}<Button variant="transparent" size="sm" onClick={()=>b.change({catalog:b.legacy?null:'earlier'})}>{b.legacy?'Walkthrough':'Earlier campaigns'}</Button></div></header>
+ <div ref={scrollRef} className={s.scroll}>{error?<div className="p-4" role="alert">{error}<Button variant="transparent" size="sm" onClick={()=>{void c.reload();void w.reload();}}>Retry</Button></div>:null}
+ {!c.data||!w.data?<p className={s.empty}>Loading campaign materials…</p>:b.files?designFiles:b.legacy?<LegacyMaterialsBrowser projectId={projectId} accountId={accountId} title="Earlier materials"/>:b.account&&b.recipient?<>
+ <div className={s.accountHeader}><div className={s.summary} style={{padding:0}}><div><div className={s.inline}><h1 className={s.title}>{b.account.name}</h1>{!accountId?<Button variant="transparent" size="sm" onClick={b.back}>All {b.rows.length} accounts</Button>:null}</div><p className={s.caption}>2 recipients · Gift, note & landing page</p></div><div className={s.owner}><p className={s.caption}>Account owner</p><p>{owner?.name??'Unassigned'}</p></div></div><div className={s.people} aria-label="Account recipients">{b.account.recipients.map(m=><button key={m.id} className={s.person} aria-current={m.id===b.recipient?.id} onClick={()=>b.select(m.id)}><strong>{m.recipient.name}</strong><span className={s.caption}>{m.stage==='ready'?'Ready for approval':m.approval?m.stage==='shipped'?'In transit':m.stage==='delivered'?'Delivered':'Approved':'Needs review'}</span></button>)}</div></div>
+ <OutreachReview key={b.recipient.id} saved={b.recipient} controller={c} tab={b.tab} onTab={b.setTab}/>
+ </>:accountId?<div className={s.empty}><p>No outreach prepared for this account in {WALKTHROUGH_NAME}.</p><Button variant="transparent" size="sm" onClick={()=>b.change({catalog:'earlier'})}>View earlier materials</Button></div>:<>
+ <div className={s.summary}><div><h1 className={s.title}>Account outreach</h1><p className={s.muted}>Review each recipient’s gift, note and landing page together.</p></div><div className={s.owner}><p className={s.caption}>Campaign owner</p><p>Maya Chen</p></div></div>
+ <nav className={`${s.tabs} ${s.queueTabs}`} aria-label="Outreach status">{[['all','All accounts'],['review','Needs review'],['ready','Ready to approve'],['active','In progress'],['delivered','Delivered'],['attention','Needs attention']].map(([id,label])=><button key={id} aria-current={b.status===id?'page':undefined} onClick={()=>b.change({status:id,p:null})}>{label}</button>)}</nav>
+ <div className={s.toolbar}><label className={s.search}><Search size={15}/><input aria-label="Search account outreach" placeholder="Search accounts or recipients" value={b.search} onChange={e=>b.change({q:e.target.value,p:null})}/></label><div className={s.inline}><span className={s.caption}>{b.result.total} accounts · {b.result.total*2} recipients</span>{selectedMailers.length?<Button variant="primary" size="sm" onClick={()=>{setApprovalError(null);setApproval(selectedMailers);}}>Approve {selectedMailers.length} reviewed</Button>:null}</div></div>
+ <div className={s.tableWrap}><table className={s.table}><caption className="sr-only">Account outreach · Field conversations</caption><thead><tr><th><span className="sr-only">Select reviewed recipients</span></th><th>Target account</th><th>Prepared outreach</th><th>Status</th><th>Account owner</th><th><span className="sr-only">Review account</span></th></tr></thead><tbody>{b.result.rows.map(a=>{const ready=a.recipients.filter(m=>m.stage==='ready'),gift=selectedGift(a.recipients[0]),accountOwner=w.data?.people.find(p=>p.id===w.data?.accounts.find(row=>row.id===a.id)?.ownerId);return <tr key={a.id}><td><input type="checkbox" aria-label={`Select reviewed recipients at ${a.name}`} disabled={!ready.length||c.pending} checked={ready.length>0&&ready.every(m=>selected.includes(m.id))} onChange={e=>setSelected(e.target.checked?[...new Set([...selected,...ready.map(m=>m.id)])]:selected.filter(id=>!ready.some(m=>m.id===id)))}/></td><td><button className={s.account} onClick={()=>b.open(a.id)}><span className={s.avatar}>{a.name[0]}</span><span><strong>{a.name}</strong><span className={s.caption}>{a.recipients.map(m=>m.recipient.name.split(' ')[0]).join(' · ')}</span></span></button></td><td><div className={s.materials}>{gift?<ProductImage src={gift.image} alt=""/>:null}<span>Gift, note & landing page<span className={`block ${s.caption}`}>{a.recipients.length} recipient sets</span></span></div></td><td><span className={s.state} data-active={a.active>0||a.delivered>0}>{a.attention?'Address needed':a.review?`${a.review} to review`:a.delivered?'Delivered':'In progress'}</span>{a.active&&a.review?<p className={s.caption}>{a.active} in progress</p>:a.ready?<p className={s.caption}>{a.ready} ready to approve</p>:null}</td><td>{accountOwner?.name??'Unassigned'}</td><td><Button variant="transparent" size="sm" aria-label={`Review outreach for ${a.name}`} onClick={()=>b.open(a.id)}>Open</Button></td></tr>;})}</tbody></table></div>
+ {!b.result.total?<div className={s.empty}>No accounts match this view.<Button variant="transparent" size="sm" onClick={()=>b.change({q:null,status:null,p:null})}>Clear filters</Button></div>:null}
+ <footer className={s.footer}><span className={s.caption}>Showing {b.result.total?(b.result.page-1)*25+1:0}–{Math.min(b.result.page*25,b.result.total)} of {b.result.total} accounts</span><div className={s.inline}><Button variant="transparent" size="sm" disabled={b.result.page===1} onClick={()=>b.change({p:String(b.result.page-1)})}>Previous</Button><span className={s.caption}>{b.result.page} / {b.result.pages}</span><Button variant="transparent" size="sm" disabled={b.result.page===b.result.pages} onClick={()=>b.change({p:String(b.result.page+1)})}>Next</Button></div></footer><p className={`${s.caption} px-6 pb-5`}>Illustrative campaign · fictional research, recipients and fulfillment. Only individually reviewed outreach can be approved in bulk.</p>
+ </>}
+ </div>{approval?<ApprovalDialog mailers={approval} busy={c.pending} close={()=>setApproval(null)} approve={()=>void approve()} error={approvalError??c.error}/>:null}</section>;
 }

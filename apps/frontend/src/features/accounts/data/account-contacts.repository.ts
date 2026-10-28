@@ -1,3 +1,5 @@
+import { isFrontendPreviewMode } from "@/features/preview/data/preview-mode";
+import { walkthroughContacts } from "@/features/account-materials/data/walkthrough-contacts.fixture";
 import { withResearchContext, type ResearchContextQuery } from "../model/research-context";
 import {
   AccountContactDetailResponseSchema,
@@ -28,6 +30,7 @@ export interface AccountContactsRepository {
 
 export const fixtureAccountContactsRepository: AccountContactsRepository = {
   async list(accountId) {
+    if(isFrontendPreviewMode()){const prepared=walkthroughContacts(accountId);if(prepared)return prepared;}
     const contacts =
       accountId === "openai"
         ? openAiContactsFixture
