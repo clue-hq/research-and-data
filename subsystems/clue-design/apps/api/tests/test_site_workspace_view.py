@@ -110,13 +110,14 @@ def test_account_logos_are_stored_as_blobs_and_listed_with_their_alternatives(tm
 
 
 def test_the_catalog_lists_every_released_clone_and_flags_degraded_ones(monkeypatch) -> None:
-    """Open question 2 (a): nav, footer and campaign-shell clones are offered like any other; only a
-    superseded row gives way to its repair."""
+    """Open question 2 (a): the seller's nav and footer bands and its header and footer templates are
+    offered like any other; only a superseded row gives way to its repair."""
     rows = [
         {"fragment_id": _frag("hero"), "section_role": "hero", "label": "Hero", "superseded_by": None, "degraded_note": None},
         {"fragment_id": _frag("old"), "section_role": "hero", "label": "Old hero", "superseded_by": _frag("hero")},
         {"fragment_id": _frag("nav"), "section_role": "nav", "label": "Nav", "superseded_by": None},
-        {"fragment_id": _frag("shell"), "section_role": "header", "label": "Shell", "superseded_by": None, "composed": "campaign_shell"},
+        {"fragment_id": _frag("tmpl"), "section_role": "site_header", "label": "Header template", "superseded_by": None,
+         "composed": "site_template"},
         {"fragment_id": _frag("broken"), "section_role": "proof", "label": "Proof", "superseded_by": None,
          "degraded_note": "this clone is marked broken, with no reason recorded."},
     ]
@@ -132,8 +133,39 @@ def test_the_catalog_lists_every_released_clone_and_flags_degraded_ones(monkeypa
     monkeypatch.setattr(view, "read_web_fragment", lambda storage, *, workspace_id, fragment_id: SimpleNamespace(
         html=f"<p>{fragment_id}</p>", css="", slot_manifest={}))
     clones = view.list_site_clones(SimpleNamespace(storage=None, workspace_id="ws"), "/tmp/cache")
-    assert [clone["id"] for clone in clones] == [_frag("hero"), _frag("nav"), _frag("shell"), _frag("broken")]
+    assert [clone["id"] for clone in clones] == [_frag("hero"), _frag("nav"), _frag("tmpl"), _frag("broken")]
     assert clones[3]["degraded_note"] == "this clone is marked broken, with no reason recorded."
+
+
+def test_the_catalog_leaves_out_sections_an_agent_composed_for_earlier_pages(monkeypatch) -> None:
+    """Founder ruling 2026-10-28 (A): a section an agent composed for an earlier page (`agent`) and the
+    ABM campaign shells (`campaign_shell`) are not the seller's own sections, so a new site is not
+    offered them; a repair inherits the marker and is left out too. The seller's captured bands and
+    its header and footer templates (`site_template`) stay offered."""
+    rows = [
+        {"fragment_id": _frag("hero"), "section_role": "hero", "label": "Hero", "superseded_by": None},
+        {"fragment_id": _frag("closer"), "section_role": "cta", "label": "Closer CTA — JW Marriott",
+         "superseded_by": None, "composed": "agent"},
+        {"fragment_id": _frag("repair"), "section_role": "proof", "label": "Repaired — proof for Dana.AI",
+         "superseded_by": None, "composed": "agent"},
+        {"fragment_id": _frag("shell"), "section_role": "campaign_header", "label": "Campaign header",
+         "superseded_by": None, "composed": "campaign_shell"},
+        {"fragment_id": _frag("tmpl"), "section_role": "site_footer", "label": "Footer template",
+         "superseded_by": None, "composed": "site_template"},
+    ]
+
+    class Registry:
+        def __init__(self, *, blobs, cache_dir):
+            pass
+
+        def list_sections(self):
+            return {"sections": rows}
+
+    monkeypatch.setattr(view, "DurableAgentClonedSectionRegistry", Registry)
+    monkeypatch.setattr(view, "read_web_fragment", lambda storage, *, workspace_id, fragment_id: SimpleNamespace(
+        html=f"<p>{fragment_id}</p>", css="", slot_manifest={}))
+    clones = view.list_site_clones(SimpleNamespace(storage=None, workspace_id="ws"), "/tmp/cache")
+    assert [clone["id"] for clone in clones] == [_frag("hero"), _frag("tmpl")]
 
 
 def test_the_brand_keeps_every_section_the_page_uses_outside_the_catalog(monkeypatch) -> None:
@@ -183,7 +215,10 @@ def test_a_pinned_clone_reads_its_page_position_and_degraded_note_the_registrys_
     assert clone["degraded_note"] == degraded_headline(DEGRADED_REASON_BLANK_RENDER)
 
 
-def test_sections_for_a_turn_keep_the_documents_pins_and_add_the_newest_of_each_name() -> None:
+def test_sections_for_a_turn_are_only_the_documents_own() -> None:
+    """Founder ruling 2026-10-28 (B): a turn places the sections its own document pins, at their pinned
+    code; a section written for another site in the workspace is not offered (a section this turn
+    writes joins in the turn itself)."""
     rows = {
         "a" * 64: {"name": "StepsBand", "digest": "a" * 64, "module_sha256": "a" * 64, "css_sha256": "c" * 64, "props_schema": {"v": 1}},
         "b" * 64: {"name": "StepsBand", "digest": "b" * 64, "module_sha256": "b" * 64, "css_sha256": "c" * 64, "props_schema": {"v": 2}},
@@ -196,7 +231,8 @@ def test_sections_for_a_turn_keep_the_documents_pins_and_add_the_newest_of_each_
     blobs = SimpleNamespace(read=lambda digest: f"bytes {digest[:1]}".encode())
     sections = view.site_sections_for_turn(store, blobs, {"agent_sections": {"StepsBand": "a" * 64}})
     assert sections["StepsBand"].digest == "a" * 64  # the document's own pin wins
-    assert sections["QuoteBand"].digest == "d" * 64 and sections["QuoteBand"].module_js == "bytes d"
+    assert "QuoteBand" not in sections  # written for another site, not offered here
+    assert list(sections) == ["StepsBand"]
 
 
 def test_library_assets_join_only_when_the_site_already_uses_them() -> None:
