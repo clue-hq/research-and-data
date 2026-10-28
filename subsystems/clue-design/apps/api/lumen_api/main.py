@@ -133,6 +133,7 @@ from .database import (
 from . import run_stream
 from .spend import drain_safely as _drain_spend
 from .site_doc_inputs import SiteInputsUnavailable, brand_loader_not_composed, load_section_modules, sections_not_stored
+from .site_brand import editor_site_brand, pack_clone_css
 from .site_render import SECTION_MODULE_MISSING, SiteRenderError
 from .site_publish import SitePublishRefused
 from .thumbnail_queue import ThumbnailRenderQueue, limits_from_env
@@ -4728,7 +4729,8 @@ def create_app(
 
     @app.get("/documents/{document_id}/site/brand")
     def get_site_brand(document_id: str, repo: HybridRepository = Depends(repository)) -> JsonObject:
-        """The site's BrandData for the editor frame's ``init`` (Contract 6; controller ruling R3).
+        """The site's BrandData for the editor frame's ``init`` (Contract 6; controller ruling R3),
+        trimmed to the sections the stored site places, with its CSS packed.
 
         Built by the one builder Lane B2 composes into ``app.state.site_brand_loader``; every asset
         and font ``file`` is ``/asset-store/<sha256>``. Until B2 lands the seam refuses typed."""
@@ -4738,7 +4740,9 @@ def create_app(
             brand = app.state.site_brand_loader(repo, blob_store(repo), document)
         except SiteInputsUnavailable as error:
             raise HTTPException(status_code=503, detail={"code": error.code, "message": str(error)}) from error
-        return {"schema_version": 1, "brand": brand}
+        # Site loading (2026-10-29): only the sections this site places, their CSS sent once
+        # (schema 2: ``css_rules`` beside ``brand``; the editor's reader puts each section's back).
+        return {"schema_version": 2, **pack_clone_css(editor_site_brand(brand, document["scene"]))}
 
     @app.get("/documents/{document_id}/site/versions")
     def list_site_versions(

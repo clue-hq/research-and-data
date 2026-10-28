@@ -68,8 +68,8 @@ export interface FakeServer {
   release(kind: "save" | "get"): void;
   /** Another writer (an agent checkpoint, another tab) changes the site on the server. */
   outsideWrite(site: SiteDocument): void;
-  /** The brand the server builds for the site it holds (as the design API's is: the catalog's clones
-   * plus every clone the site uses); null = one fixed brand. */
+  /** The brand the server builds for the site it holds (as the design API's editor read is: only the
+   * clones the site places, site loading 2026-10-29); null = one fixed brand. */
   brandFor: ((site: SiteDocument) => BrandData) | null;
   /** How many times the brand was read. */
   brandReads: number;

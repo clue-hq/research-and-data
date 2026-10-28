@@ -14,12 +14,12 @@ single read refuses it.
 from __future__ import annotations
 
 import pytest
+from lumen_api.design_store import DesignStoreBridge
+from lumen_api.fragments import create_web_fragment, read_web_fragment, read_web_fragments, registry
+
 from clue_design.storage import design_storage_key
 from clue_storage import FsStorage
 from clue_storage.artifacts import mark_erased
-from lumen_api.design_store import DesignStoreBridge
-from lumen_api.fragments import create_web_fragment, read_web_fragment, read_web_fragments
-from lumen_api.fragments import registry
 
 
 class CountingStorage(FsStorage):
@@ -119,10 +119,13 @@ def test_a_missing_blob_is_left_out_and_the_rest_still_load(workspace_id: str, s
     assert list(batch) == [str(rows[1]["fragment_id"])]
 
 
-def test_the_payload_cache_stays_under_its_byte_limit(workspace_id: str, storage, monkeypatch) -> None:
+def test_the_payload_cache_stays_under_its_byte_limit(
+    workspace_id: str, storage, monkeypatch
+) -> None:
     rows = [_create(workspace_id, storage, n)[0] for n in range(3)]
     ids = [str(row["fragment_id"]) for row in rows]
-    one = len(storage._path(design_storage_key(workspace_id, rows[0]["payload_digest"])).read_bytes())
+    first_key = design_storage_key(workspace_id, rows[0]["payload_digest"])
+    one = len(storage._path(first_key).read_bytes())
     monkeypatch.setattr(registry, "FRAGMENT_PAYLOAD_CACHE_MAX_BYTES", one * 2 + one // 2)
 
     read_web_fragments(storage, workspace_id=workspace_id, fragment_ids=ids)

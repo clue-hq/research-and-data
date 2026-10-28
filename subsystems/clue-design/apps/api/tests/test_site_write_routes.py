@@ -139,17 +139,24 @@ def test_without_a_brand_builder_a_save_is_a_typed_503(client: TestClient, site_
 
 
 def test_the_brand_read_serves_the_composed_builders_brand(client: TestClient, site_a: dict) -> None:
-    """Controller ruling R3: the editor frame's BrandData comes from the same seam the save uses."""
+    """Controller ruling R3: the editor frame's BrandData comes from the same seam the save uses —
+    trimmed to the sections the stored site places and its CSS packed (site loading, 2026-10-29)."""
     seen: list[str] = []
+    unused = {"id": "frag_" + "c" * 16, "label": "Unused", "wrapper_class": "lumen-frag-" + "c" * 16,
+              "html": "<p></p>", "css": ".lumen-frag-cccccccccccccccc p { color: red }", "slots": {}}
 
     def builder(repo, blobs, document):
         seen.append(document["id"])
-        return {"slug": "garner", "kit": {}, "fonts": [], "assets": {}, "clones": {}, "measured": None}
+        return {"slug": "garner", "kit": {}, "fonts": [], "assets": {}, "clones": {unused["id"]: unused}, "measured": None}
 
     client.app.state.site_brand_loader = builder
     response = client.get(f"/documents/{DOC}/site/brand")
     assert response.status_code == 200
-    assert response.json() == {"schema_version": 1, "brand": builder(None, None, {"id": DOC})}
+    assert response.json() == {
+        "schema_version": 2,
+        "brand": {**builder(None, None, {"id": DOC}), "clones": {}},
+        "css_rules": [],
+    }, "the born site places no section, so none is sent"
     assert seen[0] == DOC
 
 

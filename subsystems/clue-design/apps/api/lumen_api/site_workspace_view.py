@@ -189,7 +189,8 @@ def pinned_site_clones(site: Mapping[str, Any], blobs: Any, *, listed: set[str])
     if not wanted:
         return []
     pinned: list[dict] = []
-    for loaded in read_web_fragments(blobs.storage, workspace_id=blobs.workspace_id, fragment_ids=wanted).values():
+    loaded_by_id = read_web_fragments(blobs.storage, workspace_id=blobs.workspace_id, fragment_ids=wanted)
+    for loaded in loaded_by_id.values():
         # A web_fragment row names its page, position and brokenness in its own columns
         # (provenance, degraded/degraded_reason); the registry's one row shaper reads them.
         section = DurableAgentClonedSectionRegistry._section_row(loaded.row)
