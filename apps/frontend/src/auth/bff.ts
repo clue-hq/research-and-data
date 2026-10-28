@@ -18,6 +18,9 @@ const FORWARDED_RESPONSE_HEADERS = [
   "x-request-id",
   "x-content-type-options",
   "x-projections-schema-version",
+  // Whether a gallery thumbnail is this version's, an older stand-in, or not built yet
+  // (background renders, 2026-10-29); the card retries until it is this version's.
+  "x-thumbnail-state",
 ] as const;
 
 export function backendPath(segments: readonly string[]): string {
