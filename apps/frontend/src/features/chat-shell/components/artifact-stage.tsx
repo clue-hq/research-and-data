@@ -50,6 +50,7 @@ import type {
 } from "@/features/design-editor/engine/webDocuments";
 import { useState, type ReactNode, type RefObject } from "react";
 import { useSearchParams } from "next/navigation";
+import { accountReviewQuery } from "@/features/account-materials/model/outreach";
 import { useMaterialsEnabled } from "@/features/account-materials/hooks/use-materials-enabled";
 import { ProjectGallery } from "@/features/gallery/components/project-gallery";
 import type { useProjectDocumentTabs } from "@/features/projects/hooks/use-project-document-tabs";
@@ -467,7 +468,7 @@ export function ArtifactStage({
       />
       {projectId ? (
         <div className={styles.workspaceSurface} hidden={surface !== "target-accounts"}>
-          <ProjectTargetAccounts onOpenMaterials={materialsEnabled ? (accountId)=>{setMaterialsSelection(current=>({accountId,token:(current?.token ?? 0)+1,routeKey:materialRouteKey}));onOpenGallery();} : undefined} active={surface === "target-accounts"} key={projectId} onAddToChat={onAddAccountsToChat} projectId={projectId} projectTitle={projectTitle ?? "Project"} refreshToken={targetAccountsRefreshToken} />
+          <ProjectTargetAccounts onOpenMaterials={materialsEnabled ? (accountId)=>{const query=accountReviewQuery(window.location.search,accountId);window.history.replaceState(null,"",`${window.location.pathname}?${query}`);setMaterialsSelection(current=>({accountId,token:(current?.token ?? 0)+1,routeKey:`${accountId}:`}));onOpenGallery();} : undefined} active={surface === "target-accounts"} key={projectId} onAddToChat={onAddAccountsToChat} projectId={projectId} projectTitle={projectTitle ?? "Project"} refreshToken={targetAccountsRefreshToken} />
         </div>
       ) : null}
       {projectId && documentTabs ? documentTabs.visited.map((path) => (

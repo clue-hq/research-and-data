@@ -1,4 +1,5 @@
 "use client";
+import { useMaterialsEnabled } from "@/features/account-materials/hooks/use-materials-enabled";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -576,6 +577,7 @@ export function ChatSurface({
   // serializer is pure (../model/chat-surface-params); this effect only
   // transports its output.
   const router = useRouter();
+  const materialsRouting=useMaterialsEnabled();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const documentTabs = useProjectDocumentTabs({
@@ -766,7 +768,8 @@ export function ChatSurface({
   useEffect(() => {
     // Compose over the LIVE query so params we do not own (?handoff=, anything
     // future) survive; only the pane keys are ours to rewrite.
-    const query = new URLSearchParams(searchParams.toString());
+    const liveQuery = window.location.search.slice(1);
+    const query = new URLSearchParams(liveQuery);
     query.delete("surface");
     query.delete("edit");
     query.delete("selection");
@@ -782,10 +785,12 @@ export function ChatSurface({
     // Loop guard: replace only on a real difference. This is also what makes
     // the write-back converge WITH the workspace controller's handoff cleanup
     // (same pathname, preserved params) instead of fighting it.
-    if (next === searchParams.toString()) return;
+    if (next === liveQuery) return;
     // replace, never push: pane toggles must not grow browser history.
-    router.replace(`${pathname}${next ? `?${next}` : ""}`, { scroll: false });
-  }, [editParam, pathname, router, searchParams, selectionParam, surfaceParam, selectedDocumentPath]);
+    const href=`${pathname}${next ? `?${next}` : ""}`;
+    if(materialsRouting) window.history.replaceState(null,"",href);
+    else router.replace(href, { scroll: false });
+  }, [materialsRouting,editParam, pathname, router, searchParams, selectionParam, surfaceParam, selectedDocumentPath]);
 
   /**
    * The composer's ONE submit path — the composer's own send button and the

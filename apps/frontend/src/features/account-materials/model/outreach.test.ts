@@ -17,3 +17,17 @@ test('selection never shows a recipient from another account',()=>{
  assert.equal(outreachSelection(rows,'snowflake','walkthrough-scale-account-7-taylor')?.id,'walkthrough-snowflake-morgan');
  assert.equal(outreachSelection(rows,'missing',null),undefined);
 });
+
+test('table handoff overrides old context and persists the selected account in the URL',async()=>{
+ const { accountReviewQuery }=await import('./outreach');
+ const old='surface=target-accounts&materialsAccount=snowflake&recipient=old-person&review=tracking&catalog=earlier';
+ const result=new URLSearchParams(accountReviewQuery(old,'scale-account-9'));
+ assert.equal(result.get('materialsAccount'),'scale-account-9');assert.equal(result.get('surface'),'gallery');
+ assert.equal(result.has('recipient'),false);assert.equal(result.has('review'),false);assert.equal(result.has('catalog'),false);
+});
+test('legacy catalog excludes current walkthrough sends',async()=>{
+ const { earlierMailers }=await import('./outreach');
+ const state=withWalkthroughMail(createV2MailFixture());
+ assert.ok(earlierMailers(state.mailers).length>0);
+ assert.equal(earlierMailers(state.mailers).some(m=>m.campaignId==='campaign-field-conversations'),false);
+});

@@ -50,3 +50,15 @@ test("shipped samples have a coherent destination and independent shipment legs"
   assert.equal(state.pages!.find(p => p.id === t.pageId)?.publication, "published");
   assert.notEqual(t.inbound?.trackingNumber, t.outbound?.trackingNumber);
 });
+
+test('starting a page edit invalidates ready outreach before another view can bulk approve',async()=>{
+ const { invalidatePageReview }=await import('../../direct-mail/model/outreach-page');
+ let state=withWalkthroughMail(createV2MailFixture());const id='walkthrough-snowflake-morgan';
+ const page=state.pages!.find(p=>p.mailerId===id)!;
+ state=reviewOutreachPage(state,page.id,page.version);
+ state=reviewMailer(state,id,state.mailers.find(m=>m.id===id)!.revision);
+ const ready=state.mailers.find(m=>m.id===id)!;
+ state=invalidatePageReview(state,page.id,page.version);
+ assert.equal(state.mailers.find(m=>m.id===id)!.stage,'needs_review');
+ assert.equal(approveMailers(state,[{id,revision:ready.revision}]).results[0].ok,false);
+});

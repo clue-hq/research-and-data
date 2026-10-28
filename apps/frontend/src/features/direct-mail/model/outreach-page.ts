@@ -30,3 +30,9 @@ export function reviewOutreachPage(state:DirectMailState,id:string,version:numbe
   page.reviewedVersion=version;mailer.revision++;mailer.reviewedRevision=null;mailer.stage="needs_review";
   return next;
 }
+/** Begin editing: make a previously reviewed page ineligible in every view immediately. */
+export function invalidatePageReview(state:DirectMailState,id:string,version:number){
+ const next=structuredClone(state),{page,mailer}=requirePage(next,id,version);
+ page.reviewedVersion=null;mailer.revision++;mailer.reviewedRevision=null;mailer.stage='needs_review';
+ return next;
+}

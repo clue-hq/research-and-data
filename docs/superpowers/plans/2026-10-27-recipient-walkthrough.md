@@ -23,23 +23,23 @@
 
 ### Task 1: Canonical walkthrough data and approval boundaries
 Files: account-materials/data/walkthrough.fixture.ts; direct-mail/model/outreach-page.ts; direct-mail/model/direct-mail.ts; direct-mail/data/direct-mail.repository.ts; model/walkthrough.test.ts.
-- [ ] RED: 500 unique campaign accounts, 1000 recipients, two Snowflake people, repeated seed preserves edits; page review required and version changes invalidate readiness.
-- [ ] Implement additive campaign/page records, revision-safe page edit/review methods, approval snapshots, coherent shipment/QR fixtures.
-- [ ] GREEN: focused domain tests; checkpoint.
+- [x] RED: 500 unique campaign accounts, 1000 recipients, two Snowflake people, repeated seed preserves edits; page review required and version changes invalidate readiness.
+- [x] Implement additive campaign/page records, revision-safe page edit/review methods, approval snapshots, coherent shipment/QR fixtures.
+- [x] GREEN: focused domain tests; checkpoint.
 
 ### Task 2: Shared account queue and recipient review
 Files: account-materials/model/outreach.ts; hooks/use-outreach-browser.ts; components/materials-browser.tsx, outreach-review.tsx, outreach-tracking.tsx, outreach.module.css.
-- [ ] Test bounded account/recipient queries, account scope and selection serialization.
-- [ ] Reuse mailer editor, cost confirmation and card renderer. Implement gift/note/page/review and tracking in a single recipient context; natural hierarchy and compact controls.
-- [ ] Add 25-row account paging, search/status/owner filtering and next recipient; use same view at one and 500 accounts.
+- [x] Test bounded account/recipient queries, account scope and selection serialization.
+- [x] Reuse mailer editor, cost confirmation and card renderer. Implement gift/note/page/review and tracking in a single recipient context; natural hierarchy and compact controls.
+- [x] Add 25-row account paging, search/status filtering (owner filters remain in native Target Accounts) and next recipient; use same view at one and 500 accounts.
 
 ### Task 3: Connect native entry points and coherent story
 Files: accounts project table/preview fixtures/contacts adapter; project mail link; project gallery; preview project fixture transcript; direct-mail entry.
-- [ ] Add native table campaign scope and recipient counts; preserve table state and research click.
-- [ ] Use same recipient record from chat/Gallery/account/global/Direct Mail; remove nested Gallery handoff loop.
-- [ ] Supply consistent fictional research/committee and post-research chat; no 404 committee links for prepared recipients.
+- [x] Add native table campaign scope and recipient counts; preserve table state and research click.
+- [x] Use same recipient record from chat/Gallery/account/global/Direct Mail; remove nested Gallery handoff loop.
+- [x] Supply consistent fictional research/committee and post-research chat; no 404 committee links for prepared recipients.
 
 ### Task 4: Verification and handoff
-- [ ] Build tokens; lint; appropriate tests; production build. Fresh whole-change review under executing-plans skill, resolve important findings.
-- [ ] Browser walk: two Snowflake recipients, gift/note/page review, exact cost approval, approved tracking and in-progress evidence, 500-account queue, reload/return.
-- [ ] Verify split and expanded layouts; save screenshots; leave the working walkthrough open on 5001. Verify V1 unchanged. Update canonical docs/memory and commit locally.
+- [x] Build tokens; lint; appropriate tests; production build. Fresh whole-change review under executing-plans skill, resolve important findings.
+- [x] Browser walk: two Snowflake recipients, gift/note/page review, exact cost approval, approved tracking and in-progress evidence, 500-account queue, reload/return.
+- [x] Verify split and expanded layouts; save screenshots; leave the working walkthrough open on 5001. Verify V1 unchanged. Update canonical docs/memory and commit locally.

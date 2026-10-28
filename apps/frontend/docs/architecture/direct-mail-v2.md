@@ -1,6 +1,33 @@
 # Project materials V2
 
-Status: local frontend preview; product audit completed 2026-10-26. The connected implementation below is not accepted as production UX. See the audit and proposed direction later in this document. V1 remains on port 5000; V2 on 5001, branch `feat/direct-mail-infrastructure-v2`. No live orders, payments, agent runs or publishing. Email belongs to the separate email branch.
+Status: recipient-first walkthrough implemented 2026-10-27 after founder approval. Local frontend preview on port 5001, branch `feat/direct-mail-infrastructure-v2`; V1 code, data and port 5000 are unchanged. This implementation is ready for product review, not a claim of live backend integration or final design acceptance. No orders, payments, agent runs or publishing execute. Email belongs to its separate branch.
+
+## Current recipient walkthrough — 2026-10-27
+
+The additive **Field conversations** campaign has 500 accounts and 1,000 fictional recipients. Snowflake has Morgan Lee (review) and Taylor Reed (in transit). Existing drafts, approvals and earlier campaigns are retained.
+
+- Start in the native project chat and Target Accounts grid. Its campaign scope contains 500 researched sample accounts. The Artifacts column opens two recipient sets; company names still open account research. The original owner filters, column controls and paging remain available.
+- Gallery, account Artifacts, global Artifacts and Direct Mail use the same `MaterialsBrowser` and `OutreachReview`. Choose an account, then a recipient. Gift, physical card/note, recipient page, exact cost and tracking stay in that context.
+- Review three gifts, choose card/handwriting, edit the note and sender, preview/edit the page, mark its current version reviewed, then confirm address and itemized cost. Individual review can mark a send ready for bulk approval. The bulk dialog lists only the selected, individually reviewed sends.
+- Approval preserves the gift, note, card/font, address, cost limit and page version. It starts at Approved; it does not invent order/shipping events. Taylor's separate seeded shipment shows inbound receipt, preparation evidence, outbound tracking, and QR readiness, explicitly as illustrative events.
+- The shared queue renders 25 accounts per page with search and status filters. Native Target Accounts keeps 25/50/100 paging. Neither mode expands thousands of artifacts by default.
+- Earlier campaigns are a separate legacy catalog and exclude walkthrough mailers. Shared ads remain account-scoped there. This focused campaign does not implement new ad or email authoring. Native files/documents keep their existing editors.
+
+### Current local data and routing seam
+
+`walkthrough.fixture.ts` adds the campaign idempotently. `account-materials/model/outreach.ts` projects the canonical mailers into account rows. Versioned current pages live once in `DirectMailState.pages`; a mailer references `pageId`, and an approval stores an immutable page snapshot. Page edit/review/invalidation commands run through `DirectMailRepository` and the atomic IndexedDB store. See the frontend proposal in `docs/api-contracts/direct-mail.md` before backend integration.
+
+Preview-only query keys are `materialsAccount`, `recipient` (mailer id), `review` (gift/note/page/review/tracking), `q`, `status`, `p`, and `catalog` (files/earlier). The canonical pane remains `surface=gallery`; no `?artifact=` route is introduced. Explicit native-table entry replaces the selected account and clears stale recipient/tab/catalog keys. V2-only pane navigation uses Next's native history integration to avoid competing asynchronous query writes.
+
+Mailer draft recovery remains in its existing per-tab store. Page edits have a separate version-bound per-tab buffer; Save/Discard is required before leaving the page tab or approving cost, and revisiting a recipient restores the buffer. Starting edits invalidates shared review so another view cannot bulk-approve stale readiness. Publishing and QR assignment remain separate fulfillment steps.
+
+### Verification
+
+50 relevant model/repository regression tests pass, covering 500-account identity, page version boundaries, legacy preservation, explicit account routing and draft recovery. Token build, lint (0 errors; 11 existing warnings) and production webpack build passed. Browser QA verified card/page review, persisted page editing, itemized $98 demo approval to tracking, 25-row paging of 500 accounts, account switching/reload, and Taylor's two delivery legs. A fresh reviewer identified three important issues; all were fixed and rechecked. V1 worktree remained clean. Full repository raw `tsc` includes pre-existing test-source errors outside this change; the configured production build and its TypeScript gate passed.
+
+## Previous implementation and audit record
+
+The sections below describe the earlier implementation and the audit that led to the approved focused walkthrough. Where they differ, the current walkthrough above governs.
 
 ## Entry and customer flow
 
@@ -188,4 +215,4 @@ Campaign rollups use those same records: target accounts, prepared recipients, a
 4. Implement the agreed shared projection and preview once, route existing surfaces into it, and remove superseded wrappers. Keep fixtures clearly isolated behind repositories for Aryan. No backend contract decisions inside TSX.
 5. Re-audit task completion and visual fidelity across all entry points before expansion. Gates include: no nested Gallery, no broken account/committee links, exact subject opens on click, stable return/reload context, consistent record/version/cost across surfaces, coherent tracking dependencies, and explicit batch approval scope.
 
-Pending: approval of this overall structure and the next design walkthrough. No frontend rebuild has started under this audit request.
+Historical audit boundary (2026-10-26): implementation was paused for approval. On 2026-10-27 the founder authorized the focused two-recipient / 500-account walkthrough documented above. Broader channel orchestration remains future work.

@@ -12,6 +12,7 @@ import { MailerTracking } from "@/features/direct-mail/components/mailer-trackin
 import { ProductImage } from "@/features/direct-mail/components/product-image";
 import { useWorkspace } from "@/features/orchestration/hooks/use-workspace";
 import { ArtifactPreview } from "@/features/orchestration/components/artifact-library";
+import { earlierMailers } from "../model/outreach";
 import { buildMaterials, materialKinds, queryMaterials, materialEntry, type Material } from "../model/materials";
 import mailStyles from "@/features/direct-mail/components/direct-mail.module.css";
 import s from "./materials.module.css";
@@ -28,7 +29,7 @@ export function LegacyMaterialsBrowser({ projectId, accountId:fixedAccount, init
  const [contact,setContact]=useState("all"), [kind,setKind]=useState("all"), [status,setStatus]=useState("all");
  const [search,setSearch]=useState(""), [page,setPage]=useState(1), [design,setDesign]=useState(false);
  const [selectedId,setSelected]=useState<string|null>(entry.materialId);
- const rows=useMemo(()=>w.data && c.data ? buildMaterials(w.data,c.data).filter(r=>!projectId || r.projectId===projectId):[],[w.data,c.data,projectId]);
+ const rows=useMemo(()=>w.data && c.data ? buildMaterials(w.data,{...c.data,mailers:earlierMailers(c.data.mailers)}).filter(r=>!projectId || r.projectId===projectId):[],[w.data,c.data,projectId]);
  const scopedAccount=fixedAccount ?? account;
  const result=queryMaterials(rows,{accountId:scopedAccount,contactId:contact,kind,status,search,page});
  const accounts=Array.from(new Map(rows.map(r=>[r.accountId,{value:r.accountId,label:r.accountName}])).values()).sort((a,b)=>a.label.localeCompare(b.label));

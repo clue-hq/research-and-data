@@ -1,4 +1,4 @@
-import { updateOutreachPage, reviewOutreachPage, type PagePatch } from "../model/outreach-page";
+import { updateOutreachPage, reviewOutreachPage, invalidatePageReview, type PagePatch } from "../model/outreach-page";
 import { z } from "zod";
 import { approveMailers, CardAssetSchema, isDraft, requireMailer, reviewMailer, StateSchema, StyleSchema, updateMailer, type ApprovalItem, type ApprovalResult, type CardAsset, type DirectMailState, type HandwritingStyle, type Mailer, type MailerPatch } from "../model/direct-mail";
 import type { DirectMailStore } from "./direct-mail.storage";
@@ -10,6 +10,7 @@ export type CreateCampaign = z.infer<typeof CreateSchema>;
 export interface DirectMailRepository {
   read(): Promise<DirectMailState>;
   patchPage(id:string, version:number, patch:PagePatch):Promise<DirectMailState>;
+  invalidatePage(id:string, version:number):Promise<DirectMailState>;
   reviewPage(id:string, version:number):Promise<DirectMailState>;
   patch(id: string, revision: number, patch: MailerPatch): Promise<DirectMailState>;
   review(id: string, revision: number): Promise<DirectMailState>;
@@ -78,6 +79,7 @@ export function createDirectMailRepository(store: DirectMailStore, pilotLoader?:
       (state.creditEntries ??= []).push({ id: crypto.randomUUID(), kind: "top_up", amountCents: amount, mailerId: null, at: new Date().toISOString(), description: "Preview credit top-up" }); return state;
     }),
     patchPage: (id, version, patch) => write(state => updateOutreachPage(state,id,version,patch)),
+    invalidatePage: (id, version) => write(state => invalidatePageReview(state,id,version)),
     reviewPage: (id, version) => write(state => reviewOutreachPage(state,id,version)),
     patch: (id, revision, patch) => write((state) => updateMailer(state, id, revision, patch)),
     review: (id, revision) => write((state) => reviewMailer(state, id, revision)),
@@ -147,4 +149,4 @@ export function createDirectMailRepository(store: DirectMailStore, pilotLoader?:
   };
 }
 const unavailable = async (): Promise<never> => { throw new Error("Direct Mail is not connected to this workspace yet."); };
-export const unavailableDirectMailRepository: DirectMailRepository = { read: unavailable, patchPage: unavailable, reviewPage: unavailable, patch: unavailable, review: unavailable, approve: unavailable, create: unavailable, addCard: unavailable, addStyle: unavailable, requestProposal: unavailable, resolveProposal: unavailable, cancel: unavailable, replace: unavailable, saveBudget: unavailable, saveTemplate: unavailable, topUp: unavailable, subscribe: () => () => {} };
+export const unavailableDirectMailRepository: DirectMailRepository = { read: unavailable, patchPage: unavailable, reviewPage: unavailable, invalidatePage: unavailable, patch: unavailable, review: unavailable, approve: unavailable, create: unavailable, addCard: unavailable, addStyle: unavailable, requestProposal: unavailable, resolveProposal: unavailable, cancel: unavailable, replace: unavailable, saveBudget: unavailable, saveTemplate: unavailable, topUp: unavailable, subscribe: () => () => {} };

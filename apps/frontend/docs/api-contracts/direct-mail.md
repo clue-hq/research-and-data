@@ -194,3 +194,15 @@ include actual vendor availability, receiving-route verification, payment/budget
 enforcement, print/robot validation, carrier exceptions/returns and production
 uploads. These are integration work; the customer UI does not claim they ship
 with this branch.
+
+
+## V2 recipient-page proposal (2026-10-27, local adapter only)
+
+No new backend endpoint is introduced or assumed. The local repository adds `patchPage(id, expectedVersion, patch)`, `reviewPage(id, expectedVersion)` and `invalidatePage(id, expectedVersion)` for the focused outreach walkthrough.
+
+- `Mailer.campaignId` and `Mailer.pageId` are optional additions, preserving prior fixtures.
+- `DirectMailState.pages` contains typed `OutreachPage` records scoped by project/account/contact/mailer, with `version`, `reviewedVersion`, copy and publication state. Current editable content has one owner.
+- Page edits increment their version and invalidate the mailer's review. Beginning an edit invalidates shared readiness immediately. The per-tab recovery buffer is never treated as canonical approved content.
+- Send approval requires the current referenced page version to be reviewed and copies that exact page into the immutable approval snapshot. Approved current-page edits are rejected; a future revision/reapproval flow needs its own contract review.
+- Approval does not publish a page, assign a printed URL, place an order, or synthesize carrier events. Seeded published/verified markers are explicitly illustrative; `.example` destinations are not navigable live routes.
+- Keep expected-version conflicts and atomic send/credit behavior when replacing the fixture adapter. Real server pagination, campaign/recipient identifiers, permissions and publication/fulfillment events must be reconciled with the backend before enabling this in a live workspace.
