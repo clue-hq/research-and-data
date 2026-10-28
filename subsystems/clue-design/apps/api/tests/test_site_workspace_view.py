@@ -14,6 +14,21 @@ from lumen_api.fragments.degraded import DEGRADED_REASON_BLANK_RENDER, degraded_
 from lumen_api.main import create_app
 
 
+
+def _one_at_a_time(read):
+    """A ``read_web_fragments`` stand-in built from a one-fragment read: the ids it refuses are left out."""
+
+    def read_many(storage, *, workspace_id, fragment_ids):
+        loaded = {}
+        for fragment_id in fragment_ids:
+            try:
+                loaded[fragment_id] = read(storage, workspace_id=workspace_id, fragment_id=fragment_id)
+            except view.NotFoundError:
+                continue
+        return loaded
+
+    return read_many
+
 def _frag(name: str) -> str:
     """A real-shaped fragment id (``frag_<16 hex>``, what ``fragment_wrapper_class`` accepts) for ``name``."""
     return "frag_" + hashlib.sha256(name.encode()).hexdigest()[:16]
@@ -130,8 +145,8 @@ def test_the_catalog_lists_every_released_clone_and_flags_degraded_ones(monkeypa
             return {"sections": rows}
 
     monkeypatch.setattr(view, "DurableAgentClonedSectionRegistry", Registry)
-    monkeypatch.setattr(view, "read_web_fragment", lambda storage, *, workspace_id, fragment_id: SimpleNamespace(
-        html=f"<p>{fragment_id}</p>", css="", slot_manifest={}))
+    monkeypatch.setattr(view, "read_web_fragments", _one_at_a_time(lambda storage, *, workspace_id, fragment_id: SimpleNamespace(
+        html=f"<p>{fragment_id}</p>", css="", slot_manifest={})))
     clones = view.list_site_clones(SimpleNamespace(storage=None, workspace_id="ws"), "/tmp/cache")
     assert [clone["id"] for clone in clones] == [_frag("hero"), _frag("nav"), _frag("tmpl"), _frag("broken")]
     assert clones[3]["degraded_note"] == "this clone is marked broken, with no reason recorded."
@@ -162,8 +177,8 @@ def test_the_catalog_leaves_out_sections_an_agent_composed_for_earlier_pages(mon
             return {"sections": rows}
 
     monkeypatch.setattr(view, "DurableAgentClonedSectionRegistry", Registry)
-    monkeypatch.setattr(view, "read_web_fragment", lambda storage, *, workspace_id, fragment_id: SimpleNamespace(
-        html=f"<p>{fragment_id}</p>", css="", slot_manifest={}))
+    monkeypatch.setattr(view, "read_web_fragments", _one_at_a_time(lambda storage, *, workspace_id, fragment_id: SimpleNamespace(
+        html=f"<p>{fragment_id}</p>", css="", slot_manifest={})))
     clones = view.list_site_clones(SimpleNamespace(storage=None, workspace_id="ws"), "/tmp/cache")
     assert [clone["id"] for clone in clones] == [_frag("hero"), _frag("tmpl")]
 
@@ -184,7 +199,7 @@ def test_the_brand_keeps_every_section_the_page_uses_outside_the_catalog(monkeyp
             raise view.NotFoundError("web fragment", fragment_id)
         return loaded[fragment_id]
 
-    monkeypatch.setattr(view, "read_web_fragment", read)
+    monkeypatch.setattr(view, "read_web_fragments", _one_at_a_time(read))
     site = {"pages": {"/": {"content": [
         {"type": "ClonedSection", "props": {"id": "a", "fragmentId": _frag("hero")}},
         {"type": "ClonedSection", "props": {"id": "b", "fragmentId": _frag("old")}},
@@ -205,8 +220,8 @@ def test_a_pinned_clone_reads_its_page_position_and_degraded_note_the_registrys_
            "source_url": "https://garnerhealth.com/",
            "provenance": {"page_url": "https://garnerhealth.com/plans", "section_index": 3},
            "degraded": True, "degraded_reason": DEGRADED_REASON_BLANK_RENDER}
-    monkeypatch.setattr(view, "read_web_fragment", lambda storage, *, workspace_id, fragment_id: SimpleNamespace(
-        html="<p>old</p>", css="", slot_manifest={}, row=row))
+    monkeypatch.setattr(view, "read_web_fragments", _one_at_a_time(lambda storage, *, workspace_id, fragment_id: SimpleNamespace(
+        html="<p>old</p>", css="", slot_manifest={}, row=row)))
     site = {"pages": {"/": {"content": [{"type": "ClonedSection", "props": {"id": "b", "fragmentId": _frag("old")}}]}}}
     [clone] = view.pinned_site_clones(site, SimpleNamespace(storage=None, workspace_id="ws"), listed=set())
     assert clone["id"] == _frag("old") and clone["in_catalog"] is False
@@ -307,8 +322,8 @@ def test_pinned_clones_include_the_shell(monkeypatch) -> None:
     """Plan 6: a template used only by the header, no longer offered, still draws and publishes."""
 
     row = {"fragment_id": _frag("tmpl"), "section_role": "site_header", "label": "Header template"}
-    monkeypatch.setattr(view, "read_web_fragment", lambda storage, *, workspace_id, fragment_id: SimpleNamespace(
-        html="<header></header>", css="", slot_manifest={}, row=row))
+    monkeypatch.setattr(view, "read_web_fragments", _one_at_a_time(lambda storage, *, workspace_id, fragment_id: SimpleNamespace(
+        html="<header></header>", css="", slot_manifest={}, row=row)))
     site = {"pages": {"/": {"content": []}}, "shell": {
         "header": {"type": "ClonedSection", "props": {"id": "header", "fragmentId": _frag("tmpl")}},
         "footer": {"type": "SiteFooter", "props": {"id": "footer", "legal": "©"}},
