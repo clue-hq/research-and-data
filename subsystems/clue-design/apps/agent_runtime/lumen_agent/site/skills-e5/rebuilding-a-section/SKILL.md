@@ -1,6 +1,6 @@
 ---
 name: rebuilding-a-section
-description: Use when you are asked to rebuild one of the seller's captured sections as a component.
+description: "Read when one of the seller's sections is right for the page but its slots cannot carry what the page needs (more words or items, a changed layout), when its motion must be carried into an editable section, or when the person asks: rebuilding a clone as a component with view_clone, write_section and compare_section."
 ---
 
 # Rebuilding a seller's section as a component
@@ -18,9 +18,11 @@ can change any word, image, link or item.
      Repeated items (cards, steps, logos) are a list, so a page can use more or fewer.
    - Mark every heading, paragraph and button's words with `.meta({ edit: "inline" })`, as the
      writing-a-section skill says, so the marketer can edit them on the page.
-   - Use the original's images by default; they are in brand/brand.md. If the original shows a video
-     or an image that is not in brand/brand.md, use the closest brand image, and say so in your
-     report.
+   - Use the original's images; they are in brand/brand.md. If one is not there, find it with
+     `search_assets` before choosing another (`imagery-and-media`, "The images a page may use").
+   - Keep what the section does: its motion moves the way the seller's does (`imagery-and-media`,
+     "Motion and video"). A rebuilt section cannot play a video yet: when the original's video matters,
+     keep the clone as it is instead of rebuilding it.
 3. Compare with `compare_section`, passing props filled with the original's words. It shows the
    original and yours side by side, with a difference score and any of the original's words yours is
    missing.

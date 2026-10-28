@@ -377,7 +377,7 @@ def test_the_skills_are_listed_not_pasted(tmp_path: Path) -> None:
     prompt, _ = _first_system_prompt(tmp_path)
     assert "## Your skills" in prompt
     assert "**building-with-puck**" in prompt and "Read `/skills/building-with-puck/SKILL.md`" in prompt
-    assert "Reuse first" not in prompt and "Generate only a scene or a mood" not in prompt
+    assert "Choose each section in this order" not in prompt and "Never show an image larger" not in prompt
     assert "### Skill:" not in prompt
 
 

@@ -100,7 +100,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "kind narrows to image or logo."
     ),
     "generate_image": (
-        "Make a new image for this site in the brand's style (see the images-and-logos skill). "
+        "Make a new image for this site in the brand's style (see the imagery-and-media skill). "
         "prompt says what it shows; aspect_ratio is the section's shape, such as \"16:9\", \"4:3\" or "
         "\"1:1\"; style_references are one to three of the brand's own photos from brand/brand.md. "
         "Returns the image's path and shows it to you."
@@ -112,12 +112,14 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "before you use it."
     ),
     "web_search": (
-        "Search the web. Set include_domains to the seller's domain to find its own published case "
-        "studies and customer stories."
+        "Search the web: to find the seller's own published case studies and customer stories (set "
+        "include_domains to the seller's domain), to understand its product, and for a little context "
+        "about the page's audience. Results shape your argument; a snippet is never evidence. A fact "
+        "reaches the page only from a page you opened with fetch_page."
     ),
     "fetch_page": (
-        "Open a page and save its text under fetched/ as evidence. Use it before you put a number or "
-        "a quote from that page on the page."
+        "Open a page and save its text under fetched/ as evidence. A fact from the web, and any number "
+        "or quote, reaches the page only from a page you opened this way."
     ),
     "request_clarification": (
         "Ask the person one short question before you build, then stop: calling this ends the request "
@@ -674,7 +676,7 @@ class SiteTools:
     def generate_image(
         self, prompt: str, aspect_ratio: str = "16:9", style_references: list[str] | None = None
     ) -> list[dict] | str:
-        """Make a new image for this site, in the brand's style (see the images-and-logos skill)."""
+        """Make a new image for this site, in the brand's style (see the imagery-and-media skill)."""
 
         from lumen_agent.tools.view import _image_bytes_block
 
@@ -715,12 +717,12 @@ class SiteTools:
         size = f"{result.width}x{result.height}" if result.width and result.height else "size unknown"
         return [
             {"type": "text", "text": f"{file} ({size}). Look at it before you use it: put this path in an image "
-             "slot or image prop, or leave it out if it breaks the images-and-logos rules."},
+             "slot or image prop, or leave it out if it breaks the imagery-and-media rules."},
             _image_bytes_block(result.image_bytes, max_px=VIEW_ASSET_PX),
         ]
 
     def fetch_logo(self, domain: str, company_name: str | None = None) -> str:
-        """Find a company's real published logos by its website domain (see the images-and-logos skill)."""
+        """Find a company's real published logos by its website domain (see the imagery-and-media skill)."""
 
         domain = (domain or "").strip()
         if not domain:

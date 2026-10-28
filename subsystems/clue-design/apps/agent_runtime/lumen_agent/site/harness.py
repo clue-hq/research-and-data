@@ -340,14 +340,19 @@ class TurnLimitsConfig:
 # The two places the system prompt names research/claims.md. A workspace built without claims (R1's
 # comparison arm) gets the research line without them and no claims rule.
 CLAIMS_RESEARCH_LINE = (
-    "- `research/`: what we know about the account (its overview and insights). Each statement ends\n"
-    "  with the claims behind it, like `[c4, c9]`. `research/claims.md` lists each claim with what it\n"
+    "- `research/`: what we know about the account, when the page is for one (its overview and\n"
+    "  insights). Each statement ends with the claims behind it, like `[c4, c9]`, and may carry a tag:\n"
+    "  (quote) is the account's own words, (qualified) is true only with its note, (inference) is the\n"
+    "  research's own reading, and (gap) is unknown. `research/claims.md` lists each claim with what it\n"
     "  says, its source link and any notes. The \"Watch-outs\" and \"Context only\" sections are background\n"
-    "  for your judgement: never put them on the page.\n"
+    "  for your judgement: never put them on the page. The `evidence` skill says how to use all of this.\n"
 )
 PLAIN_RESEARCH_LINE = (
-    "- `research/`: what we know about the account (its overview and insights). The \"Watch-outs\" and\n"
-    "  \"Context only\" sections are background for your judgement: never put them on the page.\n"
+    "- `research/`: what we know about the account, when the page is for one (its overview and\n"
+    "  insights). A statement may carry a tag: (quote) is the account's own words, (qualified) is true\n"
+    "  only with its note, (inference) is the research's own reading, and (gap) is unknown. The\n"
+    "  \"Watch-outs\" and \"Context only\" sections are background for your judgement: never put them on\n"
+    "  the page. The `evidence` skill says how to use all of this.\n"
 )
 CLAIMS_RULE = (
     "- For a number or a quote from the research, check its claim in `research/claims.md`. Use the\n"
