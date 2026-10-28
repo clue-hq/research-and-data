@@ -1,5 +1,5 @@
 "use client";
-import { MaterialsBrowser } from "@/features/account-materials/components/materials-browser";
+import { AccountArtifactLibrary } from "@/features/account-materials/components/account-artifact-library";
 import { useMaterialsEnabled } from "@/features/account-materials/hooks/use-materials-enabled";
 import type { ReactNode } from "react";
 import motion from "./account-motion.module.css";
@@ -43,7 +43,7 @@ function ArtifactUpdated({ artifact }: { artifact: AccountArtifact }) {
 
 export function AccountArtifactsScreen(props:ScreenProps) {
  const enabled=useMaterialsEnabled();
- return enabled ? <AccountWorkspaceShell account={props.account} activeTab="artifacts"><MaterialsBrowser title="Artifacts" accountId={props.account.id} designFiles={<NativeAccountArtifacts {...props} embedded/>}/></AccountWorkspaceShell> : <NativeAccountArtifacts {...props}/>;
+ return enabled ? <AccountWorkspaceShell account={props.account} activeTab="artifacts"><AccountArtifactLibrary accountId={props.account.id} accountName={props.account.name} files={props.workspace.accountId===props.account.id?props.workspace.artifacts:[]}/></AccountWorkspaceShell> : <NativeAccountArtifacts {...props}/>;
 }
 function AccountArtifactsFrame({account,embedded,children}:{account:ScreenProps["account"];embedded:boolean;children:ReactNode}) {return embedded ? children : <AccountWorkspaceShell account={account} activeTab="artifacts">{children}</AccountWorkspaceShell>;}
 function NativeAccountArtifacts({ account, workspace, embedded=false }: ScreenProps & {embedded?:boolean}) {

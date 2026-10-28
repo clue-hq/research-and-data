@@ -8,6 +8,7 @@ export function createV2MailFixture() {
   for (const mailer of state.mailers) {
     const account = workspace.accounts.find((a) => a.mailerId === mailer.id)!;
     mailer.projectId = workspace.project.id; mailer.projectName = workspace.project.name;
+    mailer.campaignId = "campaign-gifts";
     mailer.threadId = "thread-primary"; mailer.campaign = "A thoughtful introduction";
     mailer.signature = `${workspace.people.find((p) => p.id === account.senderId)!.name}\nClue`;
     mailer.budgetCents = 16000;

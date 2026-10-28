@@ -4,16 +4,17 @@ import { WorkspaceSchema, type WorkspaceState } from "@/features/orchestration/m
 
 /** Additive V2 demo migration. Snowflake is an existing target account; all people/research below are fictional. */
 export function withMaterialsWorkspace(state:WorkspaceState):WorkspaceState {
- if (state.accounts.some(a=>a.id==="snowflake")) return state;
+ if (state.accounts.some(a=>a.id==="snowflake")) return withLibraryCampaignContext(state);
  const next=structuredClone(state), template=next.accounts[0];
  next.accounts.unshift({...template,id:"snowflake",name:"Snowflake",initials:"S",revision:1,ownerId:"alex",senderId:"alex",contactId:"snowflake-morgan",contact:"Morgan Lee",role:"Field Marketing Lead",mailerId:"mailer-snowflake-morgan",industry:"Data infrastructure",
   insight:"Connect field events to account conversations",evidence:"Demo brief: a regional workshop program needs a consistent account follow-up.",source:"Illustrative research brief · fictional",rationale:"Morgan receives a practical workshop gift; Taylor receives an account-planning gift. Each has a separate note and landing page.",committee:[{name:"Morgan Lee",role:"Champion · Field marketing",status:"Gift ready for review"},{name:"Taylor Reed",role:"Evaluator · Revenue operations",status:"Delivery in progress"}]});
  const page=next.artifacts.find(a=>a.kind==="page")!;
  for (const [key,name,headline] of [["morgan","Morgan","Turn a workshop conversation into an account plan."],["taylor","Taylor","Give every account conversation a clear next step."]]) next.artifacts.push({...page,id:`page-snowflake-${key}`,accountId:"snowflake",mailerId:`mailer-snowflake-${key}`,title:`${name} · Workshop follow-up`,headline,body:`${name}, a small gift for your next planning session. Let's use one target account to explore how research, relevant content and sales follow-up can work together.`,sectionTitle:"Start with one account.",sectionBody:"Bring an account to a short working session. We’ll map the people, the evidence and a useful reason to reach out.",cta:"Book a working session with Alex"});
  next.artifacts.push({...page,id:"ad-snowflake",accountId:"snowflake",mailerId:null,kind:"ad",title:"Snowflake · Account campaign",headline:"Good account conversations start with context.",body:"Give marketing and sales a shared account brief. Turn one relevant insight into a conversation worth having.",cta:"Explore the account approach",status:"draft"});
- return WorkspaceSchema.parse(next);
+ return withLibraryCampaignContext(WorkspaceSchema.parse(next));
 }
 export function withMaterialsMail(state:DirectMailState):DirectMailState {
+ state=withLibraryMailContext(state);
  if (state.mailers.some(m=>m.id==="mailer-snowflake-morgan")) {
   // Repair only the exact unedited Taylor sample shipped during this preview.
   // User drafts/approvals and any changed sample text remain untouched.
@@ -41,7 +42,26 @@ export function withMaterialsMail(state:DirectMailState):DirectMailState {
   else if(m.approval) {m.approval={...m.approval,revision:1,note:m.note,signature:m.signature,address:m.address};}
   next.mailers.unshift(m);
  }
- return StateSchema.parse(next);
+ return withLibraryMailContext(StateSchema.parse(next));
+}
+
+/** Explicit metadata migration for known V2 samples only. Never infer a real campaign from an asset type. */
+function withLibraryCampaignContext(state:WorkspaceState):WorkspaceState {
+ const next=structuredClone(state);
+ const gifts=next.campaigns.find(c=>c.id==='campaign-gifts');
+ if(gifts?.name==='Direct mail')gifts.name='A thoughtful introduction';
+ for(const a of next.artifacts) {
+  if(a.campaignId)continue;
+  if(['page-snowflake-morgan','page-snowflake-taylor'].includes(a.id))a.campaignId='campaign-gifts';
+  if(['ad-snowflake','ad-account-northstar-systems','ad-account-atlas'].includes(a.id))a.campaignId='campaign-awareness';
+ }
+ return next;
+}
+function withLibraryMailContext(state:DirectMailState):DirectMailState {
+ const ids=new Set(['mailer-avery','mailer-casey','mailer-priya','mailer-riley','mailer-snowflake-morgan','mailer-snowflake-taylor']);
+ const next=structuredClone(state);
+ for(const m of next.mailers)if(ids.has(m.id)&&!m.campaignId)m.campaignId='campaign-gifts';
+ return next;
 }
 export function materialAccountRows(base:Account[],workspace:WorkspaceState):Account[] {
  const result=new Map(base.map(a=>[a.id,a]));

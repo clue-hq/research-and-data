@@ -14,6 +14,7 @@ const AccountSchema = z.object({
   campaignIds:z.array(z.string()), audienceSize:z.number().int().nonnegative(),
 });
 const ArtifactSchema = z.object({
+  campaignId:z.string().optional(),
   id:z.string(), accountId:z.string(), kind:z.enum(["page","ad","note"]), title:z.string(),
   version:z.number().int().positive(), status:z.enum(["draft","review","approved"]),
   headline:z.string(), body:z.string(), cta:z.string(), mailerId:z.string().nullable(),

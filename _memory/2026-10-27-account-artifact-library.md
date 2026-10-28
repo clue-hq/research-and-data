@@ -1,0 +1,12 @@
+# Account artifacts revision
+
+- Started at 587071b15, clean feat/direct-mail-infrastructure-v2. V1 is outside scope.
+- User explicitly authorized replacing account-specific walkthrough/earlier catalog split with an all-time account artifact library, campaign drill-down and useful type previews.
+- Local Userled recordings found; review is offline only. External public demo/YouTube had been opened before the no-visit constraint; user was informed and the created external tab closed. Do not visit Userled further or upload recordings.
+- Recovered existing scope: canonical mailer/page approval stays in repository; native account files remain visible; no live integration or remote publication.
+- Plan: docs/superpowers/plans/2026-10-27-account-artifact-library.md. Execute inline with one final fresh review. Base for review: 587071b15.
+- Pre-flight: projection consumes both repository states and account file feed; UI consumes projection without copying editable content. Existing legacy samples require explicit fixture campaign metadata; unknown production metadata stays unassigned.
+- Implementation: account-only V2 library replaces automatic recipient review and earlier/files split. All canonical and native sources join without copied edit state; grouped previews plus filters and list view; selected campaign/recipient context stays in URLs. Same OutreachReview, MailerReview and tracking components handle deliberate review actions.
+- Tests: initial new model tests failed on missing module, then passed. Wider regression exposed missing campaignId in the base V2 mail fixture; assigned the known campaign during seeding so additive migration preserves existing draft/approval records. Type build exposed indirect nullable readiness narrowing; fixed with immutable data aliases and direct guards. No assertion was relaxed.
+- Browser verified default 13 Snowflake materials across three campaigns, six Field conversations materials, Morgan page preview to note/page review, browser Back preserving campaign/selection. Saved coffee selection remains intact.
+- Verification checkpoint: 60 focused tests passed; token build passed; full lint has 0 errors/11 existing warnings; production webpack and TypeScript build passed. Narrow layouts checked at 800/560 widths and override reset. Campaign counts respect filters. Taylor approved gift opens its two-leg tracking with approval cost intact. Final fresh review pending.
