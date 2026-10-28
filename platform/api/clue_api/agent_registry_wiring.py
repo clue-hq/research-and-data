@@ -333,7 +333,10 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # v86 (2026-10-27, main merged into the CRM line): v85's surface, no address added or removed,
     # with main's prompt v19 (the design brief carries no copy; a menu of angles for variants),
     # `stage0-interview@v59` (v58 with its manual paths repointed), `manual-*@v32` and recipe 46.
-    AgentRole.HEAD_OF_ABM: "v86",
+    # v87 (2026-10-28, site agent alignment, ruling R1.2): v86's surface, no address added or
+    # removed; the design brief for a page opens with who the page is for (manual-siblings),
+    # `stage0-interview@v60` (v59 with its manual paths repointed), `manual-*@v33` and recipe 47.
+    AgentRole.HEAD_OF_ABM: "v87",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
