@@ -1030,6 +1030,14 @@ class HybridRepository:
             )
         )
 
+    def get_latest_document_thumbnail(self, document_id: str) -> Optional[JsonObject]:
+        """The newest cached thumbnail of this document (with its ``version``), or None."""
+        return self._bridge._run(
+            lambda conn: design_thumbnails.get_latest_document_thumbnail(
+                conn, workspace_id=self.workspace_id, document_id=document_id
+            )
+        )
+
     def record_document_thumbnail(
         self, document_id: str, version: int, *, sha256: str, media_type: str
     ) -> JsonObject:

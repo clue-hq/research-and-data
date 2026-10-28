@@ -49,6 +49,25 @@ async def get_document_thumbnail(
     return None if row is None else _thumbnail_from_row(row)
 
 
+async def get_latest_document_thumbnail(
+    conn: AsyncConnection, *, workspace_id: str, document_id: str
+) -> JsonObject | None:
+    """The newest cached thumbnail of a document, with its ``version``, or ``None``.
+
+    The stand-in a gallery card shows while its current version renders in the background.
+    """
+    result = await conn.execute(
+        text(
+            "SELECT sha256, media_type, version FROM design_document_thumbnail"
+            " WHERE workspace_id = :w AND document_id = :d"
+            " ORDER BY version DESC LIMIT 1"
+        ),
+        {"w": workspace_id, "d": document_id},
+    )
+    row = result.one_or_none()
+    return None if row is None else {**_thumbnail_from_row(row), "version": row.version}
+
+
 async def record_document_thumbnail(
     conn: AsyncConnection,
     *,
