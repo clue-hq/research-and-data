@@ -20,9 +20,10 @@ test('selection never shows a recipient from another account',()=>{
 
 test('table handoff overrides old context and persists the selected account in the URL',async()=>{
  const { accountReviewQuery }=await import('./outreach');
- const old='surface=target-accounts&materialsAccount=snowflake&recipient=old-person&review=tracking&catalog=earlier';
+ const old='surface=target-accounts&materialsAccount=snowflake&recipient=old-person&review=tracking&catalog=earlier&libraryReview=1&libraryPage=8&type=ad&campaign=old&librarySearch=Northstar&libraryRecipient=old-person';
  const result=new URLSearchParams(accountReviewQuery(old,'scale-account-9'));
  assert.equal(result.get('materialsAccount'),'scale-account-9');assert.equal(result.get('surface'),'gallery');
+ for(const key of ['libraryReview','libraryPage','type','campaign','librarySearch','libraryRecipient'])assert.equal(result.has(key),false);
  assert.equal(result.has('recipient'),false);assert.equal(result.has('review'),false);assert.equal(result.has('catalog'),false);
 });
 test('legacy catalog excludes current walkthrough sends',async()=>{

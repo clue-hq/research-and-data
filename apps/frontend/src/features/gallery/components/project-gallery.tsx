@@ -1,11 +1,12 @@
 "use client";
 
 import { useMaterialsEnabled } from "@/features/account-materials/hooks/use-materials-enabled";
-import { MaterialsBrowser } from "@/features/account-materials/components/materials-browser";
+import { ProjectArtifactLibrary } from "@/features/account-materials/components/account-artifact-library";
+import { useMemo } from "react";
 import type { ProjectDocument } from "@/features/projects/model/project-documents";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
 import { useProjectGalleryController } from "../hooks/use-project-gallery-controller";
-import type { GalleryArtifact } from "../model/project-gallery";
+import { documentGalleryCards, normalizeGalleryArtifact, type GalleryArtifact } from "../model/project-gallery";
 import { ProjectGalleryView } from "./project-gallery-view";
 
 export function ProjectGallery({
@@ -18,8 +19,6 @@ export function ProjectGallery({
   projectTitle,
   projectId,
   showSkeletons = false,
-  materialsAccount,
-  onBackToAccounts,
 }: {
   artifacts: ProjectArtifact[];
   documents?: ProjectDocument[];
@@ -30,11 +29,10 @@ export function ProjectGallery({
   projectTitle?: string;
   projectId?: string;
   showSkeletons?: boolean;
-  materialsAccount?:string;
-  onBackToAccounts?:()=>void;
 }) {
   const controller = useProjectGalleryController(artifacts, documents);
   const enabled=useMaterialsEnabled();
+  const native=useMemo(()=>[...artifacts.map(normalizeGalleryArtifact),...documentGalleryCards(documents??[])],[artifacts,documents]);
   const designFiles=(
     <ProjectGalleryView
       controller={controller}
@@ -47,5 +45,5 @@ export function ProjectGallery({
       showSkeletons={showSkeletons}
     />
   );
-  return enabled ? <MaterialsBrowser initialAccount={materialsAccount} projectId={projectId} onBackToAccounts={onBackToAccounts} designFiles={designFiles}/> : designFiles;
+  return enabled ? <ProjectArtifactLibrary projectId={projectId} projectTitle={projectTitle} native={native} onOpenNative={onOpenArtifact} documentsLoading={documentsLoading} documentsError={documentsError} onRetryDocuments={onRetryDocuments}/> : designFiles;
 }

@@ -2,6 +2,7 @@ import type { AccountArtifact } from '@/features/accounts/model/account-workspac
 import { selectedGift, stageLabels, type DirectMailState, type Mailer } from '@/features/direct-mail/model/direct-mail';
 import type { OutreachPage } from '@/features/direct-mail/model/outreach-page';
 import type { CampaignArtifact, WorkspaceState } from '@/features/orchestration/model/workspace';
+import type { GalleryArtifact } from '@/features/gallery/model/project-gallery';
 
 export const libraryKinds = {page:'Landing pages',ad:'Ads',gift:'Gifts',note:'Cards & notes',file:'Files & documents'};
 export type LibraryKind = keyof typeof libraryKinds;
@@ -9,7 +10,7 @@ export type LibraryItem = {
  id:string; accountId:string; projectId:string|null; projectName:string|null;
  campaignId:string|null; campaignName:string|null; contactId:string|null; recipient:string|null;
  kind:LibraryKind; title:string; status:'review'|'reviewed'|'approved'|'draft'|'saved'; execution:string|null;
- version:number|null; updatedAt:string; mailer?:Mailer; page?:OutreachPage; creative?:CampaignArtifact; file?:AccountArtifact;
+ version:number|null; updatedAt:string; accountName?:string; gallery?:GalleryArtifact; mailer?:Mailer; page?:OutreachPage; creative?:CampaignArtifact; file?:AccountArtifact;
 };
 export const libraryStatusLabels = {review:'Needs review',reviewed:'Reviewed',approved:'Approved',draft:'Draft',saved:'Saved'};
 
@@ -32,7 +33,7 @@ export function buildAccountLibrary(accountId:string,workspace:WorkspaceState,ma
   const m=a.mailerId?mailers.get(a.mailerId):undefined;
   if(a.mailerId&&!m)continue;
   if(rows.some(r=>r.id===a.id))continue;
-  rows.push({id:a.id,accountId,projectId:workspace.project.id,projectName:workspace.project.name,...campaign(a.campaignId??m?.campaignId),contactId:m?.contactId??null,recipient:m?.recipient.name??null,kind:a.kind,title:a.title,status:a.status,execution:a.kind==='page'?'Not published':'Not launched',version:a.version,updatedAt:m?.updatedAt??'',creative:a,mailer:m});
+  rows.push({id:a.id,accountId,projectId:workspace.project.id,projectName:workspace.project.name,...campaign(a.campaignId??m?.campaignId),contactId:m?.contactId??null,recipient:m?.recipient.name??null,kind:a.kind,title:a.title,status:a.contentApproval&&a.contentApproval.version!==a.version?'review':a.status,execution:a.kind==='page'?'Not published':'Not launched',version:a.version,updatedAt:m?.updatedAt??'',creative:a,mailer:m});
  }
  for(const f of files) {
   if(f.accountId&&f.accountId!==accountId)continue;
@@ -40,14 +41,18 @@ export function buildAccountLibrary(accountId:string,workspace:WorkspaceState,ma
  }
  return rows.sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)||a.title.localeCompare(b.title));
 }
-export type LibraryQuery={campaignId?:string;contactId?:string;kind?:string;status?:string;search?:string;page?:number};
-export function queryAccountLibrary(rows:LibraryItem[],query:LibraryQuery={}) {
+export type LibraryQuery={accountId?:string;campaignId?:string;contactId?:string;kind?:string;status?:string;search?:string;page?:number};
+export function filterLibrary(rows:LibraryItem[],query:LibraryQuery={}) {
  const search=query.search?.trim().toLocaleLowerCase();
- const found=rows.filter(r=>(!query.campaignId||query.campaignId==='all'||(query.campaignId==='unassigned'?!r.campaignId:r.campaignId===query.campaignId))
+ return rows.filter(r=>(!query.accountId||query.accountId==='all'||r.accountId===query.accountId)
+  &&(!query.campaignId||query.campaignId==='all'||(query.campaignId==='unassigned'?!r.campaignId:r.campaignId===query.campaignId))
   &&(!query.contactId||query.contactId==='all'||!r.contactId||r.contactId===query.contactId)
   &&(!query.kind||query.kind==='all'||r.kind===query.kind)
   &&(!query.status||query.status==='all'||r.status===query.status)
-  &&(!search||[r.title,r.recipient,r.campaignName,r.projectName].join(' ').toLocaleLowerCase().includes(search)));
+  &&(!search||[r.title,r.recipient,r.accountName,r.campaignName,r.projectName].join(' ').toLocaleLowerCase().includes(search)));
+}
+export function queryAccountLibrary(rows:LibraryItem[],query:LibraryQuery={}) {
+ const found=filterLibrary(rows,query);
  const pages=Math.max(1,Math.ceil(found.length/24)),page=Number.isFinite(query.page)?Math.min(pages,Math.max(1,Math.floor(query.page!))):1;
  return {rows:found.slice((page-1)*24,page*24),total:found.length,page,pages};
 }

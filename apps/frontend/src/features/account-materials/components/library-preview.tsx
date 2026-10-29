@@ -9,11 +9,13 @@ import type { WorkspaceState } from '@/features/orchestration/model/workspace';
 import type { LibraryItem } from '../model/account-library';
 import s from './account-artifact-library.module.css';
 import { RecipientPagePreview } from './outreach-review';
+import { documentKindLabel } from '@/features/projects/model/project-documents';
 
 /** Preview the saved version, including the immutable content in an approved send. */
 export function LibraryPreview({item,mail,workspace,compact=false}:{item:LibraryItem;mail:DirectMailState;workspace:WorkspaceState;compact?:boolean}) {
  const m=item.mailer,a=m?.approval,gift=m&&(a?.gift??selectedGift(m));
  const card=a?.card??mail.cards.find(c=>c.id===m?.cardId),style=a?.style??mail.styles.find(s=>s.id===m?.styleId);
+ if(item.gallery){const g=item.gallery;return <div className={s.filePreview}>{g.imagePath?<Image src={g.imagePath} alt={compact?'':item.title} fill sizes={compact?'350px':'800px'} unoptimized className="object-contain"/>:<div className={s.documentPreview}><FileText size={32} strokeWidth={1.25}/><strong>{g.document?documentKindLabel(g.document.kind):g.collateralTypeLabel||'Design'}</strong><span>{g.title}</span>{g.document?<small>Version {g.document.version} · {g.document.status}</small>:null}</div>}</div>;}
  if(item.file)return <div className={s.filePreview}><Image src={item.file.thumbnailPath} alt={compact?'':item.title} fill sizes={compact?'350px':'800px'} unoptimized className="object-contain"/></div>;
  if(item.kind==='gift'&&gift)return <div className={s.giftPreview}><ProductImage src={gift.image} alt={compact?'':gift.name}/>{!compact?<div><h2>{gift.name}</h2><p>{gift.variant}</p><p>{money(gift.priceCents)} · {gift.merchant}</p><p className={s.subtle}>{gift.rationale}</p></div>:null}</div>;
  if(item.kind==='note'&&m&&card)return <div className={s.notePreview}>{compact?<CardFace card={card} style={style} note={a?.note??m.note} signature={a?.signature??m.signature}/>:<MailerPreview card={card} style={style} note={a?.note??m.note} signature={a?.signature??m.signature}/>}</div>;

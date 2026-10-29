@@ -18,6 +18,7 @@ const ArtifactSchema = z.object({
   id:z.string(), accountId:z.string(), kind:z.enum(["page","ad","note"]), title:z.string(),
   version:z.number().int().positive(), status:z.enum(["draft","review","approved"]),
   headline:z.string(), body:z.string(), cta:z.string(), mailerId:z.string().nullable(),
+  contentApproval:z.object({version:z.number().int().positive(),approvedAt:z.string(),headline:z.string(),body:z.string(),cta:z.string(),sectionTitle:z.string(),sectionBody:z.string()}).optional(),
   sectionTitle:z.string().default(""), sectionBody:z.string().default(""),
 });
 export const WorkspaceSchema = z.object({
@@ -58,4 +59,16 @@ export function validateWorkspaceLinks(state:WorkspaceState) {
   for (const a of state.accounts) if (!people.has(a.ownerId) || !people.has(a.senderId) || a.campaignIds.some((id) => !campaigns.has(id))) problems.push(`Invalid account context: ${a.id}`);
   for (const a of state.artifacts) if (!accounts.has(a.accountId)) problems.push(`Invalid artifact context: ${a.id}`);
   return problems;
+}
+
+/** Content acceptance is version-bound and never authorizes channel spend or publishing. */
+export function approveArtifactContent(state:WorkspaceState,id:string,version:number,now=new Date().toISOString()) {
+ const next=structuredClone(state),asset=next.artifacts.find(a=>a.id===id);
+ if(!asset)throw new Error('This material is no longer available.');
+ if(asset.version!==version)throw new Error('This material changed. Review the latest version before approving.');
+ if(asset.kind==='note')throw new Error('Review this card with its recipient’s complete send.');
+ if(!asset.headline.trim()||!asset.body.trim()||!asset.cta.trim())throw new Error('Complete the content before approving it.');
+ asset.status='approved';
+ asset.contentApproval={version,approvedAt:now,headline:asset.headline,body:asset.body,cta:asset.cta,sectionTitle:asset.sectionTitle,sectionBody:asset.sectionBody};
+ return WorkspaceSchema.parse(next);
 }

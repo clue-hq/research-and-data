@@ -27,7 +27,7 @@ export function outreachSelection(rows:AccountOutreach[],accountId:string,recipi
 /** Explicit table handoff owns its account and clears the previous recipient context. */
 export function accountReviewQuery(query:string,accountId:string){
  const next=new URLSearchParams(query);next.set('surface','gallery');next.set('materialsAccount',accountId);
- for(const key of ['recipient','review','material','catalog'])next.delete(key);
+ for(const key of ['recipient','review','material','catalog','libraryReview','libraryRecipient','libraryPage','libraryStatus','librarySearch','type','campaign'])next.delete(key);
  return next.toString();
 }
 export function earlierMailers(mailers:Mailer[]){return mailers.filter(m=>m.campaignId!==WALKTHROUGH_CAMPAIGN);}

@@ -75,3 +75,8 @@
   .pagination { width: 100%; justify-content: space-between; }
 }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+
+.materialsLink { display:block; width:100%; text-align:left; cursor:pointer; padding:6px 0; }
+.materialsLink:focus-visible { outline:2px solid var(--clue-border-neutral); outline-offset:3px; }
+.materialTypes { display:flex; flex-wrap:wrap; gap:4px; }
+.materialSummary { display:block; margin-top:5px; color:var(--clue-content-subtle); font-size:11px; line-height:16px; }

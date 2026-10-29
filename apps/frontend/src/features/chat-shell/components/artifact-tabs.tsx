@@ -106,6 +106,7 @@ export function ArtifactTabs({
   artifactMaximized,
   artifacts,
   galleryTabVisible = false,
+  galleryLabel = "Gallery",
   onActivateArtifact,
   onCloseArtifact,
   onOpenGallery,
@@ -121,6 +122,7 @@ export function ArtifactTabs({
   artifactMaximized: boolean;
   artifacts: ChatShellOpenArtifact[];
   galleryTabVisible?: boolean;
+  galleryLabel?: string;
   onActivateArtifact: (artifactId: string) => void;
   onCloseArtifact: (artifactId: string) => void;
   onOpenGallery?: () => void;
@@ -179,7 +181,7 @@ export function ArtifactTabs({
               type="button"
             >
               <ChatShellIcon name="layout-grid" size={12} />
-              <span>Gallery</span>
+              <span>{galleryLabel}</span>
             </button>
             {onOpenTargetAccounts ? (
               <button

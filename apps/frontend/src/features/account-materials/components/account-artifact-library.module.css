@@ -17,6 +17,31 @@
 .campaignFilter { width:210px; }
 .typeFilter { width:150px; }
 .recipientFilter { width:160px; }
+.accountFilter { width:180px; }
+.materialBadge { font-size:11px; line-height:16px; min-height:24px; padding:3px 7px; gap:5px; font-weight:400; }
+.badgeLine { display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; }
+.execution { border-top:.5px solid var(--clue-border-table); padding-top:10px; }
+.documentPreview { display:flex; flex-direction:column; align-items:center; gap:12px; padding:24px; text-align:center; color:var(--clue-content-subtle); }
+.documentPreview strong { font-size:15px; font-weight:500; color:var(--clue-content-neutral); }
+.documentPreview small { font-size:11px; }
+.queueHeading { display:flex; justify-content:space-between; gap:16px; align-items:center; margin:0 0 18px; }
+.queueHeading h2 { font-weight:500; }
+.queueHeading h2 span { font-weight:400; margin-left:8px; color:var(--clue-content-subtle); font-size:12px; }
+.queueHeading p { color:var(--clue-content-subtle); font-size:12px; line-height:20px; margin-top:6px; max-width:500px; }
+.reviewQueue { margin-bottom:32px; }
+.reviewList { border:.5px solid var(--clue-border-table); border-radius:6px; overflow:hidden; }
+.reviewRow { display:flex; align-items:center; gap:16px; padding:20px; border-bottom:.5px solid var(--clue-border-table); }
+.reviewRow:last-child { border-bottom:0; }
+.reviewCheck { width:14px; height:14px; accent-color:var(--clue-content-neutral); }
+.reviewProduct { width:72px; height:80px; flex:none; background:var(--clue-background-page); border-radius:4px; overflow:hidden; }
+.reviewProduct img { width:100%; height:100%; object-fit:contain; }
+.reviewIdentity { min-width:0; flex:1; }
+.reviewIdentity h3 { font-weight:500; margin-bottom:4px; }
+.reviewIdentity p { color:var(--clue-content-subtle); font-size:12px; line-height:20px; }
+.reviewIdentity>span { color:var(--clue-content-subtle); font-size:11px; }
+.reviewDecision { display:flex; flex-direction:column; align-items:flex-end; gap:10px; flex:none; }
+.reviewDecision>span:not(:first-child) { font-size:13px; }
+.reviewDecision small { color:var(--clue-content-subtle); font-size:11px; }
 .views { display:flex; flex:none; padding:3px; gap:2px; background:var(--clue-background-hover); border-radius:6px; }
 .views button { width:28px; height:28px; display:grid; place-items:center; color:var(--clue-content-subtle); border-radius:4px; cursor:pointer; }
 .views button[aria-pressed=true] { background:var(--clue-background-neutral); color:var(--clue-content-neutral); box-shadow:var(--clue-shadow-low); }
@@ -105,3 +130,11 @@
 @container (max-width:1050px) { .grid { grid-template-columns:repeat(2,minmax(0,1fr)); }.canvas { padding:28px 24px 48px; }.recipientFilter { width:150px; }.search { flex-basis:200px; }.detailCanvas { grid-template-columns:minmax(0,1fr) 240px; gap:24px; padding:24px; } }
 @container (max-width:700px) { .grid { grid-template-columns:1fr; }.heading>span { display:none; }.tabs { gap:20px; }.toolbar .search { flex-basis:100%; }.campaignFilter { flex:1; }.recipientFilter { flex:1; }.typeFilter { flex:1; }.detailCanvas { grid-template-columns:1fr; }.context { border-top:.5px solid var(--clue-border-table); padding-top:24px; }.thumbnail { height:230px; }.pagePreview[data-compact=true] { max-width:420px; margin-inline:auto; }.campaignContext { flex-direction:column; }.canvas { padding:24px 16px 48px; } }
 @media(prefers-reduced-motion:reduce) { .card { transition:none; } }
+@container (max-width:700px) { .accountFilter { flex:1; }.reviewRow { padding:16px; gap:10px; flex-wrap:wrap; }.reviewProduct { width:48px; height:60px; }.reviewIdentity { flex-basis:calc(100% - 92px); }.reviewDecision { flex-direction:row; align-items:center; justify-content:space-between; flex:1; margin-left:24px; }.queueHeading { align-items:flex-start; flex-direction:column; }.materialBadge { font-size:10px; }.reviewDecision small { display:none; } }
+.contentApproval { display:flex; flex-direction:column; gap:12px; margin-bottom:20px; font-size:12px; line-height:20px; }
+.approvalActions { display:flex; justify-content:flex-end; gap:8px; margin-top:24px; }
+
+.groupHeading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; min-height:32px; }
+.groupHeading h2 { font-size:14px; font-weight:500; }
+.groupHeading h2 span { margin-left:6px; color:var(--clue-content-subtle); font-size:12px; font-weight:400; }
+@container (min-width:701px) and (max-width:1050px) { .toolbar { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }.toolbar .search { grid-column:1/3; grid-row:1; }.toolbar .views { grid-column:3; grid-row:1; justify-self:end; }.toolbar .campaignFilter,.toolbar .typeFilter,.toolbar .accountFilter,.toolbar .recipientFilter { width:100%; } }

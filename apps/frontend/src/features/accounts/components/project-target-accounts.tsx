@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspace } from "@/features/orchestration/hooks/use-workspace";
 import { useDirectMail } from "@/features/direct-mail/hooks/use-direct-mail";
-import { accountOutreach, WALKTHROUGH_CAMPAIGN } from "@/features/account-materials/model/outreach";
+import { buildProjectLibrary, summarizeAccountMaterials } from "@/features/account-materials/model/project-library";
+import { MaterialBadge } from "@/features/account-materials/components/material-badge";
+import type { LibraryKind } from "@/features/account-materials/model/account-library";
 import type { AccountColumnDefinition } from "../model/account-table-view";
 import { WorkspaceProfileProvider } from "@/components/shell/workspace-profile-context";
 import { Button } from "@/components/ui/button";
@@ -33,7 +35,7 @@ function ProjectAccountsBreadcrumb({ count, projectTitle }: { count?: number; pr
 
 type AddToChat = (contextRefs: readonly ChatContextRef[]) => Promise<boolean>;
 
-const materialColumns:AccountColumnDefinition[]=[{key:"artifacts",kind:"core",label:"Artifacts",icon:"variable",width:195,minWidth:150,maxWidth:360}];
+const materialColumns:AccountColumnDefinition[]=[{key:"artifacts",kind:"core",label:"Artifacts",icon:"variable",width:300,minWidth:220,maxWidth:450}];
 
 function ProjectAccountsTable({ data, onAddToChat, onReread, projectId, projectTitle, onOpenMaterials }: {
   data: ProjectAccountsResponse;
@@ -44,14 +46,9 @@ function ProjectAccountsTable({ data, onAddToChat, onReread, projectId, projectT
   projectTitle: string;
 }) {
   const workspace=useWorkspace(), mail=useDirectMail();
-  const materialIndex=useMemo(()=>{
-    const map=new Map<string,{count:number;review:number}>();
-    if(mail.data) for(const row of accountOutreach(mail.data.mailers,projectId)) map.set(row.id,{count:row.recipients.length,review:row.review});
-    return map;
-  },[mail.data,projectId]);
-  const [campaignOnly,setCampaignOnly]=useState(true);
+  const materialIndex=useMemo(()=>summarizeAccountMaterials(workspace.data&&mail.data?buildProjectLibrary(projectId,workspace.data,mail.data,[]):[]),[workspace.data,mail.data,projectId]);
   const project = useMemo(() => ({ id: projectId, name: projectTitle }), [projectId, projectTitle]);
-  const accounts = useMemo(() => {const plans=new Map(workspace.data?.accounts.map(a=>[a.id,a]));return accountsForProject(data.accounts, projectId).filter(a=>!workspace.data || !campaignOnly || plans.get(a.id)?.campaignIds.includes(WALKTHROUGH_CAMPAIGN)).map(a=>{const plan=plans.get(a.id),owner=plan && workspace.data?.people.find(p=>p.id===plan.ownerId);return owner?{...a,owner}:a;});}, [data.accounts, projectId, workspace.data, campaignOnly]);
+  const accounts = useMemo(() => {const plans=new Map(workspace.data?.accounts.map(a=>[a.id,a]));return accountsForProject(data.accounts, projectId).map(a=>{const plan=plans.get(a.id),owner=plan && workspace.data?.people.find(p=>p.id===plan.ownerId);return owner?{...a,owner}:a;});}, [data.accounts, projectId, workspace.data]);
   const controller = useAccountsScreenController(accounts, data.bulkCapabilities, undefined, { project, additionalColumns:onOpenMaterials ? materialColumns : undefined });
   const [pageSize, setPageSize] = useState<AccountPageSize>(25);
   const [pageRequest, setPageRequest] = useState({ key: "", page: 1 });
@@ -113,7 +110,6 @@ function ProjectAccountsTable({ data, onAddToChat, onReread, projectId, projectT
 
   return (
     <section aria-label="Project target accounts" className={styles.surface}>
-      {workspace.data ? <div className="flex items-center justify-between border-b border-[var(--clue-border-subtle)] px-6 py-2 text-xs"><span>Field conversations · 500 researched accounts</span><Button variant="transparent" size="sm" onClick={()=>setCampaignOnly(!campaignOnly)}>{campaignOnly?"Show all project accounts":"Show campaign accounts"}</Button></div> : null}
       <ProjectAccountsBreadcrumb count={controller.accounts.length} projectTitle={projectTitle} />
       <AccountsToolbar
         columnDefinitions={controller.columnDefinitions}
@@ -160,7 +156,9 @@ function ProjectAccountsTable({ data, onAddToChat, onReread, projectId, projectT
       <div className={`${tableStyles.viewport} ${styles.viewport}`} ref={viewportRef}>
         {pagination.total ? (
           <AccountsTable
-            renderArtifacts={onOpenMaterials ? (account)=>{const value=materialIndex.get(account.id);return <button className="text-left hover:underline" onClick={()=>onOpenMaterials(account.id)} aria-label={`View artifacts for ${account.name}`}><span>{!workspace.data || !mail.data ? "Loading…" : value ? `${value.count} recipient sets` : "No materials yet"}</span>{value?.review ? <span className="block text-xs text-[var(--clue-content-subtle)]">{value.review} to review</span> : null}</button>;} : undefined}
+            renderArtifacts={onOpenMaterials ? (account)=>{const value=materialIndex.get(account.id);return <button className={styles.materialsLink} onClick={()=>onOpenMaterials(account.id)} aria-label={`View artifacts for ${account.name}`}>
+              {!workspace.data || !mail.data ? <span>Loading…</span> : value ? <><span className={styles.materialTypes}>{(Object.entries(value.kinds) as [LibraryKind,number][]).map(([kind,count])=><MaterialBadge key={kind} kind={kind} count={count}/>)}</span><span className={styles.materialSummary}>{value.total} {value.total===1?'material':'materials'}{value.sendsToReview?` · ${value.sendsToReview} ${value.sendsToReview===1?'send':'sends'} to review`:''}</span></> : <span className={styles.materialSummary}>No materials yet</span>}
+            </button>;} : undefined}
             accounts={pagination.accounts}
             columnDefinitions={controller.columnDefinitions}
             columnOrder={controller.columnOrder}
