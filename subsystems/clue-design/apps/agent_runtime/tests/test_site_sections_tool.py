@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 
@@ -63,3 +64,37 @@ def test_a_toolchain_that_cannot_answer_reads_as_the_check_crashing(tmp_path: Pa
             raise RuntimeError("tsc is not installed")
 
     assert _tools(tmp_path, Broken()).write_section("StepsBand", SOURCE) == "NOT WRITTEN: the check crashed: tsc is not installed"
+
+
+def _site_placing_pinned_steps_band(tmp_path: Path, sections) -> SiteTools:
+    """A site whose home page places StepsBand, pinned at an older digest ("a" * 64)."""
+
+    from lumen_agent.site.inputs import SiteSection
+
+    site = garner_site()
+    site["pages"] = {**site["pages"], "/": copy.deepcopy(site["pages"]["/"])}
+    site["pages"]["/"]["content"].append(
+        {"type": "StepsBand", "props": {"id": "steps", "surface": "page", "quote": "Fewer surprises."}})
+    site["agent_sections"] = {"StepsBand": "a" * 64}
+    pinned = SiteSection(name="StepsBand", digest="a" * 64, props_schema={"type": "object"}, module_js="export {}", css="")
+    workspace = tmp_path / "workspace"
+    inputs = inputs_for(sections=sections, agent_sections={"StepsBand": pinned})
+    materialize_workspace(workspace, inputs, site=site)
+    return SiteTools(workspace=workspace, inputs=inputs, base_site=site, retry_delay_s=0)
+
+
+def test_rewriting_a_placed_section_under_its_own_name_changes_the_site(tmp_path: Path) -> None:
+    """The NAV Logistics header (2026-10-28): a section rewritten under the name the page already
+    places changes no page file, yet the page now shows new code, so the turn must save it."""
+
+    tools = _site_placing_pinned_steps_band(tmp_path, FakeSections())
+    assert tools.site_unchanged()
+    tools.write_section("StepsBand", SOURCE)
+    assert not tools.site_unchanged()
+    assert read_site_files(tools.workspace, tools.base_site, tools.sections)["agent_sections"] == {"StepsBand": "e" * 64}
+
+
+def test_a_written_section_no_page_places_leaves_the_site_unchanged(tmp_path: Path) -> None:
+    tools = _tools(tmp_path, FakeSections())
+    tools.write_section("StepsBand", SOURCE)
+    assert tools.site_unchanged()

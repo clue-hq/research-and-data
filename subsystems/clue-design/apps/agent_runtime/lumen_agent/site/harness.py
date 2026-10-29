@@ -218,6 +218,19 @@ class WholeFileReads(AgentMiddleware):
         return handler(request)
 
 
+def unsaved_sections_note(summary: str, tools: SiteTools) -> str:
+    """The reply of a turn that saved nothing. When the turn wrote sections that no page places, it
+    says so: the agent cannot see that its work was not saved and reports success either way."""
+
+    written = sorted(tools.turn_sections())
+    if not written:
+        return summary
+    names = ", ".join(written)
+    verb, it = ("was", "it") if len(written) == 1 else ("were", "them")
+    note = f"Nothing on the site changed, so nothing was saved: {names} {verb} written, but no page uses {it} yet."
+    return f"{summary}\n\n{note}" if summary else note
+
+
 class FinishGuard(AgentMiddleware):
     """A request cannot end on an invalid page (the spike's RunRecorder.after_model).
 
@@ -805,7 +818,8 @@ def run_site_turn(
         return SiteTurnResult("failed", INVALID_SUMMARY.format(error=first), dict(site), "site_invalid",
                               list(guard.errors), calls())
     if tools.site_unchanged():
-        return SiteTurnResult("applied", summary, dict(site), turn_limits.stop_reason, [], calls())
+        return SiteTurnResult("applied", unsaved_sections_note(summary, tools), dict(site),
+                              turn_limits.stop_reason, [], calls())
     if turn_limits.stop_reason is not None:
         check = tools._validate_raw()
         # Unavailable is no verdict on the page (FinishGuard's rule): the save decides.

@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field, ValidationError
 from ..models.schemas import ClarificationQuestion
 
 from .inputs import SiteSection, SiteTurnInputs
-from .workspace import LOGO_CELLS, record_component, turn_brand, write_site_files
+from .workspace import LOGO_CELLS, record_component, site_components, site_pages_of, turn_brand, write_site_files
 
 FETCH_LIMIT = 12_000
 VIEW_ASSET_MAX = 4
@@ -269,9 +269,31 @@ class SiteTools:
         return {"pages": pages, "shell": shell.read_text() if shell.exists() else None}
 
     def site_unchanged(self) -> bool:
-        """True while the agent has not touched the site's files this request."""
+        """True while the agent has touched neither the site's files nor the code of a section its
+        pages place this request.
 
-        return self._site_files() == self._initial_files
+        A section rewritten under the name a page already places changes no page file, yet the page
+        now draws new code: that is a change to save (the NAV Logistics header, 2026-10-28, was
+        thrown away as "unchanged"). A section written but placed nowhere is not."""
+
+        if self._site_files() != self._initial_files:
+            return False
+        rewritten = self.turn_sections()
+        if not rewritten:
+            return True
+        try:
+            placed = {str(item.get("type")) for _route, item in site_components(self._parsed_site())}
+        except json.JSONDecodeError:
+            return True  # the files are as the turn found them; an unreadable page is the save's to refuse
+        return not (placed & set(rewritten))
+
+    def _parsed_site(self) -> dict:
+        files = self._site_files()
+        shell = json.loads(files["shell"]) if files["shell"] is not None else self.base_site.get("shell")
+        pages = {route: json.loads(text) for route, text in files["pages"].items()}
+        if "/" not in pages:  # as read_site_files reads them
+            pages = {**site_pages_of(self.base_site), **pages}
+        return {"pages": pages, "shell": shell}
 
     def turn_assets(self) -> dict[str, dict]:
         """The images this turn added to its brand (generated or found), by asset id."""
