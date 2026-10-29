@@ -2,6 +2,112 @@
 
 Status: recipient-first walkthrough implemented 2026-10-27 after founder approval. Local frontend preview on port 5001, branch `feat/direct-mail-infrastructure-v2`; V1 code, data and port 5000 are unchanged. This implementation is ready for product review, not a claim of live backend integration or final design acceptance. No orders, payments, agent runs or publishing execute. Email belongs to its separate branch.
 
+## Focused review research — 2026-10-28 evening
+
+**Status: audit and proposed direction only.** The founder requested research before the next implementation. No product code, approval policy, backend contract or V1 behavior changed in this audit. The current library described below remains implemented; this section identifies its limitations and proposes a review layer over the same records.
+
+### Research scope and evidence
+
+- **Marketer:** inspected the interactive public homepage's Creatives and Campaigns presentations in a browser, and read its public business-context, data-model and guardrails pages. These are public demonstrations and vendor descriptions, not an authenticated product audit or proof of internal implementation. The previously referenced `/solution` URL currently returns 404. No Userled site was opened.
+- **Figma Buzz:** read current first-party Explore, editing, bulk creation and approval documentation, and visually inspected the published approval screenshot. The founder confirmed Buzz is the intended reference. No private Buzz workspace was opened. Current docs distinguish Asset, Grid and Bulk edit views. The precise left-thumbnail composition below is our adaptation of the founder's reference, supported by the explicit left-file-gallery pattern in Filestage; it is not a claim that Buzz's current approval screenshot uses that exact layout.
+- **Proofing tools:** compared Filestage's file navigation/version decisions and Frame.io V4's two-asset comparison documentation. These establish useful review patterns; they do not define Clue's fulfillment or spend model.
+- **Clue:** verified the clean `feat/direct-mail-infrastructure-v2` checkout, opened the current localhost review queue and Morgan's gift review, and inspected the library projection, review controller, recipient workflow, scale fixture, approval/readiness rules, frontend seam and architecture Doc S. Localhost showed 3,025 materials, 445 draft sends and 10 other material decisions. These are synthetic walkthrough counts, not researched production output.
+
+### Four deep dives and their implications
+
+| Reference | Observed or documented pattern | Application to Clue |
+| --- | --- | --- |
+| [Figma Buzz views](https://help.figma.com/hc/en-us/articles/31194937548951-Explore-Figma-Buzz) and [bulk creation](https://help.figma.com/hc/en-us/articles/31271824185623-Bulk-create-assets-in-Figma-Buzz) | Focused asset editing, collection overview and tabular bulk work serve different tasks. Bulk creation maps structured rows/fields to an asset. | Keep the library for finding work; open a focused reviewer for judgment. Share template structure while retaining each recipient's content and evidence. |
+| [Buzz approvals](https://help.figma.com/hc/en-us/articles/39288847137815-Use-approvals-in-Figma-Buzz) | A selected set becomes a review request. Review proceeds asset by asset with decisions/comments. Editing an approved asset removes approval. | Create a bounded review request with explicit subjects and versions. A changed note needs a new decision; browsing it is not approval. |
+| [Marketer public preview](https://www.marketer.com/), [business context](https://www.marketer.com/platform/business-context), [guardrails](https://www.marketer.com/platform/guardrails) | The public creative grid makes the actual creative prominent; campaign records have operational context. Its stated approach uses retained business rules and explicit confirmation of proposed actions. | Show the real output and the reason behind it. Keep campaign context persistent and action authorization explicit. Do not copy its ecommerce metrics into Clue's pre-send review. |
+| [Filestage navigation](https://help.filestage.io/en/articles/2562925-viewing-older-versions-and-navigating-through-different-files), [version review](https://help.filestage.io/en/articles/7872784-chapter-3-managing-versions), [Frame.io comparison](https://help.frame.io/en/articles/9952618-comparison-viewer) | Navigate neighboring files without returning to the dashboard; decisions/comments attach to versions; comparison makes changes inspectable. | Use a persistent thumbnail rail and explicit version history. Compare two revisions on demand. Let the human inspect the changed sentence instead of rereading every unchanged part. |
+
+### What is failing in the current implementation
+
+1. **The queue is an index, not a review workspace.** `LibraryReviewQueue` shows identity, gift photo, badges, estimated cost and an entry button. It does not expose the rendered note, evidence, or personalization differences. Every recipient requires another navigation journey.
+2. **The scale data cannot demonstrate relevance.** `walkthroughAccounts` repeats one workshop premise across 500 accounts; `withWalkthroughMail` produces two role-based message patterns and clones gift options. Real name/company substitutions would not prove account relevance. These fixtures must not be described as real research or quality-checked output.
+3. **Gift choice and note are visually separated.** `OutreachReview` requires separate Gift and Card & note tabs. The relationship the founder wants to judge is not visible together. The source context starts collapsed.
+4. **Reviewability and send readiness are coupled.** `reviewMailer` calls all of `readiness`, including receiving address, costs and card production requirements. A marketer should be able to accept the note's content while an address still needs confirmation. That must not authorize the send.
+5. **Bulk approval is page-local.** `useLibraryApproval` computes eligible picks from the visible 24 rows. It protects exact revisions, but it is not a resumable review request spanning hundreds of recipients. Do not replace this with an implicit select-all authorization.
+6. **The badge combines different units of work.** “455” aggregates recipient-send decisions and standalone material decisions. The interface should name those units and distinguish content decisions from send authorizations. A gift/note/page set is not three unrelated approvals, and an account ad is not another recipient's send.
+7. **Evidence is descriptive rather than a connected review object.** Fixture insight/source strings are useful visual placeholders, but there is no field-level claim reference, verification result or dependency graph in the review projection. The UI cannot honestly infer that a gift or sentence is evidence-backed from a nonempty rationale string.
+
+### Recommended interaction structure
+
+Use the current **Artifacts library** as the entry and archive. Starting review opens a **focused review view** using the same underlying records. This is a mode within existing surfaces, not another sidebar destination or another asset store.
+
+| Area | Contents | Purpose |
+| --- | --- | --- |
+| Header | Project, campaign, recipient/account, sender, progress, return to library | Maintain context without repeated breadcrumb rows. |
+| Left thumbnail rail | Filtered recipient groups; selected group expands into Gift & note, Landing page and any other required materials; compact decision indicators | Move through work without reopening cards or losing position. |
+| Main preview | One readable artifact, or the selected gift plus rendered handwritten note as a meaningful pair | Spend the available space on the actual content. |
+| Context drawer | Why this person/approach, evidence excerpt and freshness, relevant change, comments | Explain the recommendation with inspectable evidence. Collapse when space is constrained. |
+| Persistent action area | Save decision, request changes, skip, next; later an explicit send/cost confirmation | Make the next decision clear without conflating review and execution. |
+
+**For physical gifting:** open Gift & note together. The selected product and exact rendered card are visible at readable sizes; the three alternative gifts remain accessible through Change gift. Selecting an alternative exposes affected note/page checks. Open the linked landing page in the same main preview, preserving the recipient and rail. A page is optional according to the send's declared requirements; the UI must not require a page for every gift by convention.
+
+**For an account ad:** keep the same shell but preview the actual creative, copy, intended audience and destination. Account-wide scope is explicit. Launch authorization is separate from creative review. A shared ad appears once in the review queue, with its uses available; it is not duplicated under both Snowflake recipients.
+
+**For documents, video or other formats:** use the existing appropriate renderer/editor. Long pages scroll inside the preview; print notes show their real writing area/front/back; a carousel has ordered frames; video needs a player and time-specific feedback. The shell is consistent while the payload and controls remain type-specific. Unsupported previews get a truthful unavailable state, not a synthetic generic ad/page.
+
+**In chat:** the current split pane is too narrow for chat, thumbnail rail, large preview and a permanent inspector simultaneously. Recommend using the existing expand control for sustained review; retain chat as a contextual drawer/action for the selected material. In the narrow embedded view, collapse the rail/context instead of shrinking the card until it is unreadable. Return restores chat, filters, selection and scroll. No new application-wide layout is required.
+
+The left rail must combine thumbnails with recipient names and brief distinguishing context. Five identical coffee thumbnails are not useful navigation. Only the selected recipient needs its child materials expanded. At scale, page/virtualize the queue and prefetch a small adjacent window; stable ordering and saved progress survive reload. Opening an item is not a review decision. Keyboard navigation must be available without making single-key accidental spend possible; focus and unsaved-edit handling need explicit design.
+
+### Data relationships: shared references, different responsibilities
+
+Doc S already defines strategy → representative exemplar → finalized template/content contract → per-account/contact derivation. Its section 7 explicitly calls for a Figma-Buzz-style table and preview. Treat this as the architecture direction, not evidence that every described backend entity is implemented today. Its canary/flagged-tail automatic-shipping working default is explicitly pending founder confirmation and does not override the later individual-review-plus-bulk-approval requirement for direct mail.
+
+| Object | What it represents | Important relationship |
+| --- | --- | --- |
+| Project / campaign | Overall ABM motion / a channel program and its objective | Accounts may participate in multiple campaigns; campaign membership must be explicit. |
+| Artifact plan + template revision | The purpose, audience unit, shared layout and permitted fields | Many instances reference a frozen template; template approval is not recipient approval. |
+| Content draft + artifact instance | A specific account/contact's copy and rendered result | Pin template/schema/content versions, audience identity and field-level evidence references. |
+| Gift option / selection | Product, SKU/variant, merchant, availability and quoted cost | A product photograph is a preview of a purchasable item, not the physical item or an order. Selection belongs to a recipient send. |
+| Recipient send | Selected gift, note instance, optional linked page, sender, address and cost proposal | Assemble these through explicit references. The same page can be linked from another campaign only through a deliberate usage relationship. |
+| Review request / decision | Who is judging which exact material or recipient set, and their decision | Snapshot subjects/versions; track pending, accepted, changes requested, deferred and stale. Preserve the actor and comments. |
+| Send authorization | Permission to execute a precise send or batch at stated limits | Pin exact recipient, sender, address, gift, content versions and cost/quote terms. Check fresh readiness when acting. |
+| Order / shipment / publication / engagement | What actually happened after authorization | Separate physical fulfillment, digital activation and measured outcomes; a review badge proves none of these. |
+
+These are conceptual responsibilities for contract review, not instructions to create eight new frontend stores or backend tables. Preserve canonical identities and the shared claim/memory seams. Research facts remain claims; approval history and personalized copy do not become preference memory. Frontend schemas/repository adapters must be reconciled with backend owners before integration.
+
+At the UI boundary a shared catalog row can carry identity, scope, type, title, thumbnail, version and decision summary. It delegates the detailed preview to its type-specific renderer. A `ReviewSubject` can reference one instance or a recipient set; the thumbnail list does not become the source of content. Keep delivery/execution separate from content decision state. New approval commands and review-session pagination belong behind repository interfaces, never inside presentation components.
+
+Library scope remains simple:
+
+- Project artifacts: this project's material and uses across its campaigns.
+- Account artifacts: this account's material and uses across projects/campaigns.
+- Direct Mail: sends and their execution/tracking.
+- Chat reference: opens the same selected item or review request in context.
+
+### Relevance and scalable review
+
+The proposed reviewer should answer four questions without a research scavenger hunt: **Why this account now? Why this recipient? Why this gift/message? What useful next action are we offering?** A compact explanation links the supporting claim/excerpt and date. Distinguish sourced facts, inferred strategy, and unknowns. An inference about a workshop must not become a claim that the person enjoys coffee.
+
+Proposed checks before human review: account/contact identity, evidence freshness, permitted personalization use, unsupported claims, generic/repeated messaging, gift–note consistency, recipient/sender/CTA agreement, rendering/overflow and required dependencies. Each check needs a recorded outcome and source; do not display an invented “relevance score” or “agent verified” badge. Use “Evidence needed” when research is insufficient and “Changes requested” for an actual human decision. Reuse existing Clue badge components.
+
+A reviewer may accept the rendered content even while shipping details are pending. “Content reviewed” and “Ready to authorize” are independent. An authorized sender can later confirm an itemized batch of current, reviewed sends. Unknown or expired cost terms block the relevant authorization; they do not erase an already recorded content judgment.
+
+Feedback is attached to a field/version or recipient set. “Remove the coffee assumption for these recipients” becomes a proposed scoped revision: show affected recipients, why they match, and the changed outputs. Do not silently rewrite unrelated campaigns or retain approval on changed copy. Distinguish personal copy changes from changes to a shared template. A shared destination change also requires impact review for existing links and printed QR uses; fulfilled sends retain their approved history.
+
+For 500 accounts, keep one review UI. Select a campaign/cohort, resume the next pending recipient, inspect one material/pair, accept or request changes, and continue. Keep cross-session review progress; group shared-template feedback; prioritize actual exceptions and changed versions. The account table remains the place for research and ownership. It can link into this queue but should not become a thumbnail wall.
+
+**Capacity boundary:** navigation and bulk generation do not remove the human work of judging 445 individually personalized sends. Under the chosen policy every recipient still receives an individual review. We can reduce repeated design checks, context hunting, copying feedback and final cost confirmations. Any future representative-sample/exception-only policy needs an explicit decision about which units can proceed without individual judgment; do not enable it by changing the UI.
+
+### Alternatives and proposed validation before implementation
+
+| Approach | Strength | Problem | Recommendation |
+| --- | --- | --- | --- |
+| Flat thumbnail rail of all files | Familiar, simple file navigation | Separates the gift from its note; duplicates shared assets; loses the recipient intent | Keep for ordinary library browsing only. |
+| Recipient-grouped rail with typed focused previews | One coherent outreach decision, inspectable content, stable navigation | Needs explicit bundle references and version-aware decisions | Recommended review direction. |
+| Template examples plus exception-only approval | Potentially fewer individual reviews | Cannot prove personal relevance from a template; changes the agreed send policy | Future policy discussion, not this UI revision. |
+
+Validate the recommended direction with a deliberately small but diverse walkthrough: one account with two recipients, a second campaign for the same account, one shared ad, one gift-only send, one unsupported-personalization issue, one incomplete address, and a changed approved note. Use clearly labeled synthetic evidence with genuinely different scenarios, not 500 copies of the same premise. Then run the same projection against the scale fixture.
+
+Before wider implementation, confirm that a reviewer can explain the relevance, read the gift/note pair comfortably, move to a page and back without losing context, request one scoped correction, inspect its diff, finish content review despite a logistics blocker, resume across sessions, and authorize only the exact ready sends/costs. Measure time/navigation/backtracking in those tasks; no unmeasured speedup claim. Include long content, loading/error states, keyboard use, side-pane and expanded widths. Reuse Satoshi, existing tokens and component badges throughout.
+
+The recommended next deliverable is one review composition demonstrating those tasks. This audit does not authorize another broad rebuild or email implementation.
+
 ## Current project artifact library — 2026-10-28
 
 This revision supersedes the older Gallery navigation below. The chat tab is **Artifacts**, with **Project artifacts** as its heading. Direct Mail retains its sending/tracking workspace; Account → Artifacts retains its library across campaigns. V1 remains unchanged.

@@ -1,0 +1,11 @@
+# Focused artifact review research
+
+- Founder requested multiple deep dives before further execution; confirmed the reference is Figma Buzz. Wants one material or gift/note pair in focus, thumbnail navigation and real personalization rather than 455 repetitive cards.
+- Read-only audit on clean `feat/direct-mail-infrastructure-v2`. Current localhost queue confirmed 3025 materials / 445 draft sends + 10 other decisions. Opened Morgan's gift review; no approval/content mutations.
+- Studied Marketer's interactive public homepage Creatives/Campaigns presentations plus context/model/guardrails pages. Public demo only, no authenticated product audit. Old /solution path 404. No Userled visit.
+- Studied first-party Buzz Asset/Grid/Bulk edit, bulk creation and version-aware review docs; inspected published approval screenshot. Also compared Filestage left file-gallery/version feedback and Frame.io V4 two-asset comparison. No private Figma workspace or claimed video viewing.
+- Found Doc S already prescribes strategy/exemplar/frozen template/derived instances and Figma-Buzz-style table+preview. Its pending canary/green-tail shipping idea does not supersede the later explicit individual-review-plus-bulk-send policy.
+- Current gaps: repeated synthetic premise/two copy patterns, hidden evidence, gift/note split, readiness blocks content review on shipping fields, page-local bulk selection, mixed review units and absent per-field claim references.
+- Proposed only: recipient-grouped thumbnail rail, gift+rendered note main preview, linked page in same stage, contextual evidence/comments, expanded review with optional chat drawer, scoped feedback/diffs and resumable versioned review requests. Separate content judgment, send readiness, spend authorization and fulfillment. Shared ads account scoped.
+- Canonical detailed audit added to apps/frontend/docs/architecture/direct-mail-v2.md. Data objects are conceptual responsibilities for future contract review, not new implemented APIs/tables.
+- Verification: live read-only localhost review, direct source reads and public reference research. Documentation-only diff check; no application tests needed or rerun. V1, V2 application code, fixture state and approval policy unchanged. No push. Next: discuss proposed composition, then validate a small diverse set before broad UI work.
