@@ -6,6 +6,7 @@ import { useDirectMail } from "@/features/direct-mail/hooks/use-direct-mail";
 import { buildProjectLibrary, summarizeAccountMaterials } from "@/features/account-materials/model/project-library";
 import { MaterialBadge } from "@/features/account-materials/components/material-badge";
 import type { LibraryKind } from "@/features/account-materials/model/account-library";
+import type { GalleryArtifact } from "@/features/gallery/model/project-gallery";
 import type { AccountColumnDefinition } from "../model/account-table-view";
 import { WorkspaceProfileProvider } from "@/components/shell/workspace-profile-context";
 import { Button } from "@/components/ui/button";
@@ -37,8 +38,9 @@ type AddToChat = (contextRefs: readonly ChatContextRef[]) => Promise<boolean>;
 
 const materialColumns:AccountColumnDefinition[]=[{key:"artifacts",kind:"core",label:"Artifacts",icon:"variable",width:300,minWidth:220,maxWidth:450}];
 
-function ProjectAccountsTable({ data, onAddToChat, onReread, projectId, projectTitle, onOpenMaterials }: {
+function ProjectAccountsTable({ data, onAddToChat, onReread, projectId, projectTitle, onOpenMaterials, nativeArtifacts }: {
   data: ProjectAccountsResponse;
+  nativeArtifacts?:GalleryArtifact[];
   onOpenMaterials?: (accountId:string)=>void;
   onAddToChat?: AddToChat;
   onReread: () => void;
@@ -46,7 +48,7 @@ function ProjectAccountsTable({ data, onAddToChat, onReread, projectId, projectT
   projectTitle: string;
 }) {
   const workspace=useWorkspace(), mail=useDirectMail();
-  const materialIndex=useMemo(()=>summarizeAccountMaterials(workspace.data&&mail.data?buildProjectLibrary(projectId,workspace.data,mail.data,[]):[]),[workspace.data,mail.data,projectId]);
+  const materialIndex=useMemo(()=>summarizeAccountMaterials(workspace.data&&mail.data?buildProjectLibrary(projectId,workspace.data,mail.data,nativeArtifacts??[]):[]),[workspace.data,mail.data,projectId,nativeArtifacts]);
   const project = useMemo(() => ({ id: projectId, name: projectTitle }), [projectId, projectTitle]);
   const accounts = useMemo(() => {const plans=new Map(workspace.data?.accounts.map(a=>[a.id,a]));return accountsForProject(data.accounts, projectId).map(a=>{const plan=plans.get(a.id),owner=plan && workspace.data?.people.find(p=>p.id===plan.ownerId);return owner?{...a,owner}:a;});}, [data.accounts, projectId, workspace.data]);
   const controller = useAccountsScreenController(accounts, data.bulkCapabilities, undefined, { project, additionalColumns:onOpenMaterials ? materialColumns : undefined });
@@ -201,7 +203,7 @@ function ProjectAccountsTable({ data, onAddToChat, onReread, projectId, projectT
   );
 }
 
-export function ProjectTargetAccounts({ active, onAddToChat, projectId, projectTitle, refreshToken, onOpenMaterials }: { onOpenMaterials?:(accountId:string)=>void; active: boolean; onAddToChat?: AddToChat; projectId: string; projectTitle: string; refreshToken?: number }) {
+export function ProjectTargetAccounts({ active, onAddToChat, projectId, projectTitle, refreshToken, onOpenMaterials, nativeArtifacts }: { nativeArtifacts?:GalleryArtifact[]; onOpenMaterials?:(accountId:string)=>void; active: boolean; onAddToChat?: AddToChat; projectId: string; projectTitle: string; refreshToken?: number }) {
   const [data, setData] = useState<ProjectAccountsResponse | null>(null);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -237,7 +239,7 @@ export function ProjectTargetAccounts({ active, onAddToChat, projectId, projectT
 
   if (data) return (
     <WorkspaceProfileProvider profile={data.profile}>
-      <ProjectAccountsTable onOpenMaterials={onOpenMaterials} data={data} onAddToChat={onAddToChat} onReread={() => { void reread(); }} projectId={projectId} projectTitle={projectTitle} />
+      <ProjectAccountsTable nativeArtifacts={nativeArtifacts} onOpenMaterials={onOpenMaterials} data={data} onAddToChat={onAddToChat} onReread={() => { void reread(); }} projectId={projectId} projectTitle={projectTitle} />
     </WorkspaceProfileProvider>
   );
   return (

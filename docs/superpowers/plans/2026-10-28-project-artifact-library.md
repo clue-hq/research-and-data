@@ -35,6 +35,8 @@
 - [x] 1. Model: project library projection, native file merge, account/type/campaign filtering, recipient review deduplication and scoped account summaries. Add behavioral tests for scope and pagination.
 - [x] 2. UI: shared library controller and presentational cards/badges, inline canonical preview/review, paginated recipient approval queue. Preserve the existing account library layout.
 - [x] 3. Integration: replace V2 ProjectGallery mount; rename tab; remove misleading account banner; real material-count entry into library; canonical native editor callbacks.
-- [ ] 4. Verification: focused tests, design token build, lint, production build, browser checks for filters/back/review/cost/tracking and narrow panel. Final whole-change review and local commit.
+- [x] 4. Verification: focused tests, design token build, lint, production build, browser checks for filters/back/review/cost/tracking and narrow panel. Final whole-change review and local commit.
 
 Implementation clarification: standalone creative content approvals are now recorded in the V2 fixture repository, with a pinned version and content snapshot. They never authorize publishing or spend. At project scale, All materials shows up to four previews for every type, with paginated View all drilldown.
+
+Final verification: 67 relevant tests, design token build, lint (0 errors / 11 inherited warnings), production build, and browser smoke passed. One fresh reviewer found three Important bugs; all fixed with regression coverage. See _memory/2026-10-28-project-artifact-library.md for final findings and scope rulings.

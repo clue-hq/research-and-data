@@ -6,7 +6,7 @@ import { useMemo } from "react";
 import type { ProjectDocument } from "@/features/projects/model/project-documents";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
 import { useProjectGalleryController } from "../hooks/use-project-gallery-controller";
-import { documentGalleryCards, normalizeGalleryArtifact, type GalleryArtifact } from "../model/project-gallery";
+import { projectGalleryItems, type GalleryArtifact } from "../model/project-gallery";
 import { ProjectGalleryView } from "./project-gallery-view";
 
 export function ProjectGallery({
@@ -19,6 +19,7 @@ export function ProjectGallery({
   projectTitle,
   projectId,
   showSkeletons = false,
+  nativeArtifacts,
 }: {
   artifacts: ProjectArtifact[];
   documents?: ProjectDocument[];
@@ -29,10 +30,11 @@ export function ProjectGallery({
   projectTitle?: string;
   projectId?: string;
   showSkeletons?: boolean;
+  nativeArtifacts?: GalleryArtifact[];
 }) {
   const controller = useProjectGalleryController(artifacts, documents);
   const enabled=useMaterialsEnabled();
-  const native=useMemo(()=>[...artifacts.map(normalizeGalleryArtifact),...documentGalleryCards(documents??[])],[artifacts,documents]);
+  const native=useMemo(()=>nativeArtifacts??projectGalleryItems(artifacts,documents),[artifacts,documents,nativeArtifacts]);
   const designFiles=(
     <ProjectGalleryView
       controller={controller}

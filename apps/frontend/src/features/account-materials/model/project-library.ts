@@ -56,3 +56,7 @@ export function libraryOverview(rows:LibraryItem[],query:LibraryQuery) {
   return {kind,total:items.length,rows:items.slice(0,4)};
  }).filter(group=>group.total>0);
 }
+
+export function libraryFilterPatch(key:string,value:string):Record<string,string|null> {
+ return key==='libraryPage'?{libraryPage:value}:{[key]:value,libraryPage:null};
+}

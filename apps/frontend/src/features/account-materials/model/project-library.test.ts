@@ -57,3 +57,26 @@ test('all-materials overview keeps rare types discoverable at scale with bounded
  assert.equal(groups.find(g=>g.kind==='file')!.rows[0].title,'Project brief');
  assert.ok(libraryOverview(rows,{accountId:'snowflake'}).flatMap(g=>g.rows).every(r=>r.accountId==='snowflake'));
 });
+
+test('review pagination reaches different recipients and filtering resets to the first page',async()=>{
+ const {libraryFilterPatch}=await import('./project-library');
+ const {workspace,mail}=setup(),rows=buildProjectLibrary(workspace.project.id,workspace,mail,[]);
+ const params=new URLSearchParams('libraryPage=1');
+ for(const [key,value] of Object.entries(libraryFilterPatch('libraryPage','2')))if(value===null)params.delete(key);else params.set(key,value);
+ const page2=queryReviewQueue(rows,{page:Number(params.get('libraryPage'))});
+ assert.equal(page2.page,2);
+ assert.notEqual(page2.rows[0].mailer.id,queryReviewQueue(rows,{page:1}).rows[0].mailer.id);
+ assert.equal(libraryFilterPatch('materialsAccount','snowflake').libraryPage,null);
+});
+
+test('the same normalized native design feed contributes to account counts and project results',async()=>{
+ const {projectGalleryItems}=await import('@/features/gallery/model/project-gallery');
+ const {workspace,mail}=setup();
+ const native=projectGalleryItems([{id:'native-only-design',title:'Account ad',type:'canvas',collateralType:'linkedin-ad',editedLabel:'Today',originThreadId:'thread-primary',createdAt:'2026-10-28T00:00:00Z',updatedAt:'2026-10-28T00:00:00Z',accountId:'native-only',accountName:'Native-only account'}],[]);
+ const rows=buildProjectLibrary(workspace.project.id,workspace,mail,native);
+ const nativeRows=rows.filter(r=>r.gallery);
+ assert.equal(nativeRows.length,1);
+ const summary=summarizeAccountMaterials(rows).get('native-only');
+ assert.equal(summary?.total,1);
+ assert.equal(queryAccountLibrary(rows,{accountId:'native-only'}).total,summary?.total);
+});

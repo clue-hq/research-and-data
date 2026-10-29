@@ -72,3 +72,7 @@ export function approveArtifactContent(state:WorkspaceState,id:string,version:nu
  asset.contentApproval={version,approvedAt:now,headline:asset.headline,body:asset.body,cta:asset.cta,sectionTitle:asset.sectionTitle,sectionBody:asset.sectionBody};
  return WorkspaceSchema.parse(next);
 }
+
+export function contentApprovalRequest(asset:CampaignArtifact) {
+ return {id:asset.id,version:asset.version,title:asset.title};
+}

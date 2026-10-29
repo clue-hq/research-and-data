@@ -18,3 +18,16 @@ test('content approval saves the exact version without changing recipient sends 
  assert.throws(()=>approveArtifactContent(before,asset.id,asset.version+1),/latest version/);
  assert.throws(()=>approveArtifactContent(before,'missing',1),/no longer available/);
 });
+
+test('confirmation keeps the originally previewed material identity even after selection changes',async()=>{
+ const {contentApprovalRequest}=await import('./workspace');
+ const before=withMaterialsWorkspace(createWorkspaceFixture());
+ let selected=before.artifacts.find(a=>a.id==='ad-snowflake')!;
+ const request=contentApprovalRequest(selected);
+ selected=before.artifacts.find(a=>a.id!==request.id&&a.kind==='ad')!;
+ assert.equal(selected.version,request.version);
+ const after=approveArtifactContent(before,request.id,request.version);
+ assert.equal(after.artifacts.find(a=>a.id===request.id)?.status,'approved');
+ assert.equal(after.artifacts.find(a=>a.id===selected.id)?.status,selected.status);
+ assert.equal(request.title,'Snowflake · Account campaign');
+});

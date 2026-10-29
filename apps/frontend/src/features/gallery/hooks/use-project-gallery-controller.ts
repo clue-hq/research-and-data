@@ -4,11 +4,10 @@ import { useMemo, useState } from "react";
 import type { ProjectDocument } from "@/features/projects/model/project-documents";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
 import {
-  countActiveGalleryFilters, documentGalleryCards, galleryTypeOptions,
+  countActiveGalleryFilters, projectGalleryItems, galleryTypeOptions,
   DEFAULT_GALLERY_FILTERS,
   filterGalleryArtifacts,
   groupGalleryArtifacts,
-  normalizeGalleryArtifact,
   sortGalleryArtifacts,
   type GalleryDateRange,
   type GalleryFilters,
@@ -29,7 +28,7 @@ export function useProjectGalleryController(artifacts: ProjectArtifact[], docume
   const [openMenu, setOpenMenu] = useState<GalleryMenu>(null);
 
   const normalizedArtifacts = useMemo(
-    () => [...artifacts.map(normalizeGalleryArtifact), ...documentGalleryCards(documents)],
+    () => projectGalleryItems(artifacts,documents),
     [artifacts, documents],
   );
   const accounts = useMemo(() => {

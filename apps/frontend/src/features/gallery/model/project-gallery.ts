@@ -328,3 +328,8 @@ export function countActiveGalleryFilters(filters: GalleryFilters) {
     + (filters.projectIds?.length ?? 0)
     + (filters.dateRange === "all" ? 0 : 1);
 }
+
+/** One native feed for project libraries and their account-table material counts. */
+export function projectGalleryItems(artifacts:ProjectArtifact[],documents:readonly ProjectDocument[]=[]) {
+ return [...artifacts.map(normalizeGalleryArtifact),...documentGalleryCards(documents)];
+}

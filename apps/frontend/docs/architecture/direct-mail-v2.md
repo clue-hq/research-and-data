@@ -2,6 +2,26 @@
 
 Status: recipient-first walkthrough implemented 2026-10-27 after founder approval. Local frontend preview on port 5001, branch `feat/direct-mail-infrastructure-v2`; V1 code, data and port 5000 are unchanged. This implementation is ready for product review, not a claim of live backend integration or final design acceptance. No orders, payments, agent runs or publishing execute. Email belongs to its separate branch.
 
+## Current project artifact library — 2026-10-28
+
+This revision supersedes the older Gallery navigation below. The chat tab is **Artifacts**, with **Project artifacts** as its heading. Direct Mail retains its sending/tracking workspace; Account → Artifacts retains its library across campaigns. V1 remains unchanged.
+
+- The project library shows generated material across this project's campaigns and chats. Its default grid groups landing pages, ads, gifts, cards/notes and native documents. At scale it shows up to four previews per type; View all opens paginated results (24 per page). Account, campaign, material type and search share one filter bar.
+- Needs review groups gift/card/page/cost by **recipient send**, with one explicit decision per send. Only individually reviewed, current revisions can be selected for bulk approval. Separate ads and standalone pages have their own content approval. Neither content approval nor send approval implies delivery, publication or ad launch.
+- Target accounts keeps actual project membership and research data. Its Artifacts column uses the same native-plus-generated feed as the library, with type badges and material counts. Selecting it clears stale material/filter state and opens that account's project materials. The hard-coded 500-researched banner and hidden one-campaign restriction are removed. The sample project currently has 1007 accounts; Field conversations is one 500-account campaign within it.
+- Native design files and project documents are in this library and open their existing editors. No separate Files or Earlier campaigns entrance is needed in chat. Historical campaign work is available through the campaign filter.
+- Preview and review remain beside chat. The library stays mounted; explicit Back restores its filter/search/scroll context. The expand control uses the existing shell.
+
+### Frontend replacement seam
+
+`buildProjectLibrary` reuses `buildAccountLibrary` over project-scoped canonical mailers, pages and creatives, and merges the normalized native `projectGalleryItems` feed. `summarizeAccountMaterials` reads that same feed for table counts. These are read projections, not a new store of gifts/notes/pages.
+
+`useArtifactLibrary` owns URL filtering and preview state. `libraryFilterPatch` resets pagination only when a filter changes. `useLibraryApproval` holds explicit ID/revision snapshots for the existing DirectMailRepository approval command. Content approval uses WorkspaceRepository.approveContent with a pinned ID/version, retains the approved copy/version, and broadcasts to all library views. Presentation components remain transport-free.
+
+This remains an isolated frontend demo: paginated rendering is implemented, server pagination is not. Aryan should replace full-state local reads with scoped paginated repository queries, enforce identity/version/permissions on the server, and reconcile the proposed content approval command before live integration. No endpoint or production contract has been changed.
+
+The visible tab changed; `surface=gallery` remains the compatible internal pane key. New library state uses `material`, `materialsAccount`, `campaign`, `type`, `libraryRecipient`, `libraryStatus`, `librarySearch`, `libraryPage`, `view`, `libraryReview` and `review`. Legacy catalog switches no longer choose a different project library. Unknown material IDs show an unavailable state.
+
 ## Current recipient walkthrough — 2026-10-27
 
 The additive **Field conversations** campaign has 500 accounts and 1,000 fictional recipients. Snowflake has Morgan Lee (review) and Taylor Reed (in transit). Existing drafts, approvals and earlier campaigns are retained.

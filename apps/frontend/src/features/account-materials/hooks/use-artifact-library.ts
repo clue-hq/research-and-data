@@ -6,7 +6,7 @@ import type { GalleryArtifact } from '@/features/gallery/model/project-gallery';
 import { useDirectMail } from '@/features/direct-mail/hooks/use-direct-mail';
 import { useWorkspace } from '@/features/orchestration/hooks/use-workspace';
 import { buildAccountLibrary, queryAccountLibrary, type LibraryItem } from '../model/account-library';
-import { buildProjectLibrary, libraryOverview, queryReviewQueue } from '../model/project-library';
+import { buildProjectLibrary, libraryOverview, libraryFilterPatch, queryReviewQueue } from '../model/project-library';
 import { outreachTabs, type OutreachTab } from '../model/outreach';
 
 const noFiles:AccountArtifact[]=[],noNative:GalleryArtifact[]=[];
@@ -29,7 +29,7 @@ export function useArtifactLibrary({accountId,projectId,files=noFiles,native=noN
   for(const [key,value]of Object.entries(values))if(value===null)next.delete(key);else next.set(key,value);
   window.history[push?'pushState':'replaceState'](null,'',`${path}${next.size?`?${next}`:''}`);
  }
- function filter(key:string,value:string){change({[key]:value,libraryPage:null});scroll.current?.scrollTo({top:0});}
+ function filter(key:string,value:string){change(libraryFilterPatch(key,value));scroll.current?.scrollTo({top:0});}
  function open(row:LibraryItem,asReview=false){position.current=scroll.current?.scrollTop??0;change({material:row.id,libraryReview:asReview?'1':null,review:asReview?'gift':null},true);}
  function back(){change({material:null,libraryReview:null,review:null,recipient:null},true);requestAnimationFrame(()=>scroll.current?.scrollTo({top:position.current}));}
  function clear(){change({campaign:null,type:null,libraryStatus:null,librarySearch:null,libraryRecipient:null,materialsAccount:'all',libraryPage:null});}

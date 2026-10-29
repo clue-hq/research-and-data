@@ -48,9 +48,10 @@ import type {
   WebFragmentTextOverride,
   WebTheme,
 } from "@/features/design-editor/engine/webDocuments";
-import { useState, type ReactNode, type RefObject } from "react";
+import { useMemo, useState, type ReactNode, type RefObject } from "react";
 import { accountReviewQuery } from "@/features/account-materials/model/outreach";
 import { useMaterialsEnabled } from "@/features/account-materials/hooks/use-materials-enabled";
+import { projectGalleryItems } from "@/features/gallery/model/project-gallery";
 import { ProjectGallery } from "@/features/gallery/components/project-gallery";
 import type { useProjectDocumentTabs } from "@/features/projects/hooks/use-project-document-tabs";
 import { ProjectDocumentSurface } from "@/features/projects/components/project-document-surface";
@@ -373,6 +374,7 @@ export function ArtifactStage({
   undoDisabled?: boolean;
 }) {
   const materialsEnabled=useMaterialsEnabled();
+  const nativeArtifacts=useMemo(()=>projectGalleryItems(artifacts,documentTabs?.list.documents),[artifacts,documentTabs?.list.documents]);
   const showingArtifact = surface === "artifact" && artifactKind !== null;
   // A site shows the PERSISTENT site stage below instead of the ordinary output stage, so its
   // editor frame is never remounted by a tab or surface switch.
@@ -465,7 +467,7 @@ export function ArtifactStage({
       />
       {projectId ? (
         <div className={styles.workspaceSurface} hidden={surface !== "target-accounts"}>
-          <ProjectTargetAccounts onOpenMaterials={materialsEnabled ? (accountId)=>{const query=accountReviewQuery(window.location.search,accountId);window.history.replaceState(null,"",`${window.location.pathname}?${query}`);onOpenGallery();} : undefined} active={surface === "target-accounts"} key={projectId} onAddToChat={onAddAccountsToChat} projectId={projectId} projectTitle={projectTitle ?? "Project"} refreshToken={targetAccountsRefreshToken} />
+          <ProjectTargetAccounts nativeArtifacts={nativeArtifacts} onOpenMaterials={materialsEnabled ? (accountId)=>{const query=accountReviewQuery(window.location.search,accountId);window.history.replaceState(null,"",`${window.location.pathname}?${query}`);onOpenGallery();} : undefined} active={surface === "target-accounts"} key={projectId} onAddToChat={onAddAccountsToChat} projectId={projectId} projectTitle={projectTitle ?? "Project"} refreshToken={targetAccountsRefreshToken} />
         </div>
       ) : null}
       {projectId && documentTabs ? documentTabs.visited.map((path) => (
@@ -630,6 +632,7 @@ export function ArtifactStage({
         hidden={showingArtifact || surface === "target-accounts" || surface === "plan"}
       >
         <ProjectGallery
+          nativeArtifacts={nativeArtifacts}
           key={projectId}
           artifacts={artifacts}
           documents={documentTabs?.list.documents}

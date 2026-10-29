@@ -1,5 +1,11 @@
 # Direct Mail frontend handoff
 
+## Project artifact approval additions (2026-10-28)
+
+Frontend-only proposal: project and account libraries reference the same mailer/page/creative identities. Send approval retains the existing exact-revision/cost gate. Separate creative content approval is `WorkspaceRepository.approveContent(id, expectedVersion)`: it rejects stale versions, records the approved version and copy, and does not alter any send, publication, ad budget or launch state. Confirmation pins the material ID, version and title; changing the selected material cannot retarget approval. The local adapter persists this additively in `contentApproval`; old records remain readable.
+
+Before connecting production, reconcile this operation, reviewer identity/permissions, immutable content revisions, idempotency and audit history with the backend. Current approval metadata is a local demonstration, not authorization or a completed production audit trail.
+
 ## Revision 2 additions (2026-10-25)
 
 - `giftBudgets` stores project-level preferred minimum/maximum and upper gift-price
