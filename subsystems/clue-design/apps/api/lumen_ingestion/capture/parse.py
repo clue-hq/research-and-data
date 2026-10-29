@@ -27,6 +27,7 @@ from .cssurl import iter_css_urls
 from .declared_roles import DeclaredRole, declared_roles
 from .imgsrc import background_image_urls, image_source_ladder
 from .snapshot import SiteSnapshot
+from .svg_looks import bake_svg_looks, look_hides
 
 # --- parsed pieces (internal, pre-asset-ingest) ---------------------------------
 
@@ -1555,7 +1556,10 @@ def _parse_primary_logo_candidates(
         if src and _ancestor_container_match(node):
             consider(_absolutize(base_url, src), node)
     for node in tree.css("header svg, nav svg, a[href='/'] svg"):
-        markup = node.html or ""
+        if look_hides(node.attributes):
+            continue  # hidden where the page was captured (capture keeps it for clones)
+        # A logo file has no page CSS: what the page painted it with is baked back in.
+        markup = bake_svg_looks(node.html or "")
         if markup:
             consider(None, node, inline_svg=markup)
             break

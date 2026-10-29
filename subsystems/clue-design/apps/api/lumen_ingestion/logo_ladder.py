@@ -41,6 +41,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 from selectolax.parser import HTMLParser
 
 from .capture.cssurl import iter_css_urls
+from .capture.svg_looks import bake_svg_looks, look_hides
 
 __all__ = [
     "LadderCandidate",
@@ -781,7 +782,10 @@ def _extract_marks(zone, rung, role, add) -> None:
             add(url, rung, f"{role} <img srcset>", node=img, alt=alt, link_dest=link)
 
     for svg in zone.css("svg"):
-        markup = svg.html or ""
+        if look_hides(svg.attributes):
+            continue  # hidden where the page was captured (capture keeps it for clones)
+        # A logo file has no page CSS: what the page painted it with is baked back in.
+        markup = bake_svg_looks(svg.html or "")
         if len(markup) < 60 and svg.css_first("use") is None:
             continue  # empty/sprite-use stub with no drawable content
         title = svg.css_first("title")

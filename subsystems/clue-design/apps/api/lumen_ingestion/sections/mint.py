@@ -64,6 +64,7 @@ from .budget import (
     PageWeight,
     budget_diagnostic,
 )
+from ..capture.svg_looks import lift_svg_looks
 from .cssmatch import rules_for_subtree, unhide_root_markup, unhide_root_rules
 from .deadheight import (
     DEAD_HEIGHT_REASON,
@@ -780,6 +781,9 @@ def _mint_one(
         )
         return None
     subtree = root_units.markup(node.html or "")
+    # What capture observed on the section's SVGs becomes fallback rules (see `svg_looks`): they go
+    # before the section's own rules, so the site's hover, focus and phone rules still reach them.
+    subtree, svg_fallback_css = lift_svg_looks(subtree)
 
     root_classes = ((tree.root.attributes.get("class") or "").split() if tree.root else ())
     section_context = source_context.for_section(node) if source_context is not None else None
@@ -933,7 +937,7 @@ def _mint_one(
         provenance["hidden_on_source"]["unhidden_inline"] = list(unhidden_inline)
     row, artifact = create_fragment(
         html=html_for_artifact,
-        css=css_for_artifact,
+        css=svg_fallback_css + css_for_artifact,
         rehosted=rehosted,
         slots=list(detected.specs),
         source_url=segmentation.page_url,

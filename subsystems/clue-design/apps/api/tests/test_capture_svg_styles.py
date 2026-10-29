@@ -41,10 +41,13 @@ def test_rendered_svg_is_self_contained_without_changing_the_live_page(ink, expe
                 html = await rendered._capture_html(page)
                 assert await page.content() == before
                 svg = HTMLParser(html).css_first('svg')
-                assert len(svg.css('path')) == 2
+                # The capture keeps artwork hidden at this width (a clone's own rules may show it)...
+                assert len(svg.css('path')) == 3
                 candidates = logo_ladder.harvest(html, 'https://example.com/')
                 logo_ladder.attach_bytes(candidates, {})
                 candidate = next(c for c in candidates if c.inline_svg_text)
+                # ...and the logo file leaves it out, as before.
+                assert len(HTMLParser(candidate.body.decode()).css('svg path')) == 2
                 # Verify the exported SVG in a fresh document WITHOUT the site's CSS.
                 await page.set_content(candidate.body.decode())
                 paints = await page.locator('svg path').evaluate_all(
