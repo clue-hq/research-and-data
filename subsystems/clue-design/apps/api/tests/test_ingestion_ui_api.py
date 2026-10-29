@@ -34,7 +34,15 @@ LOGO_PNG_PATH = REPO_ROOT / "crates/lumen-export/fixtures/assets/acme-logo-8x8-r
 
 
 @pytest.fixture()
-def client(tmp_path: Path) -> TestClient:
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    # These tests upload a logo only to have an asset record. An image upload also offers a
+    # background description job, and if the test client's worker picked it up the job waited
+    # forever at teardown on analysis tasks nobody ran, hanging the run (2026-10-29). Uploads
+    # here register the record and offer nothing; enrichment is tested where it is the subject.
+    def register_without_enrichment(workspace_id: str, record: dict, enrichment: dict) -> dict:
+        return HybridRepository(workspace_id=workspace_id).create_asset_record(record)
+
+    monkeypatch.setattr("lumen_api.asset_enrichment.register_upload", register_without_enrichment)
     app = create_app(tmp_path / "engine-cache")
     return make_client(app)
 
