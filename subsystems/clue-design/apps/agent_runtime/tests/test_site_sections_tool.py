@@ -76,7 +76,8 @@ def _site_placing_pinned_steps_band(tmp_path: Path, sections) -> SiteTools:
     site["pages"]["/"]["content"].append(
         {"type": "StepsBand", "props": {"id": "steps", "surface": "page", "quote": "Fewer surprises."}})
     site["agent_sections"] = {"StepsBand": "a" * 64}
-    pinned = SiteSection(name="StepsBand", digest="a" * 64, props_schema={"type": "object"}, module_js="export {}", css="")
+    pinned = SiteSection(name="StepsBand", digest="a" * 64, props_schema={"type": "object"}, module_js="export {}", css="",
+                         source="export function StepsBand() { return null; }")
     workspace = tmp_path / "workspace"
     inputs = inputs_for(sections=sections, agent_sections={"StepsBand": pinned})
     materialize_workspace(workspace, inputs, site=site)
@@ -98,3 +99,33 @@ def test_a_written_section_no_page_places_leaves_the_site_unchanged(tmp_path: Pa
     tools = _tools(tmp_path, FakeSections())
     tools.write_section("StepsBand", SOURCE)
     assert tools.site_unchanged()
+
+
+def test_the_agent_reads_the_code_of_the_sections_its_page_pins(tmp_path: Path) -> None:
+    """The NAV Logistics header was rewritten from scratch twice: the agent saw only its props. Each
+    pinned section's own code is now in the workspace, and its catalog entry says where."""
+
+    tools = _site_placing_pinned_steps_band(tmp_path, FakeSections())
+    code = tools.workspace / "catalog" / "sections" / "StepsBand.tsx"
+    assert code.read_text() == "export function StepsBand() { return null; }"
+    entry = (tools.workspace / "catalog" / "seller-components.md").read_text()
+    assert "Its code is in `catalog/sections/StepsBand.tsx`." in entry
+
+
+def test_a_written_section_leaves_its_code_where_the_agent_reads_it(tmp_path: Path) -> None:
+    tools = _tools(tmp_path, FakeSections())
+    tools.write_section("StepsBand", SOURCE)
+    assert (tools.workspace / "catalog" / "sections" / "StepsBand.tsx").read_text() == SOURCE
+    assert tools.sections["StepsBand"].source == SOURCE
+    assert "Its code is in `catalog/sections/StepsBand.tsx`." in (
+        tools.workspace / "catalog" / "seller-components.md").read_text()
+
+
+def test_a_section_whose_code_is_unknown_gets_no_code_file(tmp_path: Path) -> None:
+    from lumen_agent.site.inputs import SiteSection
+
+    pinned = SiteSection(name="OldBand", digest="a" * 64, props_schema={"type": "object"}, module_js="export {}", css="")
+    workspace = tmp_path / "workspace"
+    materialize_workspace(workspace, inputs_for(agent_sections={"OldBand": pinned}), site=garner_site())
+    assert not (workspace / "catalog" / "sections").exists()
+    assert "catalog/sections" not in (workspace / "catalog" / "seller-components.md").read_text()

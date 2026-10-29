@@ -268,5 +268,6 @@ class DurableSiteSectionPort:
         (row,) = self.store.get_site_sections([digest])
         return {
             "ok": True,
-            "section": SiteSection(name=name, digest=digest, props_schema=row["props_schema"], module_js=module_js, css=css),
+            "section": SiteSection(name=name, digest=digest, props_schema=row["props_schema"], module_js=module_js, css=css,
+                                   source=source),
         }

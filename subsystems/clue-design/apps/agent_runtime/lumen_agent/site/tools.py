@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import dataclasses
 import hashlib
 import io
 import json
@@ -308,7 +309,10 @@ class SiteTools:
         """The sections this turn wrote (a new name, or a pinned name with new code)."""
 
         pinned = self.inputs.agent_sections
-        return {name: section for name, section in self.sections.items() if pinned.get(name) != section}
+        return {
+            name: section for name, section in self.sections.items()
+            if name not in pinned or pinned[name].digest != section.digest
+        }
 
     def _asset_by_file(self) -> dict[str, dict]:
         return {
@@ -339,9 +343,9 @@ class SiteTools:
             errors = [str(error) for error in answer.get("errors") or []]
             self._record("section_refused", name=name, errors=errors)
             return "NOT WRITTEN (fix these, then call write_section again):\n" + "\n".join(f"- {e}" for e in errors)
-        section = answer["section"]
+        section = dataclasses.replace(answer["section"], source=code)
         self.sections[name] = section
-        record_component(self.workspace, name, section.props_schema)
+        record_component(self.workspace, name, section.props_schema, section.source)
         self._record("section_written", name=name, digest=section.digest)
         return (f"WRITTEN: {name} is ready for this site. Place it in a page with \"type\": \"{name}\" and "
                 f"these props:\n{json.dumps(section.props_schema, indent=1)[:4000]}")

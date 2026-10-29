@@ -235,7 +235,8 @@ def test_sections_for_a_turn_are_only_the_documents_own() -> None:
     code; a section written for another site in the workspace is not offered (a section this turn
     writes joins in the turn itself)."""
     rows = {
-        "a" * 64: {"name": "StepsBand", "digest": "a" * 64, "module_sha256": "a" * 64, "css_sha256": "c" * 64, "props_schema": {"v": 1}},
+        "a" * 64: {"name": "StepsBand", "digest": "a" * 64, "module_sha256": "a" * 64, "css_sha256": "c" * 64,
+                   "source_sha256": "s" * 64, "props_schema": {"v": 1}},
         "b" * 64: {"name": "StepsBand", "digest": "b" * 64, "module_sha256": "b" * 64, "css_sha256": "c" * 64, "props_schema": {"v": 2}},
         "d" * 64: {"name": "QuoteBand", "digest": "d" * 64, "module_sha256": "d" * 64, "css_sha256": "c" * 64, "props_schema": {"v": 3}},
     }
@@ -246,6 +247,7 @@ def test_sections_for_a_turn_are_only_the_documents_own() -> None:
     blobs = SimpleNamespace(read=lambda digest: f"bytes {digest[:1]}".encode())
     sections = view.site_sections_for_turn(store, blobs, {"agent_sections": {"StepsBand": "a" * 64}})
     assert sections["StepsBand"].digest == "a" * 64  # the document's own pin wins
+    assert sections["StepsBand"].source == "bytes s"  # its code, for the agent to read and edit
     assert "QuoteBand" not in sections  # written for another site, not offered here
     assert list(sections) == ["StepsBand"]
 

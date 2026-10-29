@@ -226,7 +226,8 @@ def site_sections_for_turn(store: Any, blobs: Any, site: Mapping[str, Any]) -> d
             module_js, css = read_section_bytes(blobs, row)
         except NotFoundError:
             continue
-        sections[name] = SiteSection(name=name, digest=row["digest"], props_schema=row["props_schema"], module_js=module_js, css=css)
+        sections[name] = SiteSection(name=name, digest=row["digest"], props_schema=row["props_schema"], module_js=module_js, css=css,
+                                     source=read_section_source(blobs, row))
     return sections
 
 
@@ -258,6 +259,16 @@ def read_section_bytes(blobs: Any, row: Mapping[str, Any]) -> tuple[str, str]:
     The one read of section files: the turn's sections here, Lane A's loader in Task 15."""
 
     return blobs.read(row["module_sha256"]).decode("utf-8"), blobs.read(row["css_sha256"]).decode("utf-8")
+
+
+def read_section_source(blobs: Any, row: Mapping[str, Any]) -> str:
+    """A recorded section's own TSX, for the agent to read and edit; "" when it is gone (the section
+    still renders from its module, the agent just cannot see its code)."""
+
+    try:
+        return blobs.read(row["source_sha256"]).decode("utf-8") if row.get("source_sha256") else ""
+    except NotFoundError:
+        return ""
 
 
 def site_brand_for(

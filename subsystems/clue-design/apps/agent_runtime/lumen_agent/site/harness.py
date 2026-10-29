@@ -459,7 +459,8 @@ def capture_turn_state(tools: SiteTools, limits: "TurnLimits", guard: FinishGuar
     return {
         "schema_version": 1,
         "sections": {
-            name: {"digest": s.digest, "props_schema": s.props_schema, "module_js": s.module_js, "css": s.css}
+            name: {"digest": s.digest, "props_schema": s.props_schema, "module_js": s.module_js, "css": s.css,
+                   "source": s.source}
             for name, s in tools.turn_sections().items()
         },
         "assets": tools.turn_assets(),
@@ -480,9 +481,9 @@ def restore_turn_state(tools: SiteTools, limits: "TurnLimits", guard: FinishGuar
     for name, section in (state.get("sections") or {}).items():
         tools.sections[name] = SiteSection(
             name=name, digest=section["digest"], props_schema=section["props_schema"],
-            module_js=section["module_js"], css=section["css"],
+            module_js=section["module_js"], css=section["css"], source=str(section.get("source") or ""),
         )
-        record_component(tools.workspace, name, section["props_schema"])
+        record_component(tools.workspace, name, section["props_schema"], tools.sections[name].source)
     tools.brand.setdefault("assets", {}).update(state.get("assets") or {})
     limits.carry_over(
         rounds=int(state.get("rounds") or 0),
