@@ -30,6 +30,7 @@ from clue_design.storage import SOURCE_KEY_ASSET
 from conftest import make_blob_store, make_client
 from lumen_api.design_store import DesignBlobStore, HybridRepository
 from lumen_api.main import create_app
+from lumen_api.site_brand import editor_site_brand, unpack_clone_css
 from lumen_api.site_doc_inputs import brand_loader_not_composed
 from site_kit_support import (
     FIXTURES,
@@ -456,7 +457,8 @@ def test_the_agent_run_lock_over_its_whole_lifecycle(client: TestClient, workspa
         listed = versions(client)
         assert listed.status_code == 200 and listed.json()["versions"] == history
         served_brand = brand_read(client)
-        assert served_brand.status_code == 200 and served_brand.json() == {"schema_version": 1, "brand": brand}
+        assert served_brand.status_code == 200 and served_brand.json()["schema_version"] == 2
+        assert unpack_clone_css(served_brand.json()) == editor_site_brand(brand, read_document(client)["scene"])
         busy = client.get(f"/documents/{DOC}/agent-run").json()
         assert (busy["active"], busy["run_id"], busy["current_version"]) == (True, run_id, 3)
 
@@ -688,8 +690,11 @@ def round_trip(client: TestClient, doc: str, site: dict, brand: dict) -> None:
     install_site_inputs(client.app, brand)
     born = expect_state(client, 0, 0, 0, born_site(doc, title=site["title"]), doc=doc)["scene"]
     served_brand = brand_read(client, doc=doc)
-    assert served_brand.status_code == 200 and served_brand.json()["brand"] == brand
+    assert served_brand.status_code == 200 and served_brand.json()["brand"]["clones"] == {}
     expect_ok(put_site(client, site, 0, doc=doc), 1, doc=doc)
+    # The editor is sent the sections the saved site places, each one's CSS back exactly.
+    served = unpack_clone_css(brand_read(client, doc=doc).json())
+    assert served == editor_site_brand(brand, site) and served["clones"]
     b1 = expect_state(client, 1, 1, 0, site, doc=doc)["undo_stack"][0]
     expect_ok(undo(client, 1, doc=doc), 2, doc=doc, undone_batch_id=b1)
     expect_state(client, 2, 0, 1, born, doc=doc)

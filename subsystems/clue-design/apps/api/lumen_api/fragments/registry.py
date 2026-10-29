@@ -21,7 +21,10 @@ never receives a half-loaded artifact to improvise around.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import threading
+from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -29,6 +32,7 @@ from typing import Any
 from clue_design import web_fragments as dal
 from clue_design.storage import (
     SOURCE_KEY_WEB_FRAGMENT,
+    design_storage_key,
     read_design_bytes,
     register_design_bytes,
 )
@@ -41,7 +45,8 @@ from clue_design.web_fragments import (
     require_derived_pair,
     require_known_status,
 )
-from clue_storage import StorageBackend
+from clue_storage import StorageBackend, StorageError
+from clue_storage.artifacts import get_artifact
 
 from ..design_store import DesignStoreBridge
 from .artifact import (
@@ -298,6 +303,111 @@ def read_web_fragment(
             conn, storage, workspace_id=workspace_id, sha256=row["payload_digest"]
         )
         return LoadedFragment(row=row, payload=parse_fragment_payload(data))
+
+    return DesignStoreBridge(workspace_id)._run(_read)
+
+
+#: How many payload bytes :func:`read_web_fragments` keeps parsed in memory, per process. A
+#: workspace's released sections came to ~25 MB in production (2026-10-29); the oldest-used
+#: payloads are dropped first once the total passes this.
+FRAGMENT_PAYLOAD_CACHE_MAX_BYTES = 64 * 1024 * 1024
+
+#: How many payload fetches :func:`read_web_fragments` runs at once.
+_FETCH_CONCURRENCY = 16
+
+_payload_cache: OrderedDict[tuple[str, str], tuple[int, dict[str, Any]]] = OrderedDict()
+_payload_cache_bytes = 0
+_payload_cache_lock = threading.Lock()
+
+
+def _cached_payload(key: tuple[str, str]) -> dict[str, Any] | None:
+    with _payload_cache_lock:
+        entry = _payload_cache.get(key)
+        if entry is None:
+            return None
+        _payload_cache.move_to_end(key)
+        return entry[1]
+
+
+def _keep_payload(key: tuple[str, str], size: int, payload: dict[str, Any]) -> None:
+    global _payload_cache_bytes
+    with _payload_cache_lock:
+        if key in _payload_cache or size > FRAGMENT_PAYLOAD_CACHE_MAX_BYTES:
+            return
+        _payload_cache[key] = (size, payload)
+        _payload_cache_bytes += size
+        while _payload_cache_bytes > FRAGMENT_PAYLOAD_CACHE_MAX_BYTES:
+            _, (dropped, _) = _payload_cache.popitem(last=False)
+            _payload_cache_bytes -= dropped
+
+
+def clear_fragment_payload_cache() -> None:
+    """Forget every kept payload (tests)."""
+    global _payload_cache_bytes
+    with _payload_cache_lock:
+        _payload_cache.clear()
+        _payload_cache_bytes = 0
+
+
+def fragment_payload_cache_bytes() -> int:
+    """How many payload bytes are kept now (tests)."""
+    with _payload_cache_lock:
+        return _payload_cache_bytes
+
+
+def read_web_fragments(
+    storage: StorageBackend, *, workspace_id: str, fragment_ids: Sequence[str]
+) -> dict[str, LoadedFragment]:
+    """Many fragments with their payloads, in one transaction — a site's brand reads ~100 at once.
+
+    Each answer is what :func:`read_web_fragment` returns, keyed by id in the order asked. A
+    fragment that one read would refuse (absent, another tenant's, its blob erased, purged or
+    missing, its payload unreadable) is left out rather than failing the rest.
+
+    The row and the blob's ``artifact`` record are read fresh every time, so erasure applies at
+    once; only the payload — immutable, addressed by its digest — is kept parsed in memory, and
+    those not kept yet are fetched in parallel. Callers must not change a returned payload.
+    """
+
+    if not fragment_ids:
+        return {}
+
+    async def _read(conn: Any) -> dict[str, LoadedFragment]:
+        live: list[tuple[str, dict[str, Any], tuple[str, str]]] = []
+        for fragment_id in dict.fromkeys(fragment_ids):
+            row = await dal.find_web_fragment(
+                conn, workspace_id=workspace_id, fragment_id=fragment_id
+            )
+            if row is None:
+                continue
+            record = await get_artifact(
+                conn, design_storage_key(workspace_id, row["payload_digest"])
+            )
+            if record is None or record.erased_at is not None or record.purged_at is not None:
+                continue
+            live.append((fragment_id, row, (workspace_id, str(row["payload_digest"]))))
+
+        gate = asyncio.Semaphore(_FETCH_CONCURRENCY)
+
+        async def _payload(key: tuple[str, str]) -> dict[str, Any] | None:
+            kept = _cached_payload(key)
+            if kept is not None:
+                return kept
+            async with gate:
+                try:
+                    data = await storage.get(design_storage_key(*key))
+                    payload = parse_fragment_payload(data)
+                except (StorageError, FragmentRefused):
+                    return None
+            _keep_payload(key, len(data), payload)
+            return payload
+
+        payloads = await asyncio.gather(*(_payload(key) for _, _, key in live))
+        return {
+            fragment_id: LoadedFragment(row=row, payload=dict(payload))
+            for (fragment_id, row, _), payload in zip(live, payloads, strict=True)
+            if payload is not None
+        }
 
     return DesignStoreBridge(workspace_id)._run(_read)
 

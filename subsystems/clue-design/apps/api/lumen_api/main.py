@@ -133,8 +133,10 @@ from .database import (
 from . import run_stream
 from .spend import drain_safely as _drain_spend
 from .site_doc_inputs import SiteInputsUnavailable, brand_loader_not_composed, load_section_modules, sections_not_stored
+from .site_brand import editor_site_brand, pack_clone_css
 from .site_render import SECTION_MODULE_MISSING, SiteRenderError
 from .site_publish import SitePublishRefused
+from .thumbnail_queue import ThumbnailRenderQueue, limits_from_env
 from .site_doc_validate import SiteDocumentInvalid, SiteValidatorUnavailable
 from .toolbelt.site_documents import SiteHistoryEmpty, replace_site_payload
 from .site_workspace_view import build_site_turn_inputs, load_site_section_modules, site_brand_loader_for
@@ -3937,6 +3939,206 @@ def create_app(
             "diagnostics": diagnostics,
         }
 
+    def _thumbnail_response(data: bytes, *, cache_control: str, state: str) -> Response:
+        return Response(
+            content=data,
+            media_type="image/png",
+            headers={"Cache-Control": cache_control, "X-Thumbnail-State": state},
+        )
+
+    def _render_document_thumbnail(workspace_id: str, document_id: str, scope: JsonObject) -> int:
+        """Render and cache the document's CURRENT version; return that version.
+
+        Runs on the thumbnail queue's worker threads (``thumbnail_queue.py``), never in a request:
+        it opens its own repository for the workspace, and the legacy web branch reads its asset
+        origin from a copy of the requesting call's ASGI scope. A version already cached with
+        readable bytes is not rendered again.
+        """
+        repo = HybridRepository(workspace_id=workspace_id)
+        request = Request(scope)
+        document = require_document(repo, document_id)
+        version = int(document["current_version"])
+        blobs = blob_store(repo)
+        cached = repo.get_document_thumbnail(document_id, version)
+        if cached is not None:
+            try:
+                blobs.read_blob(cached["sha256"])
+                return version
+            except NotFoundError:
+                pass  # dangling index row — regenerate below
+
+        # The KIND decides the generator, never the shape of the payload: a
+        # scene's pages are a map and a web doc's are a list, and the scene
+        # page picker answers None on a list QUIETLY, so shape-sniffing would
+        # mis-route without ever erroring. Same default as the two
+        # `require_*_document` gates.
+        kind = document.get("doc_kind", "scene")
+        try:
+            if kind == "site":
+                # Wave 2: a Puck site renders in the hardened page, is cleaned, and is captured
+                # with JavaScript off and the network blocked (site_publish).
+                data = site_publish.site_thumbnail_png(
+                    document,
+                    blobs=blobs,
+                    brand=app.state.site_brand_loader(repo, blobs, document),
+                    sections=load_section_modules(app.state.site_section_loader, repo, blobs, document["scene"]),
+                    node_bin=app.state.web_export_node_bin,
+                )
+            elif kind == "web":
+                # Called in-process so the composed HTML carries THIS request's
+                # origin for its asset URLs — the capture page fetches them.
+                rendered = render_web_document(
+                    document_id,
+                    request,
+                    mode="editor",
+                    runtime_src=None,
+                    bridge=0,
+                    nonce=None,
+                    repo=repo,
+                )
+                html = rendered.get("html")
+                if not isinstance(html, str) or not html:
+                    # A render that returned no html would screenshot the
+                    # literal text "None" and CACHE it under this version —
+                    # a poisoned card that never expires. Refuse instead.
+                    raise document_thumbnails.ThumbnailUnavailable(
+                        "thumbnail.render_failed", "web render returned no html"
+                    )
+                data = document_thumbnails.web_thumbnail_png(html)
+            else:
+                scene = document["scene"]
+                cache_dir = request_cache_dir(repo)
+                materialize_scene_assets(blobs, cache_dir, [scene])
+                # 2026-09-06: render what the editor and the export show, not the
+                # raw stored scene. Agent-authored ads carry brand TOKENS and
+                # hug/fill sizes with no stored geometry; exported raw they fail
+                # LUME0209 / LUME0205 on every node and the PNG came back white
+                # — a 200 with nothing in it. So: the document's effective brand
+                # (the export route's own chooser, default request = the pinned
+                # kit, platform default as the last resort), its mode and fonts,
+                # one preflight, and the PREFLIGHTED scene goes to the renderer.
+                # Best-effort by contract — preflight diagnostics are logged,
+                # never a refusal (a card is a preview, not a deliverable) — and
+                # READ-ONLY: nothing here persists (no `_persist_preflight`),
+                # keeping the route's never-in-the-write-path rule.
+                source, brand_kit = choose_effective_brand(
+                    app.state.core,
+                    repo,
+                    document,
+                    PreflightRequest(persist_effective_brand=False),
+                )
+                mode = choose_effective_brand_mode(document, brand_kit, None)
+                brand_fonts = (
+                    brand_kit_font_spec(repo, brand_kit, blobs, cache_dir)
+                    if brand_kit is not None
+                    else scene_brand_fonts(repo, scene, blobs, cache_dir)
+                )
+                preflight_result = app.state.core.preflight_scene(
+                    scene, brand_kit, mode, brand_fonts=brand_fonts
+                )
+                preflight_diagnostics = preflight_result.get("diagnostics", [])
+                log_event(
+                    api_logger,
+                    logging.INFO,
+                    "document_thumbnail_preflight",
+                    document_id=document_id,
+                    version=version,
+                    effective_brand_source=source,
+                    **diagnostic_summary(preflight_diagnostics),
+                )
+                export_scene = preflight_result.get("scene") or scene
+                result = app.state.core.export_preview(
+                    export_scene,
+                    "png",
+                    document_thumbnails.first_page_ids(export_scene),
+                    default_export_profile("png"),
+                    raise_on_error=False,
+                    asset_store_root=cache_dir,
+                    brand_fonts=brand_fonts,
+                )
+                data = document_thumbnails.downscale_png(
+                    document_thumbnails.png_from_export_result(result)
+                )
+        except document_thumbnails.ThumbnailUnavailable as error:
+            raise HTTPException(
+                status_code=502,
+                detail={"code": error.code, "message": str(error)},
+            ) from error
+        except (SiteRenderError, SiteInputsUnavailable) as error:
+            raise HTTPException(
+                status_code=502,
+                detail={"code": "thumbnail.render_failed", "message": str(error)},
+            ) from error
+        except (CoreError, NotFoundError) as error:
+            # The helper can fail BEFORE `raise_on_error` is consulted (a dead
+            # subprocess, an unparseable response), so `raise_on_error=False`
+            # above does not make this unreachable — `/export-preview` catches
+            # CoreError for the same reason. A thumbnail's contract is 502
+            # `thumbnail.*`, so it is normalized here rather than left to
+            # `core_http_error`'s 422.
+            # `NotFoundError` (a KeyError, NOT a CoreError) joins it because the
+            # scene branch's `choose_effective_brand` reads the brand-kit library:
+            # a document pinned to a kit version that is gone would otherwise
+            # escape as an untyped 500.
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    # Kind-aware: only the scene branch exports. A CoreError from
+                    # the web branch escaped a RENDER, so labelling it
+                    # `export_failed` would name a step that never ran.
+                    "code": (
+                        "thumbnail.render_failed"
+                        if kind in ("web", "site")
+                        else "thumbnail.export_failed"
+                    ),
+                    "message": str(error),
+                },
+            ) from error
+        except HTTPException as error:
+            # The in-process `render_web_document` above answers ITS OWN
+            # failures with `core_http_error`'s 422 `web_render.*`, which
+            # would otherwise escape this route as a 422 the frozen contract
+            # never promises. Catching HTTPException broadly is safe HERE and
+            # only here: the 404 (`require_document`) is raised ABOVE this try,
+            # and the render call is the only thing inside it that raises one.
+            # DO NOT widen this try upward — it would swallow the 404.
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "code": "thumbnail.render_failed",
+                    "message": str(error.detail),
+                },
+            ) from error
+        sha256 = hashlib.sha256(data).hexdigest()
+        # `register` returns the workspace-scoped STORAGE KEY; the index row and
+        # `read_blob` both speak the bare digest, which registration is addressed
+        # by, so the local one is the authoritative spelling.
+        blobs.register(data, media_type="image/png", source_key="document_thumbnail")
+        repo.record_document_thumbnail(
+            document_id, version, sha256=sha256, media_type="image/png"
+        )
+        log_event(
+            api_logger,
+            logging.INFO,
+            "document_thumbnail_generated",
+            document_id=document_id,
+            version=version,
+            kind=kind,
+            byte_count=len(data),
+        )
+        return version
+
+    thumbnail_queue = ThumbnailRenderQueue(
+        limits_from_env(),
+        log=lambda event, **fields: log_event(
+            api_logger,
+            logging.WARNING if event == "document_thumbnail_failed" else logging.INFO,
+            event,
+            **fields,
+        ),
+    )
+    app.state.thumbnail_queue = thumbnail_queue
+
     @app.get("/documents/{document_id}/thumbnail", response_class=Response)
     def get_document_thumbnail(
         document_id: str,
@@ -3944,196 +4146,55 @@ def create_app(
         v: Optional[str] = None,
         repo: HybridRepository = Depends(repository),
     ) -> Response:
-        # Gallery-card preview (2026-08-31 ruling): PNG for both kinds, built
-        # LAZILY here on first read — never in the write path — and cached by
-        # (document, version) in the blob store. Sync route => threadpool, so the
-        # Playwright capture blocks a worker thread, not the event loop (NOT the
-        # [slice3xstage0] class of bug).
+        # Gallery-card preview (2026-08-31 ruling): a PNG cached by (document, version) in the
+        # blob store, never built in the write path. Production 2026-10-28: rendering it HERE
+        # (705 renders for 180 versions, 73 at once, site renders ~52 s each) starved the request
+        # pool. So this route never renders. It serves the current version when cached, and
+        # otherwise asks the background queue for it and answers at once:
+        #   fresh   — this version's PNG (cached for good when `v` names the current version);
+        #   stale   — the newest older PNG, `no-store`, while the current one renders;
+        #   pending — 202 with no body when nothing is cached yet (a brand-new document).
+        # `X-Thumbnail-State` says which, so the gallery card knows to ask again.
         document = require_document(repo, document_id)
         version = int(document["current_version"])
         blobs = blob_store(repo)
 
         cached = repo.get_document_thumbnail(document_id, version)
-        data: Optional[bytes] = None
         if cached is not None:
             try:
                 _media, data = blobs.read_blob(cached["sha256"])
             except NotFoundError:
-                data = None  # dangling index row — regenerate below
-
-        if data is None:
-            # The KIND decides the generator, never the shape of the payload: a
-            # scene's pages are a map and a web doc's are a list, and the scene
-            # page picker answers None on a list QUIETLY, so shape-sniffing would
-            # mis-route without ever erroring. Same default as the two
-            # `require_*_document` gates.
-            kind = document.get("doc_kind", "scene")
-            try:
-                if kind == "site":
-                    # Wave 2: a Puck site renders in the hardened page, is cleaned, and is captured
-                    # with JavaScript off and the network blocked (site_publish).
-                    data = site_publish.site_thumbnail_png(
-                        document,
-                        blobs=blobs,
-                        brand=app.state.site_brand_loader(repo, blobs, document),
-                        sections=load_section_modules(app.state.site_section_loader, repo, blobs, document["scene"]),
-                        node_bin=app.state.web_export_node_bin,
-                    )
-                elif kind == "web":
-                    # Called in-process so the composed HTML carries THIS request's
-                    # origin for its asset URLs — the capture page fetches them.
-                    rendered = render_web_document(
-                        document_id,
-                        request,
-                        mode="editor",
-                        runtime_src=None,
-                        bridge=0,
-                        nonce=None,
-                        repo=repo,
-                    )
-                    html = rendered.get("html")
-                    if not isinstance(html, str) or not html:
-                        # A render that returned no html would screenshot the
-                        # literal text "None" and CACHE it under this version —
-                        # a poisoned card that never expires. Refuse instead.
-                        raise document_thumbnails.ThumbnailUnavailable(
-                            "thumbnail.render_failed", "web render returned no html"
-                        )
-                    data = document_thumbnails.web_thumbnail_png(html)
-                else:
-                    scene = document["scene"]
-                    cache_dir = request_cache_dir(repo)
-                    materialize_scene_assets(blobs, cache_dir, [scene])
-                    # 2026-09-06: render what the editor and the export show, not the
-                    # raw stored scene. Agent-authored ads carry brand TOKENS and
-                    # hug/fill sizes with no stored geometry; exported raw they fail
-                    # LUME0209 / LUME0205 on every node and the PNG came back white
-                    # — a 200 with nothing in it. So: the document's effective brand
-                    # (the export route's own chooser, default request = the pinned
-                    # kit, platform default as the last resort), its mode and fonts,
-                    # one preflight, and the PREFLIGHTED scene goes to the renderer.
-                    # Best-effort by contract — preflight diagnostics are logged,
-                    # never a refusal (a card is a preview, not a deliverable) — and
-                    # READ-ONLY: nothing here persists (no `_persist_preflight`),
-                    # keeping the route's never-in-the-write-path rule.
-                    source, brand_kit = choose_effective_brand(
-                        app.state.core,
-                        repo,
-                        document,
-                        PreflightRequest(persist_effective_brand=False),
-                    )
-                    mode = choose_effective_brand_mode(document, brand_kit, None)
-                    brand_fonts = (
-                        brand_kit_font_spec(repo, brand_kit, blobs, cache_dir)
-                        if brand_kit is not None
-                        else scene_brand_fonts(repo, scene, blobs, cache_dir)
-                    )
-                    preflight_result = app.state.core.preflight_scene(
-                        scene, brand_kit, mode, brand_fonts=brand_fonts
-                    )
-                    preflight_diagnostics = preflight_result.get("diagnostics", [])
-                    log_event(
-                        api_logger,
-                        logging.INFO,
-                        "document_thumbnail_preflight",
-                        document_id=document_id,
-                        version=version,
-                        effective_brand_source=source,
-                        **diagnostic_summary(preflight_diagnostics),
-                    )
-                    export_scene = preflight_result.get("scene") or scene
-                    result = app.state.core.export_preview(
-                        export_scene,
-                        "png",
-                        document_thumbnails.first_page_ids(export_scene),
-                        default_export_profile("png"),
-                        raise_on_error=False,
-                        asset_store_root=cache_dir,
-                        brand_fonts=brand_fonts,
-                    )
-                    data = document_thumbnails.downscale_png(
-                        document_thumbnails.png_from_export_result(result)
-                    )
-            except document_thumbnails.ThumbnailUnavailable as error:
-                raise HTTPException(
-                    status_code=502,
-                    detail={"code": error.code, "message": str(error)},
-                ) from error
-            except (SiteRenderError, SiteInputsUnavailable) as error:
-                raise HTTPException(
-                    status_code=502,
-                    detail={"code": "thumbnail.render_failed", "message": str(error)},
-                ) from error
-            except (CoreError, NotFoundError) as error:
-                # The helper can fail BEFORE `raise_on_error` is consulted (a dead
-                # subprocess, an unparseable response), so `raise_on_error=False`
-                # above does not make this unreachable — `/export-preview` catches
-                # CoreError for the same reason. A thumbnail's contract is 502
-                # `thumbnail.*`, so it is normalized here rather than left to
-                # `core_http_error`'s 422.
-                # `NotFoundError` (a KeyError, NOT a CoreError) joins it because the
-                # scene branch's `choose_effective_brand` reads the brand-kit library:
-                # a document pinned to a kit version that is gone would otherwise
-                # escape as an untyped 500.
-                raise HTTPException(
-                    status_code=502,
-                    detail={
-                        # Kind-aware: only the scene branch exports. A CoreError from
-                        # the web branch escaped a RENDER, so labelling it
-                        # `export_failed` would name a step that never ran.
-                        "code": (
-                            "thumbnail.render_failed"
-                            if kind in ("web", "site")
-                            else "thumbnail.export_failed"
-                        ),
-                        "message": str(error),
-                    },
-                ) from error
-            except HTTPException as error:
-                # The in-process `render_web_document` above answers ITS OWN
-                # failures with `core_http_error`'s 422 `web_render.*`, which
-                # would otherwise escape this route as a 422 the frozen contract
-                # never promises. Catching HTTPException broadly is safe HERE and
-                # only here: the 404 (`require_document`) is raised ABOVE this try,
-                # and the render call is the only thing inside it that raises one.
-                # DO NOT widen this try upward — it would swallow the 404.
-                raise HTTPException(
-                    status_code=502,
-                    detail={
-                        "code": "thumbnail.render_failed",
-                        "message": str(error.detail),
-                    },
-                ) from error
-            sha256 = hashlib.sha256(data).hexdigest()
-            # `register` returns the workspace-scoped STORAGE KEY; the index row and
-            # `read_blob` both speak the bare digest, which registration is addressed
-            # by, so the local one is the authoritative spelling.
-            blobs.register(data, media_type="image/png", source_key="document_thumbnail")
-            repo.record_document_thumbnail(
-                document_id, version, sha256=sha256, media_type="image/png"
-            )
-            log_event(
-                api_logger,
-                logging.INFO,
-                "document_thumbnail_generated",
-                document_id=document_id,
-                version=version,
-                kind=kind,
-                byte_count=len(data),
-            )
-
-        # A caller that named the version it wants may cache the answer forever —
-        # the key changes on the next edit. Anyone else gets the current bytes and
-        # no permission to keep them under a key that does not identify them.
-        fresh = v == str(version)
-        return Response(
-            content=data,
-            media_type="image/png",
-            headers={
-                "Cache-Control": (
-                    "private, max-age=31536000, immutable" if fresh else "no-store"
+                data = None  # dangling index row — re-render below
+            if data is not None:
+                # A caller that named the version it wants may cache the answer forever — the
+                # key changes on the next edit. Anyone else gets the current bytes and no
+                # permission to keep them under a key that does not identify them.
+                fresh = v == str(version)
+                return _thumbnail_response(
+                    data,
+                    cache_control="private, max-age=31536000, immutable" if fresh else "no-store",
+                    state="fresh",
                 )
-            },
+
+        workspace_id = repo.workspace_id
+        scope = dict(request.scope)
+        thumbnail_queue.request(
+            workspace_id=workspace_id,
+            document_id=document_id,
+            version=version,
+            kind=document.get("doc_kind", "scene"),
+            render=lambda: _render_document_thumbnail(workspace_id, document_id, scope),
+        )
+        latest = repo.get_latest_document_thumbnail(document_id)
+        if latest is not None:
+            try:
+                _media, data = blobs.read_blob(latest["sha256"])
+                return _thumbnail_response(data, cache_control="no-store", state="stale")
+            except NotFoundError:
+                pass
+        return Response(
+            status_code=202,
+            headers={"Cache-Control": "no-store", "X-Thumbnail-State": "pending"},
         )
 
     def _refuse_dead_override_paths(
@@ -4668,7 +4729,8 @@ def create_app(
 
     @app.get("/documents/{document_id}/site/brand")
     def get_site_brand(document_id: str, repo: HybridRepository = Depends(repository)) -> JsonObject:
-        """The site's BrandData for the editor frame's ``init`` (Contract 6; controller ruling R3).
+        """The site's BrandData for the editor frame's ``init`` (Contract 6; controller ruling R3),
+        trimmed to the sections the stored site places, with its CSS packed.
 
         Built by the one builder Lane B2 composes into ``app.state.site_brand_loader``; every asset
         and font ``file`` is ``/asset-store/<sha256>``. Until B2 lands the seam refuses typed."""
@@ -4678,7 +4740,9 @@ def create_app(
             brand = app.state.site_brand_loader(repo, blob_store(repo), document)
         except SiteInputsUnavailable as error:
             raise HTTPException(status_code=503, detail={"code": error.code, "message": str(error)}) from error
-        return {"schema_version": 1, "brand": brand}
+        # Site loading (2026-10-29): only the sections this site places, their CSS sent once
+        # (schema 2: ``css_rules`` beside ``brand``; the editor's reader puts each section's back).
+        return {"schema_version": 2, **pack_clone_css(editor_site_brand(brand, document["scene"]))}
 
     @app.get("/documents/{document_id}/site/versions")
     def list_site_versions(

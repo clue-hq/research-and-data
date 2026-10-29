@@ -300,13 +300,19 @@ async def validated_context_refs(
     target_document_ref: DomainObjectRef | None = None
     if design_nodes:
         document_refs = tuple(ref for ref in refs if ref.object_type == "design_document")
-        if len(document_refs) != 1 or not design_leg_document_ids:
+        # Comments (2026-10-29): notes left in a site or web page's comment box may name a page
+        # of this project that is not on the open leg — or arrive with no leg open at all. The
+        # worker then moves the thread's leg to that page (``clue_api.design_comment_routing``).
+        # A note-less node is a canvas selection, and stays bound to the open leg's documents.
+        comments = project_id is not None and all((ref.note or "").strip() for ref in design_nodes)
+        if len(document_refs) != 1 or (not design_leg_document_ids and not comments):
             raise ContextReferenceError(
                 "CONTEXT_REF_RELATIONSHIP_MISMATCH",
                 "design node targets require one document reference on the open design leg",
             )
         target_document_ref = document_refs[0]
-        if target_document_ref.object_id not in design_leg_document_ids:
+        off_leg = target_document_ref.object_id not in design_leg_document_ids
+        if off_leg and not comments:
             raise ContextReferenceError(
                 "CONTEXT_REF_RELATIONSHIP_MISMATCH",
                 "the targeted design document is not one of the open design leg's documents",
@@ -337,6 +343,11 @@ async def validated_context_refs(
             raise ContextReferenceError(
                 "CONTEXT_REF_RELATIONSHIP_MISMATCH",
                 "design node targets require a scene or web document",
+            )
+        if off_leg and target_doc_kind not in {"web", "site"}:
+            raise ContextReferenceError(
+                "CONTEXT_REF_RELATIONSHIP_MISMATCH",
+                "comments off the open design leg can only be on a site or web page",
             )
         if target_document_ref.version != target_document.get("current_version"):
             raise ContextReferenceError(

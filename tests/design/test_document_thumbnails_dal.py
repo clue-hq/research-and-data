@@ -161,3 +161,42 @@ def test_a_cached_thumbnail_is_invisible_to_another_workspace(require_design_db:
                 await transaction.rollback()
 
     run_async(scenario())
+
+
+def test_latest_thumbnail_is_the_highest_cached_version(require_design_db: None) -> None:
+    """The stand-in a card shows while its current version renders in the background
+    (production 2026-10-28): the newest version that has a cached PNG, in this workspace only."""
+    owner, stranger = _ws("latest"), _ws("latest_stranger")
+
+    async def scenario() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn:
+            transaction = await conn.begin()
+            try:
+                assert (
+                    await thumbnails.get_latest_document_thumbnail(
+                        conn, workspace_id=owner, document_id="doc_1"
+                    )
+                    is None
+                )
+                for version, digest in ((2, _PNG_DIGEST), (7, _OTHER_DIGEST), (5, _PNG_DIGEST)):
+                    await thumbnails.record_document_thumbnail(
+                        conn,
+                        workspace_id=owner,
+                        document_id="doc_1",
+                        version=version,
+                        sha256=digest,
+                        media_type="image/png",
+                    )
+                assert await thumbnails.get_latest_document_thumbnail(
+                    conn, workspace_id=owner, document_id="doc_1"
+                ) == {"sha256": _OTHER_DIGEST, "media_type": "image/png", "version": 7}
+                assert (
+                    await thumbnails.get_latest_document_thumbnail(
+                        conn, workspace_id=stranger, document_id="doc_1"
+                    )
+                    is None
+                )
+            finally:
+                await transaction.rollback()
+
+    run_async(scenario())

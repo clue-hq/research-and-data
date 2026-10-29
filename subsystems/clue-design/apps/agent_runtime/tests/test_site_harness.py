@@ -485,3 +485,60 @@ def test_the_ask_tool_is_withheld_after_a_turn_that_asked(tmp_path: Path) -> Non
     names = lambda inputs: {t.name for t in site_tool_set(SiteTools(workspace=workspace, inputs=inputs, base_site=garner_site()))}  # noqa: E731
     assert "request_clarification" in names(inputs_for())
     assert "request_clarification" not in names(inputs_for(clarification_already_requested=True))
+
+
+@needs_node
+def test_a_turn_that_only_rewrites_a_placed_section_saves_its_new_code(tmp_path: Path) -> None:
+    """The NAV Logistics header (2026-10-28): the turn rewrote the header the page places, under
+    its own name, and the save threw it away as "unchanged". The result now pins the new code."""
+
+    import copy
+
+    from lumen_agent.site.inputs import SiteSection
+    from site_fixtures import FakeSections
+
+    site = garner_site()
+    site["pages"] = {**site["pages"], "/": copy.deepcopy(site["pages"]["/"])}
+    site["pages"]["/"]["content"].append(
+        {"type": "StepsBand", "props": {"id": "steps", "surface": "page", "quote": "Fewer surprises."}})
+    schema = {"type": "object", "properties": {"id": {"type": "string"}, "surface": {"type": "string"}, "quote": {"type": "string"}}}
+    site["agent_sections"] = {"StepsBand": "a" * 64}
+    pinned = SiteSection(name="StepsBand", digest="a" * 64, props_schema=schema, module_js="export {}", css="")
+    result = run_site_turn(
+        "make the steps band calmer", config=AgentRuntimeConfig.from_env(),
+        inputs=inputs_for(sections=FakeSections(), agent_sections={"StepsBand": pinned}),
+        workspace=tmp_path / "workspace", site=site, run_id="run_test",
+        model=ScriptedModel(messages=iter([
+            AIMessage(content="", tool_calls=[call("write_section", {"name": "StepsBand", "code": "export const schema = 1;"}, 1)]),
+            AIMessage(content="Made the steps band calmer."),
+        ])),
+    )
+    assert result.status == "applied", result
+    assert result.site["agent_sections"] == {"StepsBand": "e" * 64}
+
+
+def test_a_turn_that_wrote_a_section_no_page_places_says_nothing_was_saved(tmp_path: Path) -> None:
+    """The agent's own report reads as success either way: when its section reached no page, the
+    reply says so instead of passing on a "Done" that saved nothing."""
+
+    from site_fixtures import FakeSections
+
+    result = run_site_turn(
+        "make the header button a pill", config=AgentRuntimeConfig.from_env(),
+        inputs=inputs_for(sections=FakeSections()), workspace=tmp_path / "workspace", site=garner_site(),
+        run_id="run_test",
+        model=ScriptedModel(messages=iter([
+            AIMessage(content="", tool_calls=[call("write_section", {"name": "PillHeader", "code": "export const schema = 1;"}, 1)]),
+            AIMessage(content="Updated the header button to a pill."),
+        ])),
+    )
+    assert result.status == "applied"
+    assert result.summary == (
+        "Updated the header button to a pill.\n\n"
+        "Nothing on the site changed, so nothing was saved: PillHeader was written, but no page uses it yet."
+    )
+
+
+def test_a_turn_that_only_answers_keeps_its_own_words(tmp_path: Path) -> None:
+    result = _run(tmp_path, [AIMessage(content="The page has five sections.")])
+    assert result.summary == "The page has five sections."

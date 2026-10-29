@@ -15,13 +15,14 @@ export interface SiteDocumentLoad {
   status: "idle" | "loading" | "ready" | "error";
 }
 
-/** Whether `brand` carries every cloned section `site` shows. The brand is read once per document
- * and kept; a load that shows a clone it lacks (an undo or a restore bringing back a clone the site
- * had replaced) reads it again, or the clone draws as "Choose a cloned section" (review S2b-8). */
+/** Whether `brand` carries every cloned section `site` shows, on its pages and in its header and
+ * footer. The brand is read once per document and kept; a load that shows a clone it lacks (an undo
+ * or a restore bringing back a clone the site had replaced, or an agent turn placing a new one — the
+ * design API sends only the sections the site places, site loading 2026-10-29) reads it again, or
+ * the clone draws as "Choose a cloned section" (review S2b-8). */
 export function brandHasClonesOf(brand: BrandData, site: LoadedSite["site"]): boolean {
-  return Object.values(site.pages).every((page) =>
-    page.content.every((item) => item.type !== "ClonedSection" || Object.hasOwn(brand.clones, String(item.props.fragmentId ?? ""))),
-  );
+  const entries = [...Object.values(site.pages).flatMap((page) => page.content), ...(site.shell ? [site.shell.header, site.shell.footer] : [])];
+  return entries.every((item) => item.type !== "ClonedSection" || Object.hasOwn(brand.clones, String(item.props.fragmentId ?? "")));
 }
 
 const IDLE: SiteDocumentLoad = { brand: null, error: null, links: [], loaded: null, loadedAt: 0, status: "idle" };

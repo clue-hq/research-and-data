@@ -17,7 +17,8 @@ from typing import Any
 
 __all__ = [
     "asset_store_file", "brand_asset", "captured_asset_id", "captured_image_descriptions",
-    "clone_from_fragment", "clone_images", "clone_video_renditions", "site_brand_data",
+    "clone_from_fragment", "clone_images", "clone_video_renditions", "editor_site_brand",
+    "pack_clone_css", "site_brand_data", "split_css_blocks", "unpack_clone_css",
 ]
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
@@ -205,3 +206,110 @@ def clone_from_fragment(section: Mapping[str, Any], loaded: Any) -> dict:
         "slots": slots,
         "degraded_note": section.get("degraded_note"),
     }
+
+
+def editor_site_brand(brand: Mapping[str, Any], site: Mapping[str, Any]) -> dict:
+    """The brand the site editor is sent: ``brand`` with only the sections ``site`` places (its
+    pages and its shell). The editor cannot place a section itself — the agent does, and a load
+    that shows one this brand lacks reads the brand again — so the other released sections only
+    cost transfer (113 of them came to 24.6 MB on the lane, 2026-10-29). Everything else, the
+    captured images of every section included, is kept whole."""
+
+    from lumen_agent.site.workspace import site_components
+
+    used = {
+        str((item.get("props") or {}).get("fragmentId") or "")
+        for _route, item in site_components(site) if item.get("type") == "ClonedSection"
+    }
+    clones = brand.get("clones") or {}
+    return {**brand, "clones": {key: clone for key, clone in clones.items() if key in used}}
+
+
+#: Stands in for a section's own scoping class in packed CSS (``pack_clone_css``).
+CLONE_CLASS_MARK = "\u0000"
+
+
+#: What ``split_css_blocks`` stops at: a comment, a string, an escape, a brace or a semicolon.
+_CSS_STOP = re.compile(r'/\*|["\'{};\\]')
+_CSS_SKIP = {
+    "/*": re.compile(r"/\*.*?(?:\*/|\Z)", re.S),
+    '"': re.compile(r'"(?:[^"\\]|\\.)*(?:"|\Z)', re.S),
+    "'": re.compile(r"'(?:[^'\\]|\\.)*(?:'|\Z)", re.S),
+    "\\": re.compile(r"\\.?", re.S),
+}
+
+
+def split_css_blocks(css: str) -> list[str]:
+    """``css`` cut into its top-level blocks — a rule, an at-rule with its whole body, or a
+    statement ending in ``;`` — whose concatenation is ``css`` exactly. Strings and comments are
+    skipped, so a brace inside one does not cut; a misread cut only shares less, never loses a
+    byte."""
+
+    blocks: list[str] = []
+    start = depth = i = 0
+    while (stop := _CSS_STOP.search(css, i)) is not None:
+        token = stop.group()
+        if token in _CSS_SKIP:
+            i = _CSS_SKIP[token].match(css, stop.start()).end()
+            continue
+        i = stop.end()
+        if token == "{":
+            depth += 1
+            continue
+        if token == "}":
+            depth = max(depth - 1, 0)
+        elif depth:
+            continue
+        if depth == 0:
+            blocks.append(css[start:i])
+            start = i
+    if start < len(css):
+        blocks.append(css[start:])
+    return blocks
+
+
+def pack_clone_css(brand: Mapping[str, Any]) -> dict:
+    """``{"brand", "css_rules"}``: the brand with each section's ``css`` replaced by ``css_rules`` —
+    indexes into one shared list of top-level blocks, its own scoping class stood in by
+    ``CLONE_CLASS_MARK``. Each section's CSS is the page stylesheet scoped under its own class, so
+    sections from one page share nearly every block (21.5 MB of CSS held ~0.35 MB of distinct
+    blocks on the lane). A section whose CSS already holds the mark, or that has no scoping class,
+    keeps its ``css`` as it is. ``unpack_clone_css`` and the editor's reader reverse it exactly."""
+
+    rules: list[str] = []
+    index: dict[str, int] = {}
+    split: dict[str, list[str]] = {}  # sections captured from one page share one stylesheet
+    clones: dict[str, Any] = {}
+    for key, clone in (brand.get("clones") or {}).items():
+        css = str(clone.get("css") or "")
+        wrapper = str(clone.get("wrapper_class") or "")
+        if not wrapper or CLONE_CLASS_MARK in css:
+            clones[key] = dict(clone)
+            continue
+        unscoped = css.replace(wrapper, CLONE_CLASS_MARK)
+        if unscoped not in split:
+            split[unscoped] = split_css_blocks(unscoped)
+        refs = []
+        for block in split[unscoped]:
+            if block not in index:
+                index[block] = len(rules)
+                rules.append(block)
+            refs.append(index[block])
+        clones[key] = {**{k: v for k, v in clone.items() if k != "css"}, "css_rules": refs}
+    return {"brand": {**brand, "clones": clones}, "css_rules": rules}
+
+
+def unpack_clone_css(wire: Mapping[str, Any]) -> dict:
+    """The brand ``pack_clone_css`` packed, every section's ``css`` back exactly."""
+
+    rules = list(wire.get("css_rules") or [])
+    brand = dict(wire["brand"])
+    clones = {}
+    for key, clone in (brand.get("clones") or {}).items():
+        if "css_rules" not in clone:
+            clones[key] = dict(clone)
+            continue
+        css = "".join(rules[ref] for ref in clone["css_rules"])
+        css = css.replace(CLONE_CLASS_MARK, clone["wrapper_class"])
+        clones[key] = {**{k: v for k, v in clone.items() if k != "css_rules"}, "css": css}
+    return {**brand, "clones": clones}

@@ -119,6 +119,7 @@ from clue_api.conversation_turns import (
     build_conversation_turn_engine,
 )
 from clue_api.crm.write_answer import card_answers_since_last_turn
+from clue_api.design_comment_routing import move_leg_to_commented_document
 from clue_api.design_leg_wiring import (
     DesignLegExitJudge,
     DesignLegFinisher,
@@ -468,17 +469,20 @@ class ProjectConversationTurnRunner:
             # answer while a leg is open, but it cannot see the future — an answer accepted
             # first and QUEUED BEHIND a turn that then opened a leg would otherwise reach the
             # design agent as canonical gate-answer JSON. The answer row is the durable proof.
+            head_of_abm_owned = False
             if open_leg is not None and open_leg.get("opened_by_turn_id") == str(turn_id):
                 # The head-of-abm turn that OPENED this leg is never a leg turn. Only its retry
                 # (a crash or lost lease after the leg was born) can arrive here, and it must
                 # replay as the committed head-of-abm turn it is; routed to the leg it collided
                 # with its own durable rows and failed (incident 2026-09-29).
                 open_leg = None
+                head_of_abm_owned = True
             elif open_leg is not None and (
                 await gate_answer_for_turn(conn, workspace_id=workspace_id, turn_id=turn_id)
                 is not None
             ):
                 open_leg = None
+                head_of_abm_owned = True
             elif open_leg is None:
                 # P3.7 crash-window re-entry: a design turn that CLOSED its leg via the §2.2
                 # exit bridge and died before finalizing finds no open leg on retry — but it
@@ -489,6 +493,22 @@ class ProjectConversationTurnRunner:
                     workspace_id=workspace_id,
                     turn_id=turn_id,
                 )
+            # Comments go to the page they were left on (2026-10-29): a message carrying
+            # comments on a page the open leg does not hold moves the thread's leg to that page
+            # first — in this transaction, no model asked. Never for a turn the rules above gave
+            # to head-of-abm, nor for a design turn returning to the leg it already closed.
+            if not head_of_abm_owned and (open_leg is None or open_leg["state"] != "closed"):
+                moved = await move_leg_to_commented_document(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=submission.project_id,
+                    thread_id=submission.thread_id,
+                    turn_id=turn_id,
+                    focus_refs=submission_focus_refs,
+                    open_leg=open_leg,
+                )
+                if moved is not None:
+                    open_leg = moved
         async with self._conn_factory() as conn:
             pending_stop = await stop_requested(conn, workspace_id=workspace_id, turn_id=turn_id)
         if pending_stop:

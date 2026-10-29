@@ -23,7 +23,7 @@ from sqlalchemy import text
 
 from .agent_cloned_sections import DurableAgentClonedSectionRegistry
 from .database import NotFoundError
-from .fragments import FragmentRefused, read_web_fragment
+from .fragments import read_web_fragments
 from .fragments.campaign_shell import COMPOSED_CAMPAIGN_SHELL
 from .font_library import site_library_fonts
 from .site_brand import (
@@ -162,16 +162,20 @@ def list_site_clones(blobs: Any, cache_dir: Any) -> list[dict]:
     skill. Sections composed for earlier pages are left out (``NOT_THE_SELLERS_OWN``)."""
 
     registry = DurableAgentClonedSectionRegistry(blobs=blobs, cache_dir=cache_dir)
-    clones: list[dict] = []
-    for section in registry.list_sections().get("sections") or []:
-        if section.get("superseded_by") or section.get("composed") in NOT_THE_SELLERS_OWN:
-            continue
-        try:
-            loaded = read_web_fragment(blobs.storage, workspace_id=blobs.workspace_id, fragment_id=str(section["fragment_id"]))
-        except (NotFoundError, FragmentRefused):
-            continue
-        clones.append(clone_from_fragment(section, loaded))
-    return clones
+    offered = [
+        section for section in registry.list_sections().get("sections") or []
+        if not section.get("superseded_by") and section.get("composed") not in NOT_THE_SELLERS_OWN
+    ]
+    if not offered:
+        return []
+    loaded = read_web_fragments(
+        blobs.storage, workspace_id=blobs.workspace_id,
+        fragment_ids=[str(section["fragment_id"]) for section in offered],
+    )
+    return [
+        clone_from_fragment(section, loaded[str(section["fragment_id"])])
+        for section in offered if str(section["fragment_id"]) in loaded
+    ]
 
 
 def pinned_site_clones(site: Mapping[str, Any], blobs: Any, *, listed: set[str]) -> list[dict]:
@@ -181,26 +185,29 @@ def pinned_site_clones(site: Mapping[str, Any], blobs: Any, *, listed: set[str])
     reaches publish (which applies its own rule) while the agent is not offered it anew. A section
     that no longer exists is left out, so the save check and publish refuse it honestly."""
 
-    from lumen_agent.site.workspace import site_components
-
+    wanted = [fragment_id for fragment_id in used_fragment_ids(site) if fragment_id not in listed]
+    if not wanted:
+        return []
     pinned: list[dict] = []
-    seen: set[str] = set(listed)
-    for _route, item in site_components(site):
-        if item.get("type") != "ClonedSection":
-            continue
-        fragment_id = str((item.get("props") or {}).get("fragmentId") or "")
-        if not fragment_id or fragment_id in seen:
-            continue
-        seen.add(fragment_id)
-        try:
-            loaded = read_web_fragment(blobs.storage, workspace_id=blobs.workspace_id, fragment_id=fragment_id)
-        except (NotFoundError, FragmentRefused):
-            continue
+    loaded_by_id = read_web_fragments(blobs.storage, workspace_id=blobs.workspace_id, fragment_ids=wanted)
+    for loaded in loaded_by_id.values():
         # A web_fragment row names its page, position and brokenness in its own columns
         # (provenance, degraded/degraded_reason); the registry's one row shaper reads them.
         section = DurableAgentClonedSectionRegistry._section_row(loaded.row)
         pinned.append({**clone_from_fragment(section, loaded), "in_catalog": False})
     return pinned
+
+
+def used_fragment_ids(site: Mapping[str, Any]) -> list[str]:
+    """Every cloned section the site's pages and shell place, once each, in the order placed."""
+
+    from lumen_agent.site.workspace import site_components
+
+    ids = (
+        str((item.get("props") or {}).get("fragmentId") or "")
+        for _route, item in site_components(site) if item.get("type") == "ClonedSection"
+    )
+    return [fragment_id for fragment_id in dict.fromkeys(ids) if fragment_id]
 
 
 def site_sections_for_turn(store: Any, blobs: Any, site: Mapping[str, Any]) -> dict:
@@ -219,7 +226,8 @@ def site_sections_for_turn(store: Any, blobs: Any, site: Mapping[str, Any]) -> d
             module_js, css = read_section_bytes(blobs, row)
         except NotFoundError:
             continue
-        sections[name] = SiteSection(name=name, digest=row["digest"], props_schema=row["props_schema"], module_js=module_js, css=css)
+        sections[name] = SiteSection(name=name, digest=row["digest"], props_schema=row["props_schema"], module_js=module_js, css=css,
+                                     source=read_section_source(blobs, row))
     return sections
 
 
@@ -251,6 +259,16 @@ def read_section_bytes(blobs: Any, row: Mapping[str, Any]) -> tuple[str, str]:
     The one read of section files: the turn's sections here, Lane A's loader in Task 15."""
 
     return blobs.read(row["module_sha256"]).decode("utf-8"), blobs.read(row["css_sha256"]).decode("utf-8")
+
+
+def read_section_source(blobs: Any, row: Mapping[str, Any]) -> str:
+    """A recorded section's own TSX, for the agent to read and edit; "" when it is gone (the section
+    still renders from its module, the agent just cannot see its code)."""
+
+    try:
+        return blobs.read(row["source_sha256"]).decode("utf-8") if row.get("source_sha256") else ""
+    except NotFoundError:
+        return ""
 
 
 def site_brand_for(

@@ -218,6 +218,19 @@ class WholeFileReads(AgentMiddleware):
         return handler(request)
 
 
+def unsaved_sections_note(summary: str, tools: SiteTools) -> str:
+    """The reply of a turn that saved nothing. When the turn wrote sections that no page places, it
+    says so: the agent cannot see that its work was not saved and reports success either way."""
+
+    written = sorted(tools.turn_sections())
+    if not written:
+        return summary
+    names = ", ".join(written)
+    verb, it = ("was", "it") if len(written) == 1 else ("were", "them")
+    note = f"Nothing on the site changed, so nothing was saved: {names} {verb} written, but no page uses {it} yet."
+    return f"{summary}\n\n{note}" if summary else note
+
+
 class FinishGuard(AgentMiddleware):
     """A request cannot end on an invalid page (the spike's RunRecorder.after_model).
 
@@ -446,7 +459,8 @@ def capture_turn_state(tools: SiteTools, limits: "TurnLimits", guard: FinishGuar
     return {
         "schema_version": 1,
         "sections": {
-            name: {"digest": s.digest, "props_schema": s.props_schema, "module_js": s.module_js, "css": s.css}
+            name: {"digest": s.digest, "props_schema": s.props_schema, "module_js": s.module_js, "css": s.css,
+                   "source": s.source}
             for name, s in tools.turn_sections().items()
         },
         "assets": tools.turn_assets(),
@@ -467,9 +481,9 @@ def restore_turn_state(tools: SiteTools, limits: "TurnLimits", guard: FinishGuar
     for name, section in (state.get("sections") or {}).items():
         tools.sections[name] = SiteSection(
             name=name, digest=section["digest"], props_schema=section["props_schema"],
-            module_js=section["module_js"], css=section["css"],
+            module_js=section["module_js"], css=section["css"], source=str(section.get("source") or ""),
         )
-        record_component(tools.workspace, name, section["props_schema"])
+        record_component(tools.workspace, name, section["props_schema"], tools.sections[name].source)
     tools.brand.setdefault("assets", {}).update(state.get("assets") or {})
     limits.carry_over(
         rounds=int(state.get("rounds") or 0),
@@ -805,7 +819,8 @@ def run_site_turn(
         return SiteTurnResult("failed", INVALID_SUMMARY.format(error=first), dict(site), "site_invalid",
                               list(guard.errors), calls())
     if tools.site_unchanged():
-        return SiteTurnResult("applied", summary, dict(site), turn_limits.stop_reason, [], calls())
+        return SiteTurnResult("applied", unsaved_sections_note(summary, tools), dict(site),
+                              turn_limits.stop_reason, [], calls())
     if turn_limits.stop_reason is not None:
         check = tools._validate_raw()
         # Unavailable is no verdict on the page (FinishGuard's rule): the save decides.

@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from clue_design.storage import SOURCE_KEY_ASSET
-from conftest import make_blob_store, make_client
+from conftest import fetch_thumbnail, make_blob_store, make_client, settle_thumbnails, thumbnail_failures
 from lumen_api import site_publish, site_render
 from lumen_api.core import CoreError
 from lumen_api.design_store import HybridRepository
@@ -62,7 +62,7 @@ def test_a_site_thumbnail_is_captured_once_then_served_from_cache(client: TestCl
     if not chromium_available():
         pytest.skip("playwright chromium not installed")
     stored(client, "site_thumb")
-    first = client.get("/documents/site_thumb/thumbnail?v=0")
+    first = fetch_thumbnail(client, "/documents/site_thumb/thumbnail?v=0")
     assert first.status_code == 200, first.text
     assert first.headers["cache-control"] == "private, max-age=31536000, immutable"
     assert Image.open(io.BytesIO(first.content)).size == (724, 543)
@@ -74,14 +74,12 @@ def test_a_site_thumbnail_is_captured_once_then_served_from_cache(client: TestCl
     assert client.get("/documents/site_thumb/thumbnail?v=0").content == first.content
 
 
-def test_a_site_thumbnail_without_its_brand_is_a_typed_502(client: TestClient) -> None:
+def test_a_site_thumbnail_without_its_brand_is_a_logged_render_failure(client: TestClient) -> None:
     from lumen_api.site_doc_inputs import brand_loader_not_composed
 
     stored(client, "site_thumb_nobrand")
     client.app.state.site_brand_loader = brand_loader_not_composed
-    response = client.get("/documents/site_thumb_nobrand/thumbnail")
-    assert response.status_code == 502
-    assert response.json()["detail"]["code"] == "thumbnail.render_failed"
+    expect_render_failed(client, "site_thumb_nobrand")
 
 
 def test_a_failed_site_render_is_labelled_render_failed(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -93,9 +91,7 @@ def test_a_failed_site_render_is_labelled_render_failed(client: TestClient, monk
         raise SiteRenderError(RENDER_TIMEOUT, "the site did not render within 20s")
 
     monkeypatch.setattr(site_publish, "site_thumbnail_png", slow)
-    response = client.get("/documents/site_thumb_slow/thumbnail")
-    assert response.status_code == 502
-    assert response.json()["detail"] == {"code": "thumbnail.render_failed", "message": "the site did not render within 20s"}
+    assert expect_render_failed(client, "site_thumb_slow") == "the site did not render within 20s"
 
 
 # --- Scenarios ------------------------------------------------------------------------------------
@@ -110,8 +106,9 @@ def needs_chromium() -> None:
 
 
 def thumbnail(client: TestClient, document_id: str, version: int | None = None):
+    """The card the gallery ends up with: a fresh PNG once the background render has run."""
     query = "" if version is None else f"?v={version}"
-    return client.get(f"/documents/{document_id}/thumbnail{query}")
+    return fetch_thumbnail(client, f"/documents/{document_id}/thumbnail{query}")
 
 
 def card(response) -> Image.Image:
@@ -127,11 +124,18 @@ def cached_row(document_id: str, version: int) -> dict | None:
     return HybridRepository().get_document_thumbnail(document_id, version)
 
 
-def expect_render_failed(response) -> str:
-    assert response.status_code == 502, response.text
-    detail = response.json()["detail"]
-    assert detail["code"] == "thumbnail.render_failed", detail
-    return detail["message"]
+def expect_render_failed(client: TestClient, document_id: str, version: int | None = None) -> str:
+    """A site render that fails in the background: the card stays pending (no cached PNG to
+    stand in), and the failure is logged as `thumbnail.render_failed`. Returns its message."""
+    failures = thumbnail_failures(client)
+    seen = len(failures)
+    query = "" if version is None else f"?v={version}"
+    response = client.get(f"/documents/{document_id}/thumbnail{query}")
+    assert response.status_code == 202, response.text
+    settle_thumbnails(client)
+    assert len(failures) > seen, "the background render did not fail"
+    assert failures[-1]["error_code"] == "thumbnail.render_failed", failures[-1]
+    return failures[-1]["error"]
 
 
 def quote_module(css: str = ""):
@@ -267,11 +271,11 @@ def test_a_missing_section_module_is_never_cached_and_answers_once_it_is_stored(
     store_site(site)
     install_site_inputs(client.app, brand, [])  # the section store does not hold the module
 
-    message = expect_render_failed(thumbnail(client, doc, 0))
+    message = expect_render_failed(client, doc, 0)
     assert "QuoteBand" in message
     assert cached_row(doc, 0) is None
     # Asking again still fails (nothing poisoned the slot), then the module is stored: 200.
-    expect_render_failed(thumbnail(client, doc, 0))
+    expect_render_failed(client, doc, 0)
     assert cached_row(doc, 0) is None
 
     install_site_inputs(client.app, brand, [module])
@@ -289,7 +293,7 @@ def test_a_missing_brand_is_never_cached_and_answers_once_it_is_composed(client:
     _site, brand = stored(client, doc)
     client.app.state.site_brand_loader = brand_loader_not_composed
 
-    message = expect_render_failed(thumbnail(client, doc, 0))
+    message = expect_render_failed(client, doc, 0)
     assert "site_brand_loader" in message
     assert cached_row(doc, 0) is None
 
@@ -396,9 +400,7 @@ def test_a_core_error_from_the_site_arm_is_labelled_render_failed(client: TestCl
         raise CoreError("helper.process", "the helper process died")
 
     monkeypatch.setattr(site_publish, "site_thumbnail_png", core_failure)
-    response = thumbnail(client, "site_thumb_core_error")
-    assert response.status_code == 502, response.text
-    assert response.json()["detail"] == {"code": "thumbnail.render_failed", "message": "the helper process died"}
+    assert expect_render_failed(client, "site_thumb_core_error") == "the helper process died"
     assert cached_row("site_thumb_core_error", 0) is None
 
 

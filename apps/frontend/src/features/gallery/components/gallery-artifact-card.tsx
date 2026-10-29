@@ -4,15 +4,16 @@ import Image from "next/image";
 import { useState } from "react";
 import { ProjectIcon, type ProjectIconName } from "@/features/projects/components/project-icon";
 import { documentKindLabel } from "@/features/projects/model/project-documents";
+import { useDesignThumbnail } from "../hooks/use-design-thumbnail";
 import type { GalleryArtifact } from "../model/project-gallery";
 import styles from "./project-gallery.module.css";
 
 /**
- * A thumbnail that removes itself when the load fails, so a broken thumbnail
- * (a 502 from the thumbnail route, a version pruned behind our back) leaves the
- * same empty preview frame an absent one does — never a browser broken-image
- * element. Key this by `src` at the call site so a newer version's URL gets a
- * fresh attempt instead of inheriting the previous URL's failure.
+ * A thumbnail that may still be rendering in the background (2026-10-29): it shows an older
+ * version's card while this version renders, nothing while a brand-new one renders, and asks
+ * again until it has this version's (`useDesignThumbnail`). A failed load leaves the same empty
+ * preview frame an absent thumbnail does — never a browser broken-image element. Key this by
+ * `src` at the call site so a newer version's URL starts over.
  */
 function ArtifactPreviewImage({
   loading,
@@ -23,20 +24,18 @@ function ArtifactPreviewImage({
   sizes: string;
   src: string;
 }) {
+  const thumbnail = useDesignThumbnail(src);
   const [failed, setFailed] = useState(false);
-  if (failed) return null;
+  if (failed || thumbnail.failed || !thumbnail.src) return null;
   return (
-    /* unoptimized: the thumbnail route is session-authenticated behind
-       the BFF — the Next image optimizer's server-side refetch carries
-       no session cookie and would 401. The API already serves a
-       card-sized PNG, so there is nothing left to optimize. */
+    /* unoptimized: the image is already a card-sized PNG, held as an object URL. */
     <Image
       alt=""
       fill
       loading={loading}
       onError={() => setFailed(true)}
       sizes={sizes}
-      src={src}
+      src={thumbnail.src}
       unoptimized
     />
   );

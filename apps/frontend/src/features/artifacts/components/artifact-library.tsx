@@ -1,5 +1,6 @@
 "use client";
 
+import { useDesignThumbnail } from "@/features/gallery/hooks/use-design-thumbnail";
 import Image from "next/image";
 import Link from "next/link";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -289,19 +290,7 @@ export function ArtifactLibrary({ data }: { data: ArtifactLibraryData }) {
                                 className={styles.tableName}
                                 onClick={() => open(artifact)}
                               >
-                                {/* unoptimized for the same reason the gallery
-                                    card gives: the thumbnail route is session
-                                    -authenticated behind the BFF, and the Next
-                                    optimizer's server-side refetch carries no
-                                    session cookie. */}
-                                <Image
-                                  src={artifact.imagePath!}
-                                  alt=""
-                                  width={42}
-                                  height={34}
-                                  style={{ width: 42, height: 34 }}
-                                  unoptimized
-                                />
+                                <TableThumbnail key={artifact.imagePath} path={artifact.imagePath!} />
                                 <span>{artifact.title}</span>
                               </button>
                             </td>
@@ -367,4 +356,12 @@ export function ArtifactLibrary({ data }: { data: ArtifactLibraryData }) {
       </main>
     </ApplicationShell>
   );
+}
+
+/** The table row's thumbnail: shown once ready, retried while it renders (useDesignThumbnail). */
+function TableThumbnail({ path }: { path: string }) {
+  const thumbnail = useDesignThumbnail(path);
+  if (!thumbnail.src) return <span style={{ display: "inline-block", height: 34, width: 42 }} />;
+  /* unoptimized: the image is already a card-sized PNG, held as an object URL. */
+  return <Image alt="" height={34} src={thumbnail.src} style={{ height: 34, width: 42 }} unoptimized width={42} />;
 }

@@ -112,3 +112,11 @@ test("BFF response never forwards backend cookies or authentication headers", ()
   assert.equal(outgoing.get("set-cookie"), null);
   assert.equal(outgoing.get("authorization"), null);
 });
+
+test("BFF response forwards a thumbnail's readiness so the gallery card knows to ask again", () => {
+  // Production 2026-10-28: thumbnails now render in the background; the design API says
+  // whether a card is this version's (`fresh`), an older stand-in (`stale`) or not built yet
+  // (`pending`), and the card retries until it is `fresh`.
+  const outgoing = browserResponseHeaders(new Headers({ "X-Thumbnail-State": "stale" }));
+  assert.equal(outgoing.get("x-thumbnail-state"), "stale");
+});

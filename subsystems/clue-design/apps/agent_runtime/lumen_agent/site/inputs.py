@@ -32,6 +32,8 @@ class SiteSection:
     props_schema: dict
     module_js: str
     css: str
+    #: The section's own TSX, for the agent to read and edit ("" when the stored file is gone).
+    source: str = ""
 
 
 @dataclass(frozen=True)

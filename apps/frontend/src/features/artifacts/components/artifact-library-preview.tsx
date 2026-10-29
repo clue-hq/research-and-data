@@ -1,5 +1,6 @@
 "use client";
 
+import { useDesignThumbnail } from "@/features/gallery/hooks/use-design-thumbnail";
 import Link from "next/link";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useEffect, useRef, useState } from "react";
@@ -58,6 +59,8 @@ export function ArtifactLibraryPreview({
     ...new Set([artifact.imagePath, ...(artifact.canvasPagePaths ?? [])]),
   ];
   const imagePath = paths[page] ?? artifact.imagePath;
+  // A design thumbnail may still be rendering: shown once ready, retried meanwhile.
+  const preview = useDesignThumbnail(imagePath);
   const normalized = normalizeGalleryArtifact(artifact);
   const projectId = artifact.projectId;
   const href = projectArtifactHref(projectId, artifact.id);
@@ -112,7 +115,7 @@ export function ArtifactLibraryPreview({
             <div className={styles.previewImage}>
               {/* The original asset, rather than an optimized thumbnail, is the downloadable preview. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img alt={artifact.title} src={imagePath} />
+              {preview.src ? <img alt={artifact.title} src={preview.src} /> : null}
             </div>
             {paths.length > 1 ? (
               <nav className={styles.pageControls} aria-label="Artifact pages">

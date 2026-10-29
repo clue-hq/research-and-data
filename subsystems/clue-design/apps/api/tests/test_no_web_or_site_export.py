@@ -19,7 +19,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from conftest import make_blob_store, make_client, published_html
+from conftest import fetch_thumbnail, make_blob_store, make_client, published_html
 from lumen_api.main import create_app
 from site_kit_support import (
     chromium_available,
@@ -58,7 +58,7 @@ def assert_no_export_route(client: TestClient, document_id: str) -> None:
 
 
 def assert_thumbnail(client: TestClient, document_id: str) -> None:
-    response = client.get(f"/documents/{document_id}/thumbnail")
+    response = fetch_thumbnail(client, f"/documents/{document_id}/thumbnail")
     assert response.status_code == 200, response.text
     assert response.headers["content-type"] == "image/png"
     assert Image.open(io.BytesIO(response.content)).format == "PNG"

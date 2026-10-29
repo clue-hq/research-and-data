@@ -854,25 +854,48 @@ def targets_block(targets: Sequence[Mapping[str, Any]], site: Mapping[str, Any] 
         "In your report, say what you did for each part, or why you did not."
     )
 
-def _component_entry(name: str, props_schema: Mapping[str, Any]) -> str:
-    return f"Use it with `\"type\": \"{name}\"` and these props:\n\n```json\n{json.dumps(props_schema, indent=1)}\n```\n"
+#: Where a section's own code is written for the agent to read: catalog/sections/<Name>.tsx.
+SECTION_CODE_DIR = "catalog/sections"
 
 
-def seller_components_markdown(schemas: Mapping[str, Mapping[str, Any]]) -> str:
+def _component_entry(name: str, props_schema: Mapping[str, Any], *, has_code: bool = False) -> str:
+    entry = f"Use it with `\"type\": \"{name}\"` and these props:\n\n```json\n{json.dumps(props_schema, indent=1)}\n```\n"
+    if has_code:
+        entry += (f"\nIts code is in `{SECTION_CODE_DIR}/{name}.tsx`. To change this section, start from that "
+                  f"code and write it again with write_section under the same name: every page that places "
+                  f"it shows the new version.\n")
+    return entry
+
+
+def seller_components_markdown(sections: Mapping[str, SiteSection]) -> str:
     """catalog/seller-components.md for the sections the turn may place (the spike's format)."""
 
-    return _COMPONENTS_HEADER + "".join(f"\n## {name}\n{_component_entry(name, schema)}" for name, schema in schemas.items())
+    return _COMPONENTS_HEADER + "".join(
+        f"\n## {name}\n{_component_entry(name, s.props_schema, has_code=bool(s.source))}" for name, s in sections.items()
+    )
 
 
-def record_component(workspace: Path, name: str, props_schema: Mapping[str, Any]) -> None:
-    """Add or replace one section in catalog/seller-components.md (the spike's `_record_component`)."""
+def write_section_code(workspace: Path, name: str, source: str) -> None:
+    """One section's own code at catalog/sections/<Name>.tsx (nothing when its code is unknown)."""
 
+    if not source:
+        return
+    path = workspace / SECTION_CODE_DIR / f"{name}.tsx"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(source)
+
+
+def record_component(workspace: Path, name: str, props_schema: Mapping[str, Any], source: str = "") -> None:
+    """Add or replace one section in catalog/seller-components.md (the spike's `_record_component`),
+    and write its code beside it when known."""
+
+    write_section_code(workspace, name, source)
     path = workspace / "catalog" / "seller-components.md"
     entries: dict[str, str] = {}
     if path.exists():
         for chunk in path.read_text().split("\n## ")[1:]:
             entries[chunk.split("\n", 1)[0].strip()] = chunk.split("\n", 1)[1] if "\n" in chunk else ""
-    entries[name] = _component_entry(name, props_schema)
+    entries[name] = _component_entry(name, props_schema, has_code=bool(source))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_COMPONENTS_HEADER + "".join(f"\n## {n}\n{body}" for n, body in entries.items()))
 
@@ -937,7 +960,9 @@ def materialize_workspace(
     if inputs.agent_sections:
         components = workspace / "catalog" / "seller-components.md"
         components.parent.mkdir(parents=True, exist_ok=True)
-        components.write_text(seller_components_markdown({n: s.props_schema for n, s in inputs.agent_sections.items()}))
+        components.write_text(seller_components_markdown(inputs.agent_sections))
+        for name, section in inputs.agent_sections.items():
+            write_section_code(workspace, name, section.source)
 
     shutil.copytree(SITE_DIR / "skills", workspace / "skills")
     shutil.copytree(SITE_DIR / "skills-e5", workspace / "skills-e5")

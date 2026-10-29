@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import dataclasses
 import hashlib
 import io
 import json
@@ -34,7 +35,7 @@ from pydantic import BaseModel, Field, ValidationError
 from ..models.schemas import ClarificationQuestion
 
 from .inputs import SiteSection, SiteTurnInputs
-from .workspace import LOGO_CELLS, record_component, turn_brand, write_site_files
+from .workspace import LOGO_CELLS, record_component, site_components, site_pages_of, turn_brand, write_site_files
 
 FETCH_LIMIT = 12_000
 VIEW_ASSET_MAX = 4
@@ -269,9 +270,31 @@ class SiteTools:
         return {"pages": pages, "shell": shell.read_text() if shell.exists() else None}
 
     def site_unchanged(self) -> bool:
-        """True while the agent has not touched the site's files this request."""
+        """True while the agent has touched neither the site's files nor the code of a section its
+        pages place this request.
 
-        return self._site_files() == self._initial_files
+        A section rewritten under the name a page already places changes no page file, yet the page
+        now draws new code: that is a change to save (the NAV Logistics header, 2026-10-28, was
+        thrown away as "unchanged"). A section written but placed nowhere is not."""
+
+        if self._site_files() != self._initial_files:
+            return False
+        rewritten = self.turn_sections()
+        if not rewritten:
+            return True
+        try:
+            placed = {str(item.get("type")) for _route, item in site_components(self._parsed_site())}
+        except json.JSONDecodeError:
+            return True  # the files are as the turn found them; an unreadable page is the save's to refuse
+        return not (placed & set(rewritten))
+
+    def _parsed_site(self) -> dict:
+        files = self._site_files()
+        shell = json.loads(files["shell"]) if files["shell"] is not None else self.base_site.get("shell")
+        pages = {route: json.loads(text) for route, text in files["pages"].items()}
+        if "/" not in pages:  # as read_site_files reads them
+            pages = {**site_pages_of(self.base_site), **pages}
+        return {"pages": pages, "shell": shell}
 
     def turn_assets(self) -> dict[str, dict]:
         """The images this turn added to its brand (generated or found), by asset id."""
@@ -286,7 +309,10 @@ class SiteTools:
         """The sections this turn wrote (a new name, or a pinned name with new code)."""
 
         pinned = self.inputs.agent_sections
-        return {name: section for name, section in self.sections.items() if pinned.get(name) != section}
+        return {
+            name: section for name, section in self.sections.items()
+            if name not in pinned or pinned[name].digest != section.digest
+        }
 
     def _asset_by_file(self) -> dict[str, dict]:
         return {
@@ -317,9 +343,9 @@ class SiteTools:
             errors = [str(error) for error in answer.get("errors") or []]
             self._record("section_refused", name=name, errors=errors)
             return "NOT WRITTEN (fix these, then call write_section again):\n" + "\n".join(f"- {e}" for e in errors)
-        section = answer["section"]
+        section = dataclasses.replace(answer["section"], source=code)
         self.sections[name] = section
-        record_component(self.workspace, name, section.props_schema)
+        record_component(self.workspace, name, section.props_schema, section.source)
         self._record("section_written", name=name, digest=section.digest)
         return (f"WRITTEN: {name} is ready for this site. Place it in a page with \"type\": \"{name}\" and "
                 f"these props:\n{json.dumps(section.props_schema, indent=1)[:4000]}")

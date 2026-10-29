@@ -456,7 +456,7 @@ test("S2b-6: ⌘Z undoes the site only while it is on screen", async () => {
 
 
 // Review finding S2b-8: the brand carries the cloned sections a site can show, and the server builds
-// it from the site it holds (the catalog plus every clone the site uses). An undo that brings back a
+// it from the site it holds (only the clones the site places). An undo that brings back a
 // clone the current site had replaced must show that clone, not "Choose a cloned section": the
 // editor reads the brand again, and the frame is given the new one.
 test("review S2b-8: undo bringing back a cloned section gives the frame a brand that has it", async () => {

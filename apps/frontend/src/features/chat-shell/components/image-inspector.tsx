@@ -299,7 +299,7 @@ function AdTextInspector({
     // does not carry it — today's mount semantics, extended to every render.
     liveHydration: hydrated != null,
   });
-  const { requestAction, setNestedValue, setValue, state, toggleSection } = controller;
+  const { previewValue, requestAction, setNestedValue, setValue, state, toggleSection } = controller;
   const paletteOptions = useScenePaletteOptions();
   // §1.6: the two colour rows this schema owns. Brand swatches are offered
   // FIRST — they ARE the Theme tab, the tab `ColorControl` opens on, with
@@ -308,6 +308,7 @@ function AdTextInspector({
   const colorRow = useAdColorRow({
     hydratedValue: state.textColor,
     onHex: (hex) => setValue("textColor", hex),
+    onPreview: (hex) => previewValue("textColor", hex),
     onToken: (label) => setValue("tokenTextColor", label),
     paletteOptions,
   });
@@ -326,6 +327,7 @@ function AdTextInspector({
   const strokeRow = useAdColorRow({
     hydratedValue: state.strokeColor,
     onHex: (hex) => setValue("strokeColor", hex),
+    onPreview: (hex) => previewValue("strokeColor", hex),
     onToken: (label) => setValue("tokenStrokeColor", label),
     paletteOptions,
   });
@@ -336,7 +338,7 @@ function AdTextInspector({
         {/* Founder 2026-10-19: no Text field. Rung A's content row predates
             canvas editing; the words are now edited on the ad itself
             (double-click), so the panel only styles them. */}
-        <InspectorField label="Color"><ColorControl color={colorRow.color} disabled={inert} onColorChange={colorRow.onColorChange} onTokenChange={colorRow.onTokenChange} options={paletteOptions} /></InspectorField>
+        <InspectorField label="Color"><ColorControl color={colorRow.color} disabled={inert} onColorChange={colorRow.onColorChange} onColorPreview={colorRow.onColorPreview} onTokenChange={colorRow.onTokenChange} options={paletteOptions} /></InspectorField>
         <InspectorField label="Font"><InspectorSelect disabled={typographyInert} label="Font family" onChange={(value) => setValue("fontFamily", value)} options={fontOptions} value={typographyUnavailable ? "" : state.fontFamily} /></InspectorField>
         <div className={styles.fieldGrid}>
           {/* §2 delta (contract row 2): the size select becomes a free number. */}
@@ -347,7 +349,7 @@ function AdTextInspector({
         <InspectorField label="Alignment"><TextAlignment disabled={inert} horizontal={state.horizontalAlignment} onHorizontalChange={(value) => setValue("horizontalAlignment", value)} onVerticalChange={(value) => setValue("verticalAlignment", value)} options="four" vertical={state.verticalAlignment} /></InspectorField>
       </Section>
       <Section id="stroke" label="Stroke" open={state.openSections.stroke} toggle={() => toggleSection("stroke")}>
-        <InspectorField label="Color"><ColorControl color={strokeRow.color} disabled={inert} onColorChange={strokeRow.onColorChange} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} /></InspectorField>
+        <InspectorField label="Color"><ColorControl color={strokeRow.color} disabled={inert} onColorChange={strokeRow.onColorChange} onColorPreview={strokeRow.onColorPreview} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} /></InspectorField>
         <InspectorField label="Width"><InspectorInput ariaLabel="Stroke width" disabled={inert} onCommitValue={(value) => setValue("strokeWidth", value)} value={state.strokeWidth} /></InspectorField>
       </Section>
       <Section id="layout" label="Layout" open={state.openSections.layout} toggle={() => toggleSection("layout")}>
@@ -419,7 +421,7 @@ function AdCanvasInspector({
     // schema's controller for why the flag reads the prop and not `initial`.
     liveHydration: hydrated != null,
   });
-  const { setValue, state, toggleSection } = controller;
+  const { previewValue, setValue, state, toggleSection } = controller;
   const palette = useScenePalette();
   const paletteOptions = useScenePaletteOptions();
   // §1.6: the Background section's colour row, through the same hook the text
@@ -430,6 +432,7 @@ function AdCanvasInspector({
   const backgroundRow = useAdColorRow({
     hydratedValue: state.backgroundColor,
     onHex: (hex) => setValue("backgroundColor", hex),
+    onPreview: (hex) => previewValue("backgroundColor", hex),
     onToken: (label) => setValue("tokenBackgroundColor", label),
     paletteOptions,
   });
@@ -551,6 +554,7 @@ function AdCanvasInspector({
            
             onFillChange={changeBackgroundFill}
             onSolidColorChange={backgroundRow.onColorChange}
+            onSolidColorPreview={backgroundRow.onColorPreview}
             onTokenChange={backgroundRow.onTokenChange}
             options={paletteOptions}
             solidColor={backgroundRow.color}

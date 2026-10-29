@@ -999,6 +999,20 @@ test("a turn running inside an open leg is generating; the opener is not", () =>
   assert.equal(assistantOf(state, "turn-design").generatingDesign, true);
 });
 
+// Comments (2026-10-29): the server moves the leg to the page a comment was left on, on the
+// comment's own turn — that turn designs, so it is generating, and it is not the leg's opener.
+test("a leg the server opened on the comment's own turn shows that turn generating", () => {
+  for (const type of ["leg.opened", "leg.reopened"] as const) {
+    const state = apply(emptyTranscriptState(), [
+      legFrame({ type: "leg.closed", leg_id: "leg-1", reason: "abandoned" }, "turn-comment"),
+      legFrame({ type, leg_id: "leg-9", leg_turn: true }, "turn-comment"),
+      legFrame({ type: "turn.started" }, "turn-comment"),
+    ]);
+    assert.deepEqual(state.designLeg, { known: true, open: true, legId: "leg-9", openedByTurnId: null });
+    assert.equal(assistantOf(state, "turn-comment").generatingDesign, true, type);
+  }
+});
+
 test("nothing is generating once the leg has closed", () => {
   const state = apply(emptyTranscriptState(), [
     legFrame({ type: "leg.opened", leg_id: "leg-9" }, "turn-open"),

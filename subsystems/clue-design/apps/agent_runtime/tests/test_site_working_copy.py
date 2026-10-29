@@ -228,6 +228,9 @@ def test_a_section_written_and_an_image_found_before_the_death_survive_the_takeo
     generated = next(iter(state["assets"].values()))
     assert tools.brand["assets"][next(iter(state["assets"]))] == generated
     assert "## QuoteBand" in (tmp_path / "b" / "workspace" / "catalog" / "seller-components.md").read_text()
+    # Its code is back where the agent reads it, so the taken-over turn edits it rather than guessing.
+    assert (tmp_path / "b" / "workspace" / "catalog" / "sections" / "QuoteBand.tsx").read_text() == (
+        "export function render() {}")
 
 
 def test_the_copy_holds_the_turns_work_and_never_its_inputs(tmp_path: Path, monkeypatch) -> None:

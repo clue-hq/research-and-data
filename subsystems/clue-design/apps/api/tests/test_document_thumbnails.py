@@ -15,7 +15,9 @@ a fake response would prove none of them.
 from __future__ import annotations
 
 import functools
+import hashlib
 import io
+import threading
 import json
 from pathlib import Path
 
@@ -23,7 +25,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from conftest import make_blob_store, make_client
+from conftest import fetch_thumbnail, make_blob_store, make_client, settle_thumbnails, thumbnail_failures
 
 from lumen_api import document_thumbnails as thumbs
 from lumen_api.core import CoreError
@@ -253,15 +255,81 @@ def test_web_thumbnail_generates_once_then_serves_from_cache(
         return _png(724, 543)
 
     monkeypatch.setattr("lumen_api.document_thumbnails.web_thumbnail_png", fake_capture)
-    first = client.get(f"/documents/{seeded_web_document}/thumbnail")
+    first = fetch_thumbnail(client, f"/documents/{seeded_web_document}/thumbnail")
     assert first.status_code == 200, first.text
     assert first.headers["content-type"] == "image/png"
     second = client.get(f"/documents/{seeded_web_document}/thumbnail")
     assert second.status_code == 200, second.text
+    assert second.headers["x-thumbnail-state"] == "fresh"
     assert len(calls) == 1  # the second hit came from the blob cache
     assert second.content == first.content
     # The capture ran against the document's own composed render, not a stub.
     assert "Thumbnail" in calls[0]
+
+
+def test_a_brand_new_document_answers_pending_and_renders_in_the_background(
+    client: TestClient, seeded_web_document: str, monkeypatch
+) -> None:
+    # Production 2026-10-28: the route rendered inside the request (site renders ~52 s
+    # each, 73 at once). Now it never renders: nothing cached yet is an immediate 202.
+    monkeypatch.setattr(
+        "lumen_api.document_thumbnails.web_thumbnail_png", lambda html, **kw: _png(32, 24)
+    )
+    pending = client.get(f"/documents/{seeded_web_document}/thumbnail")
+    assert pending.status_code == 202
+    assert pending.headers["x-thumbnail-state"] == "pending"
+    assert pending.headers["cache-control"] == "no-store"
+    assert pending.content == b""
+    settle_thumbnails(client)
+    ready = client.get(f"/documents/{seeded_web_document}/thumbnail")
+    assert ready.status_code == 200 and ready.headers["x-thumbnail-state"] == "fresh"
+    assert ready.content == _png(32, 24)
+
+
+def test_while_a_new_version_renders_the_newest_older_card_is_served_stale(
+    client: TestClient, seeded_web_document: str, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        "lumen_api.document_thumbnails.web_thumbnail_png", lambda html, **kw: _png(40, 30)
+    )
+    version = client.get(f"/documents/{seeded_web_document}").json()["current_version"]
+    # An older version's card is cached; the current version has none yet.
+    older = _png(8, 6)
+    make_blob_store(client.app).register(older, media_type="image/png", source_key="document_thumbnail")
+    HybridRepository().record_document_thumbnail(
+        seeded_web_document, version - 1, sha256=hashlib.sha256(older).hexdigest(), media_type="image/png"
+    )
+    stale = client.get(f"/documents/{seeded_web_document}/thumbnail?v={version}")
+    assert stale.status_code == 200
+    assert stale.headers["x-thumbnail-state"] == "stale"
+    # Never cached under the current version's key: it is not that version's card.
+    assert stale.headers["cache-control"] == "no-store"
+    assert stale.content == older
+    settle_thumbnails(client)
+    fresh = client.get(f"/documents/{seeded_web_document}/thumbnail?v={version}")
+    assert fresh.headers["x-thumbnail-state"] == "fresh"
+    assert fresh.headers["cache-control"] == "private, max-age=31536000, immutable"
+    assert fresh.content == _png(40, 30)
+
+
+def test_many_requests_for_one_new_version_render_it_once(
+    client: TestClient, seeded_web_document: str, monkeypatch
+) -> None:
+    # Production 2026-10-28: one site version was rendered 40 times.
+    release = threading.Event()
+    calls = []
+
+    def slow_capture(html, **kwargs):
+        calls.append(1)
+        release.wait(10)
+        return _png(16, 12)
+
+    monkeypatch.setattr("lumen_api.document_thumbnails.web_thumbnail_png", slow_capture)
+    answers = [client.get(f"/documents/{seeded_web_document}/thumbnail").status_code for _ in range(6)]
+    assert answers == [202] * 6
+    release.set()
+    settle_thumbnails(client)
+    assert len(calls) == 1
 
 
 def test_matching_version_gets_immutable_caching(
@@ -271,7 +339,7 @@ def test_matching_version_gets_immutable_caching(
         "lumen_api.document_thumbnails.web_thumbnail_png", lambda html, **kw: _png(7, 5)
     )
     version = client.get(f"/documents/{seeded_web_document}").json()["current_version"]
-    fresh = client.get(f"/documents/{seeded_web_document}/thumbnail?v={version}")
+    fresh = fetch_thumbnail(client, f"/documents/{seeded_web_document}/thumbnail?v={version}")
     assert fresh.status_code == 200, fresh.text
     assert fresh.headers["cache-control"] == "private, max-age=31536000, immutable"
     stale = client.get(f"/documents/{seeded_web_document}/thumbnail?v=999999")
@@ -300,7 +368,7 @@ def test_thumbnail_regenerates_when_the_index_row_dangles(
         return _png(64, 48)
 
     monkeypatch.setattr("lumen_api.document_thumbnails.web_thumbnail_png", fake_capture)
-    response = client.get(f"/documents/{seeded_web_document}/thumbnail")
+    response = fetch_thumbnail(client, f"/documents/{seeded_web_document}/thumbnail")
     assert response.status_code == 200, response.text
     assert len(calls) == 1
     assert response.content == _png(64, 48)
@@ -317,7 +385,7 @@ def test_scene_thumbnail_goes_through_the_engine_export(
         raise AssertionError("a scene document must not take the web capture path")
 
     monkeypatch.setattr("lumen_api.document_thumbnails.web_thumbnail_png", refuse)
-    response = client.get(f"/documents/{seeded_scene_document}/thumbnail")
+    response = fetch_thumbnail(client, f"/documents/{seeded_scene_document}/thumbnail")
     assert response.status_code == 200, response.text
     assert response.headers["content-type"] == "image/png"
     image = Image.open(io.BytesIO(response.content))
@@ -340,7 +408,7 @@ def test_scene_thumbnail_generates_once_then_serves_from_cache(
         return real_export(*args, **kwargs)
 
     monkeypatch.setattr(client.app.state.core, "export_preview", counting_export)
-    first = client.get(f"/documents/{seeded_scene_document}/thumbnail")
+    first = fetch_thumbnail(client, f"/documents/{seeded_scene_document}/thumbnail")
     assert first.status_code == 200, first.text
     second = client.get(f"/documents/{seeded_scene_document}/thumbnail")
     assert second.status_code == 200, second.text
@@ -354,7 +422,7 @@ def test_generated_thumbnail_bytes_land_in_the_blob_store(
     monkeypatch.setattr(
         "lumen_api.document_thumbnails.web_thumbnail_png", lambda html, **kw: _png(80, 60)
     )
-    response = client.get(f"/documents/{seeded_web_document}/thumbnail")
+    response = fetch_thumbnail(client, f"/documents/{seeded_web_document}/thumbnail")
     assert response.status_code == 200, response.text
     version = client.get(f"/documents/{seeded_web_document}").json()["current_version"]
     recorded = HybridRepository().get_document_thumbnail(seeded_web_document, version)
@@ -364,52 +432,55 @@ def test_generated_thumbnail_bytes_land_in_the_blob_store(
     assert data == response.content
 
 
-def test_generation_failure_is_a_typed_502(
+def _expect_background_failure(client: TestClient, document_id: str, code: str) -> str:
+    """A render that fails in the background: the card stays pending, the failure is logged
+    with its typed code, and no cache row claims a thumbnail exists."""
+    failures = thumbnail_failures(client)
+    response = client.get(f"/documents/{document_id}/thumbnail")
+    assert response.status_code == 202, response.text
+    settle_thumbnails(client)
+    assert failures and failures[-1]["error_code"] == code, failures
+    version = client.get(f"/documents/{document_id}").json()["current_version"]
+    assert HybridRepository().get_document_thumbnail(document_id, version) is None
+    # Still pending: the next read asks the queue again rather than serving nothing forever.
+    assert client.get(f"/documents/{document_id}/thumbnail").status_code == 202
+    settle_thumbnails(client)
+    return failures[-1]["error"]
+
+
+def test_generation_failure_is_logged_with_its_typed_code(
     client: TestClient, seeded_web_document: str, monkeypatch
 ) -> None:
     def refuse(html, **kwargs):
         raise thumbs.ThumbnailUnavailable("thumbnail.capture_failed", "boom")
 
     monkeypatch.setattr("lumen_api.document_thumbnails.web_thumbnail_png", refuse)
-    response = client.get(f"/documents/{seeded_web_document}/thumbnail")
-    assert response.status_code == 502, response.text
-    assert response.json()["detail"]["code"] == "thumbnail.capture_failed"
-    # A refusal must not leave a cache row claiming a thumbnail exists.
-    version = client.get(f"/documents/{seeded_web_document}").json()["current_version"]
-    assert HybridRepository().get_document_thumbnail(seeded_web_document, version) is None
+    assert _expect_background_failure(client, seeded_web_document, "thumbnail.capture_failed") == "boom"
 
 
-def test_engine_helper_failure_is_a_typed_502(
+def test_engine_helper_failure_is_logged_as_export_failed(
     client: TestClient, seeded_scene_document: str, monkeypatch
 ) -> None:
     # `raise_on_error=False` does NOT cover a helper that never answered: `_run`
-    # raises CoreError before that flag is read. Un-normalized it would leave the
-    # route as a raw 500.
+    # raises CoreError before that flag is read. It is still a typed, logged failure.
     def refuse(*args, **kwargs):
         raise CoreError("helper.process", "the helper process died")
 
     monkeypatch.setattr(client.app.state.core, "export_preview", refuse)
-    response = client.get(f"/documents/{seeded_scene_document}/thumbnail")
-    assert response.status_code == 502, response.text
-    assert response.json()["detail"]["code"] == "thumbnail.export_failed"
+    _expect_background_failure(client, seeded_scene_document, "thumbnail.export_failed")
 
 
-def test_render_failure_is_a_typed_502_not_the_render_route_s_422(
+def test_render_failure_is_logged_as_render_failed_not_the_render_route_s_422(
     client: TestClient, seeded_web_document: str, monkeypatch
 ) -> None:
     # The real escape path: `render_web_document` converts its own CoreError with
-    # `core_http_error` into a 422 `web_render.*`, which would propagate straight
-    # out of this route. Patch the CORE so that whole conversion really runs.
+    # `core_http_error` into a 422 `web_render.*`. Patch the CORE so that whole
+    # conversion really runs, and it is still logged as a render failure.
     def refuse(*args, **kwargs):
         raise CoreError("web_render.failed", "the web renderer died")
 
     monkeypatch.setattr(client.app.state.core, "web_render", refuse)
-    response = client.get(f"/documents/{seeded_web_document}/thumbnail")
-    assert response.status_code == 502, response.text
-    assert response.json()["detail"]["code"] == "thumbnail.render_failed"
-    # And nothing was cached behind the refusal.
-    version = client.get(f"/documents/{seeded_web_document}").json()["current_version"]
-    assert HybridRepository().get_document_thumbnail(seeded_web_document, version) is None
+    _expect_background_failure(client, seeded_web_document, "thumbnail.render_failed")
 
 
 def test_unknown_document_is_404(client: TestClient) -> None:
@@ -555,7 +626,7 @@ def test_scene_thumbnail_resolves_tokens_and_geometry(
     before = client.get(f"/documents/{seeded_token_scene_document}")
     assert before.status_code == 200, before.text
 
-    response = client.get(f"/documents/{seeded_token_scene_document}/thumbnail")
+    response = fetch_thumbnail(client, f"/documents/{seeded_token_scene_document}/thumbnail")
     assert response.status_code == 200, response.text
     assert response.headers["content-type"] == "image/png"
     image = Image.open(io.BytesIO(response.content)).convert("RGB")

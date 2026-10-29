@@ -282,3 +282,37 @@ def published_page_html(workspace_id: str, slug: str, route: str) -> str:
     page = published_page(workspace_id, slug, route)
     assert page is not None, f"site {slug!r} serves no route {route!r}"
     return str(page["html"])
+
+
+# --- gallery thumbnails: rendered in the background (thumbnail_queue.py) ---------------------
+
+
+def settle_thumbnails(client: TestClient, timeout: float = 60) -> None:
+    """Wait until no thumbnail render is queued or running for this app."""
+    assert client.app.state.thumbnail_queue.wait_idle(timeout), "thumbnail renders did not finish"
+
+
+def fetch_thumbnail(client: TestClient, path: str):
+    """GET a thumbnail; when it is not ready yet (pending or stale), let the background render
+    finish and GET it again — what the gallery card does with its retries."""
+    response = client.get(path)
+    if response.headers.get("x-thumbnail-state") != "fresh":
+        settle_thumbnails(client)
+        response = client.get(path)
+    return response
+
+
+def thumbnail_failures(client: TestClient) -> list:
+    """The `document_thumbnail_failed` events this app's queue logs from now on (code, error)."""
+    queue = client.app.state.thumbnail_queue
+    if not hasattr(queue, "recorded_failures"):
+        queue.recorded_failures = []
+        logged = queue._log
+
+        def record(event, **fields):
+            if event == "document_thumbnail_failed":
+                queue.recorded_failures.append(fields)
+            logged(event, **fields)
+
+        queue._log = record
+    return queue.recorded_failures
