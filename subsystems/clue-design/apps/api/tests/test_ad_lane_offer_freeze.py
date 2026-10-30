@@ -178,3 +178,21 @@ def test_the_offerer_freezes_each_creatives_headline_and_copy(
 def test_nothing_auto_attaches_any_more() -> None:
     for retired in ("select_reference_asset_ids", "choose_style_group", "AUTO_REFERENCE_MAX"):
         assert not hasattr(ad_runtime, retired)
+
+
+def test_the_offerer_freezes_only_the_post_copy_the_list_shows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The list shows 200 characters of post copy; a queued turn carries no more than that."""
+
+    class _LongCopyStore(_RecordingStore):
+        def list_creatives(self, *, limit: int = 50) -> list[dict]:
+            return [{"creative_id": "cr_9", "asset_id": "asset_9", "headline": "H9",
+                     "commentary": "word  " * 100, "created_at": None}]
+
+    monkeypatch.setattr(settings, "lumen_brand_ad_assets", True, raising=False)
+    frozen = ad_runtime.frozen_lane_payload("ws_test", store=_LongCopyStore())
+    assert frozen is not None
+    commentary = frozen["creatives"][0]["commentary"]
+    assert len(commentary) <= 200
+    assert commentary.startswith("word word word")

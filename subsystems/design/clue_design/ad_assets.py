@@ -469,18 +469,29 @@ def reduce_creative_assets(creatives: list[JsonObject]) -> dict[str, str]:
     }
 
 
+#: How much of an ad's post copy the agent's ad list shows (and so how much a lane carries).
+POST_COPY_CHARS = 200
+
+
+def _post_copy(value: Any) -> str | None:
+    if value is None:
+        return None
+    return " ".join(str(value).split())[:POST_COPY_CHARS]
+
+
 def reduce_creatives(rows: list[JsonObject]) -> list[JsonObject]:
     """Each harvested creative reduced to what the agent's ad list needs, in the rows' order.
 
     Spec 2026-10-30 (reference ads §5.5): the agent sees every ad with its headline and post
-    copy. A row missing either id contributes nothing — there are no bytes to open.
+    copy — the first ``POST_COPY_CHARS`` of it, which is all its list shows, so a frozen lane
+    carries no more. A row missing either id contributes nothing — there are no bytes to open.
     """
     return [
         {
             "creative_id": str(row["creative_id"]),
             "asset_id": str(row["asset_id"]),
             "headline": row.get("headline"),
-            "commentary": row.get("commentary"),
+            "commentary": _post_copy(row.get("commentary")),
             "created_at": row.get("created_at"),
         }
         for row in rows
