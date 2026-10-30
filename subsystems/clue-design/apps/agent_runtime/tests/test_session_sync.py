@@ -147,3 +147,16 @@ def test_a_snapshot_can_leave_out_regenerated_folders(tmp_path: Path) -> None:
     # The default leaves out nothing, byte-identical to the web and scene lanes.
     everything = snapshot_session(session, register=_Blobs().register, history_file=None)
     assert "workspace/research/overview.md" in everything["files"]
+
+
+def test_the_chats_files_never_travel_in_a_session_snapshot(tmp_path: Path) -> None:
+    """Review I-2 (2026-10-30): attachments/ is rebuilt from the platform every turn, so a copy in
+    the session's memory is churn, and a second copy of a file the person may later erase."""
+
+    session = tmp_path / "sessions" / "dsess_b"
+    (session / "workspace" / "attachments").mkdir(parents=True)
+    (session / "workspace" / "attachments" / "brief.pdf").write_bytes(b"%PDF-1.4")
+    (session / "workspace" / "outputs").mkdir()
+    (session / "workspace" / "outputs" / "chart.png").write_bytes(b"\x89PNG")
+    manifest = snapshot_session(session, register=_Blobs().register, history_file=None)
+    assert set(manifest["files"]) == {"workspace/outputs/chart.png"}
