@@ -2262,6 +2262,10 @@ name = "lumen-agent-runtime"
 version = "0.0.0"
 source = { editable = "subsystems/clue-design/apps/agent_runtime" }
 dependencies = [
+    { name = "clue-agents" },
+    { name = "clue-config" },
+    { name = "clue-core" },
+    { name = "clue-design" },
     { name = "clue-gateway" },
     { name = "clue-obs" },
     { name = "clue-spend" },
@@ -2284,6 +2288,10 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "clue-agents", editable = "platform/agents" },
+    { name = "clue-config", editable = "libs/clue-config" },
+    { name = "clue-core", editable = "libs/clue-core" },
+    { name = "clue-design", editable = "subsystems/design" },
     { name = "clue-gateway", editable = "libs/clue-gateway" },
     { name = "clue-obs", editable = "libs/clue-obs" },
     { name = "clue-spend", editable = "libs/clue-spend" },

@@ -71,6 +71,13 @@ dependencies = [
     # lumen_agent.config -> py_lumen_config.
     "py-lumen-obs",
     "py-lumen-config",
+    # Real import edges too (2026-10-30, review M-6): the shared sandbox and attachment images
+    # (clue_agents), the sandbox settings (clue_config), and two edges that predated being
+    # declared — scoped preferences (clue_core) and asset storage helpers (clue_design).
+    "clue-agents",
+    "clue-config",
+    "clue-core",
+    "clue-design",
 ]
 
 [build-system]
@@ -87,3 +94,7 @@ clue-obs = { workspace = true }
 clue-spend = { workspace = true }
 py-lumen-obs = { workspace = true }
 py-lumen-config = { workspace = true }
+clue-agents = { workspace = true }
+clue-config = { workspace = true }
+clue-core = { workspace = true }
+clue-design = { workspace = true }
