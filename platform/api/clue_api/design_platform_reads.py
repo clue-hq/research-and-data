@@ -48,13 +48,13 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
-from pathlib import PurePosixPath
 from typing import Any, TypeVar
 from uuid import UUID, uuid4
 
 from sqlalchemy import text
 
 from clue_agents.attachment_images import viewable_image
+from clue_agents.attachment_names import safe_attachment_name
 from clue_api.arv2.icp_confirmation import current_project_icp_pin
 from clue_api.brand_knowledge_context import (
     PinnedDocument,
@@ -137,13 +137,6 @@ class AttachedFile:
     current: bool
     viewable: tuple[bytes, str] | None
     unavailable: str | None
-
-
-def _safe_filename(name: str) -> str:
-    """One path segment: ``../x.png`` is ``x.png``, so a file can never land outside its folder."""
-
-    segment = PurePosixPath(name.replace("\\", "/")).name.strip().lstrip(".")
-    return segment or "attachment"
 
 
 def _viewable(data: bytes, media_type: str) -> tuple[bytes, str] | None:
@@ -450,7 +443,7 @@ class DesignPlatformReads:
                 if unavailable is None:
                     spent += len(data)
             files[id(item)] = AttachedFile(
-                filename=_safe_filename(str(item["filename"])),
+                filename=safe_attachment_name(str(item["filename"])),
                 media_type=media_type,
                 sha256=str(item["sha256"]),
                 data=data,
