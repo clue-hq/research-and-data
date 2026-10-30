@@ -107,14 +107,25 @@ def background_prompt_for(*, prose: str, shape_label: str, brand_name: str | Non
         "Leave out everything placed on top of it: its words, logo, people, product shots and "
         "screenshots.",
     ]
-    described = str(prose or "").strip()[:PROSE_IN_PROMPT_CHARS].rstrip()
+    described = _bounded(str(prose or "").strip())
     if described:
-        parts.append(f"The brand's published ads, described: {described.removesuffix('.')}.")
+        ending = "" if described.endswith(("!", "?")) else "."
+        parts.append(f"The brand's published ads, described: {described.removesuffix('.')}{ending}")
     parts.append(
         "Produce a background image only. No text of any kind, no letters, no numbers, no "
         "wordmark, no logo, no watermark, no user interface."
     )
     return " ".join(parts)
+
+
+def _bounded(prose: str) -> str:
+    """At most ``PROSE_IN_PROMPT_CHARS`` of the prose, cut between words where it has any."""
+    if len(prose) <= PROSE_IN_PROMPT_CHARS:
+        return prose
+    cut = prose[:PROSE_IN_PROMPT_CHARS]
+    if not prose[PROSE_IN_PROMPT_CHARS].isspace() and " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+    return cut.rstrip()
 
 
 def shape_for(image_bytes: bytes) -> tuple[str, str]:

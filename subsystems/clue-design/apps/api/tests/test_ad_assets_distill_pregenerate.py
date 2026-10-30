@@ -152,6 +152,20 @@ def test_the_prompt_is_the_approved_text() -> None:
     )
 
 
+def test_a_prose_ending_in_its_own_mark_gets_no_extra_full_stop() -> None:
+    for prose in ("Loud and bright!", "Loud and bright?"):
+        assert f"described: {prose} Produce" in background_prompt_for(
+            prose=prose, shape_label="square", brand_name="Acme"
+        )
+
+
+def test_a_long_prose_is_cut_between_words() -> None:
+    prompt = background_prompt_for(prose="teal field " * 200, shape_label="wide", brand_name=None)
+    described = prompt.split("described: ", 1)[1].split(" Produce", 1)[0]
+    assert described.endswith("field.") or described.endswith("teal.")
+    assert len(described) <= PROSE_IN_PROMPT_CHARS + 1
+
+
 def test_no_brand_and_no_prose_still_read_as_sentences() -> None:
     prompt = background_prompt_for(prose="  ", shape_label="wide", brand_name=None)
     assert prompt.startswith("A wide background for a brand's advertising. ")
