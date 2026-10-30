@@ -90,7 +90,7 @@ def test_attached_images_register_once_each_under_the_files_own_digest(tmp_path,
     assert [r["id"] for r in invocations.records] == [first[files[0].sha256], first[files[1].sha256]] * 2
     record = invocations.records[0]
     assert record["label"] == "photo.png" and ATTACHED_IN_CHAT_TAG in record["tags"]
-    assert record["source"]["kind"] == "chat_attachment"
+    assert record["source"]["kind"] == "uploaded"
     assert [call["kind"] for call in core.calls[:2]] == ["raster_image", "vector"]
 
 
@@ -132,3 +132,29 @@ def test_a_leg_ad_turns_request_gains_this_messages_images(monkeypatch) -> None:
 
     updated = main._with_attached_references(None, envelope, None, payload, _Reads())
     assert updated.reference_asset_ids == ["asset_tagged", "asset_att_photo.png"]
+
+
+def test_the_real_engine_registers_an_attached_png_and_svg(tmp_path, design_storage) -> None:
+    """The fake core above accepts any source; the engine does not. Review C-1 (2026-10-30): a
+    source kind the engine has no variant for made it refuse every attached image."""
+
+    import io
+
+    from PIL import Image
+
+    from lumen_api.core import CoreClient
+
+    out = io.BytesIO()
+    Image.new("RGB", (8, 6), (10, 20, 30)).save(out, format="PNG")
+    blobs = make_blob_store(create_app(tmp_path / "engine-cache", storage=design_storage))
+    invocations = _Invocations()
+    files = [_image("photo.png", out.getvalue(), "image/png"), _image("logo.svg", SVG, "image/svg+xml")]
+    registered = register_attached_images(
+        core=CoreClient(), blobs=blobs, cache_dir=tmp_path / "cache", invocations=invocations,
+        run_id="run_1", files=files,
+    )
+    assert set(registered) == {files[0].sha256, files[1].sha256}
+    record = invocations.records[0]
+    assert record["source"]["kind"] == "uploaded" and record["source"]["filename"] == "photo.png"
+    assert ATTACHED_IN_CHAT_TAG in record["tags"]
+    assert record["provenance"]["source_label"] == "chat_attachment"

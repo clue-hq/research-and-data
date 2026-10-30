@@ -75,8 +75,15 @@ def register_attached_images(
                 declared_mime_type=media_type,
                 filename=item.filename,
                 kind="vector" if media_type == "image/svg+xml" else "raster_image",
-                provenance={"source": "chat_attachment"},
-                source={"kind": "chat_attachment", "sha256": item.sha256},
+                # The engine's AssetSource has no chat-attachment variant: an attached image is an
+                # upload; that it came through the chat rides the tag and the provenance label.
+                provenance={"source_label": "chat_attachment"},
+                source={
+                    "kind": "uploaded",
+                    "asset_id": None,
+                    "filename": item.filename,
+                    "uploaded_by": None,
+                },
                 tags=[ATTACHED_IN_CHAT_TAG],
                 raise_on_error=False,
             )
