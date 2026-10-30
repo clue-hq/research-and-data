@@ -53,6 +53,7 @@ from .models.scene_tool_inputs import (
 from .models.schemas import ClarificationRequest, SceneVisualCritique, VisualCritique
 from .models.state import CONSTITUTION_FIELDS, LumenTurnState
 from .platform_reads import make_platform_read_tools, with_attachments_note
+from .sandbox_tool import design_run_python
 from .prompts import (
     SCENE_LOGO_SELECTION_GUIDANCE,
     SCENE_LS_DESCRIPTION,
@@ -867,6 +868,10 @@ def create_design_deepagent(
     # tail of the list stays the honest exits.
     for read_tool in platform_read_tools:
         orchestrator_tools.insert(len(orchestrator_tools) - 1, read_tool)
+    # Spec 2026-10-30 §3.5: on a leg turn the agent may run Python over the chat's files.
+    run_python = design_run_python(tools, workspace_root(tools), runtime_config.platform_reads)
+    if run_python is not None:
+        orchestrator_tools.insert(len(orchestrator_tools) - 1, run_python)
 
     if scene_solo:
         from .prompts import build_scene_solo_prompt

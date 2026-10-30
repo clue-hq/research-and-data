@@ -32,6 +32,7 @@ from py_lumen_obs import get_logger
 
 from ..config import AgentRuntimeConfig
 from ..platform_reads import with_attachments_note
+from ..sandbox_tool import design_run_python
 from .inputs import SiteSection, SiteTurnInputs
 from .tools import SiteTools, site_tool_set
 from .workspace import (
@@ -635,7 +636,11 @@ def build_site_agent(
     ]
     agent = create_agent(
         model,
-        tools=site_tool_set(tools),
+        tools=[
+            *site_tool_set(tools),
+            # Spec 2026-10-30 §3.5: on a leg request, Python over the chat's files.
+            *filter(None, [design_run_python(tools, tools.workspace, tools.inputs.platform_reads)]),
+        ],
         system_prompt=site_system_prompt(tools.workspace, live=live),
         middleware=middleware,
         checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),

@@ -34,6 +34,7 @@ from .config import AgentRuntimeConfig
 from .harness import _filesystem_permissions, _instrument
 from .materialize import materialize_agent_workspace
 from .models.schemas import VisualCritique
+from .sandbox_tool import design_run_python
 from .platform_reads import (
     PROJECT_CONTEXT_DIR,
     make_platform_read_tools,
@@ -515,6 +516,12 @@ def create_web_deepagent(
     if runtime_config.platform_reads is not None:
         for read_tool in platform_read_tools:
             orchestrator_tools.insert(len(orchestrator_tools) - 1, read_tool)
+        # Spec 2026-10-30 §3.5: Python over the chat's files.
+        run_python = design_run_python(
+            tools, tools.trace_dir / "workspace", runtime_config.platform_reads
+        )
+        if run_python is not None:
+            orchestrator_tools.insert(len(orchestrator_tools) - 1, run_python)
         tools.record(
             "orchestrator",
             "platform_reads_attached",
