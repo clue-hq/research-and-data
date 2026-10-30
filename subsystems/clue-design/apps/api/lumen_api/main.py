@@ -9743,9 +9743,8 @@ def run_agent_turn_preview(
             # W4: the brand's published-ad styles, DESCRIBED, ride the run BY VALUE next to
             # the brand card — the same rule as brand_kit and reference_assets. It is advisory
             # context and nothing more: no gate, no required structure, no refusal (D5). It
-            # rides whether or not this turn's references were auto-attached, because a human
-            # who attached their own references still benefits from knowing what this brand's
-            # published ads look like.
+            # rides whether or not the human attached references, because they still benefit
+            # from knowing what this brand's published ads look like.
             config = replace(config, ad_dna_card=ad_dna_card)
         ad_pregenerated = ad_runtime.context_pregenerated(ad_lane)
         if ad_pregenerated:
@@ -10971,7 +10970,7 @@ def execute_agent_turn_job(
     ``lease_worker_id`` is accepted for the fleet's one call shape and ignored: only the site
     turn's save is fenced by the attempt's worker (site-turn durability, 2026-10-16).
 
-    Every paid call the turn makes (image generation, the ad style-group tie-break) runs through
+    Every paid call the turn makes (image generation, for one) runs through
     this scope's ``ProviderCaller`` and lands on ``provider_call_ledger`` when the turn ends.
     ``spend_drain`` is the injected drain (PRE-1b): the platform passes one that also records a
     provider incident, so that bookkeeping lives once on its side.

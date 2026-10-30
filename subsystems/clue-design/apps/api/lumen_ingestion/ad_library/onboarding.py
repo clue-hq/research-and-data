@@ -500,7 +500,7 @@ def _card_and_imagery(
             "model": card.model,
         }
 
-    # --- step 3: pre-generate imagery per style group -----------------------------------------
+    # --- step 3: one background from each of up to four different ads ------------------------
     reporter("Creating brand imagery…", 0.8)
     _pregenerate(
         card,

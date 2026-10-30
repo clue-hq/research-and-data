@@ -100,8 +100,8 @@ class AgentRuntimeConfig:
     # byte-identical to today.
     reference_assets: dict | None = None
     # Brand Ad Assets W4: the workspace's ad-DNA card PAYLOAD — {"schema_version": 2,
-    # "prose": str, "style_groups": [{"name", "creative_ids"}]} — resolved by the API from
-    # the ad-assets lane and passed BY VALUE (same rule as brand_kit: the runtime never reads
+    # "prose": str, "style_groups": []} (groups retired 2026-10-30, always empty) — resolved
+    # by the API from the ad-assets lane and passed BY VALUE (same rule as brand_kit: the runtime never reads
     # the API database). It is ADVISORY context: a description of the ads this brand already
     # published, rendered into the composed frame payload next to the brand card. It is not a
     # gate, it carries no required structure, and nothing refuses a turn over it (ruling D5).
@@ -109,7 +109,7 @@ class AgentRuntimeConfig:
     # turn composes byte-identically to a pre-W4 one.
     ad_dna_card: dict | None = None
     # W5/R2-D: the pre-generated grounds the ad lane holds for the ACTIVE card, as a bounded
-    # list of {"asset_id", "style_group", "shape"} — resolved by the API from the same lane
+    # list of {"asset_id", "shape"} — resolved by the API from the same lane
     # read that produced `ad_dna_card` and passed BY VALUE for the same reason.
     #
     # This exists because the lane's third artifact kind was invisible. The ids were placeable

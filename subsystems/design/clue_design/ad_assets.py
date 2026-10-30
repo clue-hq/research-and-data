@@ -444,9 +444,9 @@ async def list_pregenerated_assets(
 #: and the read exists to resolve creative ids to asset ids — a lookup, not a scan.
 CREATIVE_SCAN = 200
 
-#: How many pre-generated grounds one turn's opening context names. Pre-generation writes 2
-#: per style group and a card carries at most 6 groups, so twelve is the whole of a
-#: well-formed lane rather than an arbitrary slice.
+#: How many pre-generated grounds one turn's opening context names. Pre-generation writes one
+#: per ad from up to four different ads, so twelve covers the latest few runs (older lanes
+#: made two per style group, at most six groups).
 PREGENERATED_CONTEXT_MAX = 12
 
 #: ``aspect_ratio`` → the words pre-generation itself used for that shape. Mirrored rather
@@ -458,9 +458,8 @@ SHAPE_WORDS = {"16:9": "wide background", "1:1": "square background", "4:5": "po
 def reduce_creative_assets(creatives: list[JsonObject]) -> dict[str, str]:
     """Creative id → the design asset id holding its bytes, in the rows' given order.
 
-    Rows arrive newest-harvested-first from :func:`list_ad_creatives`, which is also the
-    deterministic fallback order the selector uses. A row missing either id contributes
-    nothing — there are no bytes to reference.
+    Rows arrive newest-harvested-first from :func:`list_ad_creatives`. A row missing either id
+    contributes nothing — there are no bytes to reference.
     """
     return {
         str(row["creative_id"]): str(row["asset_id"])

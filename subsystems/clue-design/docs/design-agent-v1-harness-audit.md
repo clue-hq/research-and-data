@@ -88,6 +88,10 @@ image to any single one.
 
 ### 4. Automatic ad references already exist, but selection is fragmented
 
+**[SUPERSEDED 2026-10-30 — reference ads spec, `docs/superpowers/specs/2026-10-30-design-reference-ads-design.md`
+(repo root): nothing is auto-attached and style groups are gone; the agent gets every brand ad
+in `ad-assets.md` and chooses for itself. The finding below describes the earlier code.]**
+
 The ad-assets lane can attach up to four harvested ads when the user supplied
 none. It selects a named style group using a bounded text call, or falls back to
 the newest harvested creatives. One group skips that call. The selector uses
