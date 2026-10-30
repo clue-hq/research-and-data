@@ -1228,3 +1228,11 @@ def test_republish_publishes_a_new_version_only_when_something_was_stamped(tmp_p
     )
     assert second["published"] is False
     assert published == [1]
+
+
+def test_the_describe_schema_does_not_offer_ad() -> None:
+    """Spec 2026-10-30 reference ads §5.2: only code calls an asset an ad."""
+    from lumen_ingestion.describe import _RESPONSE_SCHEMA
+
+    enum = _RESPONSE_SCHEMA["items"]["properties"]["analysis"]["properties"]["creative_type"]["enum"]
+    assert "ad" not in enum and "other" in enum

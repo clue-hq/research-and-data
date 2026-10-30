@@ -702,9 +702,11 @@ field; use empty strings/lists or unknown for unsupported observations. Return o
 
 
 def _response_schema() -> dict:
-    from clue_design.asset_context import AssetAnalysis
+    from clue_design.asset_context import AI_CREATIVE_TYPES, AssetAnalysis
     analysis = AssetAnalysis.model_json_schema()
     definitions = analysis.pop("$defs", {})
+    # Only code calls an asset an ad (spec 2026-10-30, reference ads §5.2).
+    analysis["properties"]["creative_type"]["enum"] = list(AI_CREATIVE_TYPES)
     return {
         "type": "array", "$defs": definitions,
         "items": {
