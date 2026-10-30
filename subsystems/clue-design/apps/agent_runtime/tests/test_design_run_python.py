@@ -141,3 +141,12 @@ def test_a_design_run_carries_the_workers_area_label(tmp_path: Path, monkeypatch
     tool = build_design_run_python_tool(workspace=tmp_path / "ws", run_id="run_1", settings=_SETTINGS)
     tool.invoke({"code": "print(1)"})
     assert seen["area"] == area.name
+
+
+def test_an_output_the_session_cannot_carry_is_never_kept(tmp_path: Path) -> None:
+    """Review M-3: a file in outputs/ larger than a session snapshot carries would live only on
+    one worker's disk (AW-8), so the sandbox's per-file cap is the snapshot's."""
+
+    from lumen_agent.session_sync import MAX_FILE_BYTES
+
+    assert design_sandbox_mounts(tmp_path).policy.max_file_bytes == MAX_FILE_BYTES

@@ -25,6 +25,8 @@ from clue_agents.sandbox.policy_sweep import snapshot, sweep
 from clue_agents.sandbox.workspaces import SandboxMounts
 from clue_agents.worker_area import process_area_name
 
+from .session_sync import MAX_FILE_BYTES
+
 __all__ = [
     "design_run_python",
     "OUTPUTS_DIR",
@@ -67,7 +69,9 @@ def design_sandbox_mounts(workspace: Path) -> SandboxMounts:
         read_write={OUTPUTS_DIR: outputs},
         policy=WorkspacePolicy(
             max_total_bytes=OUTPUTS_MAX_BYTES,
-            max_file_bytes=OUTPUTS_MAX_BYTES,
+            # Review M-3: no file larger than a session snapshot carries, so nothing the agent
+            # keeps lives only on one worker's disk (AW-8).
+            max_file_bytes=MAX_FILE_BYTES,
             max_file_count=200,
             # The sweep adds the sandbox's own outputs (CSV, XLSX, DOCX, PPTX, PDF, PNG).
             allowed_extensions=(".md", ".txt", ".json", ".jpg", ".jpeg", ".webp"),
