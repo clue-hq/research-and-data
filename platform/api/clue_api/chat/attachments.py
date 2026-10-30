@@ -21,6 +21,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.contracts import ArtifactRef
+from clue_api.agent_turn_submission import SubmissionAttachmentRow
 from clue_api.chat.schemas import AttachmentRefRequest
 from clue_api.chat.uploads import attachment_family, get_chat_uploads
 from clue_config import Settings
@@ -28,6 +29,7 @@ from clue_config import Settings
 __all__ = [
     "AttachmentReferenceError",
     "ValidatedAttachment",
+    "as_validated_attachment",
     "validated_attachment_refs",
 ]
 
@@ -49,6 +51,21 @@ class ValidatedAttachment:
     ref: ArtifactRef
     filename: str
     family: Literal["text", "image", "document"]
+
+
+def as_validated_attachment(row: SubmissionAttachmentRow) -> ValidatedAttachment:
+    """A stored attachment row, carried onto a submission the server derives from its message.
+
+    The row was proved against its upload when the person sent it; a derived submission (a design
+    session's first turn, an out-of-scope hand-back) copies it rather than proving it again.
+    """
+
+    # A type accepted when it was sent but no longer accepted now still travels: a hand-back must
+    # never fail on a file the person already sent. It is shown as a document.
+    family = attachment_family(row.ref.media_type) or "document"
+    return ValidatedAttachment(
+        upload_id=row.upload_id, ref=row.ref, filename=row.filename, family=family
+    )
 
 
 async def validated_attachment_refs(

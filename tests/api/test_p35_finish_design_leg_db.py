@@ -99,10 +99,13 @@ async def _one_design_turn(
     *,
     label: str,
     message: str,
+    attachment_refs: tuple[Any, ...] = (),
 ) -> Any:
     """Run one real leg turn (fake lane) so a genuine closing design turn exists."""
 
-    submission = await _submit_message(conn, seeds, label=label, message=message)
+    submission = await _submit_message(
+        conn, seeds, label=label, message=message, attachment_refs=attachment_refs
+    )
     leg = await design_legs.get_open_leg_for_thread(
         conn, workspace_id=seeds["workspace_id"], thread_id=seeds["thread_id"]
     )

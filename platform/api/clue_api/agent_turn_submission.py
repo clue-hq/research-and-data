@@ -73,6 +73,7 @@ __all__ = [
     "get_submission",
     "submission_attachment_refs",
     "submission_attachment_refs_for_turns",
+    "thread_attachment_refs",
     "submission_context_refs",
     "submission_context_refs_for_turns",
     "message_artifact_ref",
@@ -446,6 +447,51 @@ async def submission_attachment_refs(
                 "WHERE workspace_id = :ws AND turn_id = :turn ORDER BY ordinal"
             ),
             {"ws": workspace_id, "turn": turn_id},
+        )
+    ).mappings()
+    return tuple(
+        SubmissionAttachmentRow(
+            turn_id=row["turn_id"],
+            ordinal=int(row["ordinal"]),
+            upload_id=row["upload_id"],
+            ref=ArtifactRef(
+                workspace_id=workspace_id,
+                artifact_key=row["artifact_key"],
+                sha256=row["sha256"],
+                media_type=row["media_type"],
+                byte_count=int(row["byte_count"]),
+            ),
+            filename=row["filename"],
+        )
+        for row in rows
+    )
+
+
+async def thread_attachment_refs(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    thread_id: str,
+) -> tuple[SubmissionAttachmentRow, ...]:
+    """Every file attached in one chat thread: oldest message first, attach order within one.
+
+    A derived submission (a design session's first turn, an out-of-scope hand-back) copies its
+    source message's rows, so it is left out: each file is listed once, under the message that
+    sent it.
+    """
+
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT a.turn_id, a.ordinal, a.upload_id, a.artifact_key, a.sha256, "
+                "a.media_type, a.byte_count, a.filename "
+                "FROM agent_turn_submission_attachment a "
+                "JOIN agent_turn_submission s "
+                "ON s.turn_id = a.turn_id AND s.workspace_id = a.workspace_id "
+                "WHERE s.workspace_id = :ws AND s.thread_id = :thread AND s.derivation IS NULL "
+                "ORDER BY s.requested_at, s.turn_id, a.ordinal"
+            ),
+            {"ws": workspace_id, "thread": thread_id},
         )
     ).mappings()
     return tuple(

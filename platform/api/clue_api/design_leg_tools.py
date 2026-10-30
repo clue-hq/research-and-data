@@ -135,10 +135,12 @@ from clue_api.agent_turn_submission import (
     dispatch_next_thread_turn,
     get_submission,
     insert_submission,
+    submission_attachment_refs,
     submission_context_refs,
     turn_id_for_submission,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.chat.attachments import as_validated_attachment
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.site_documents import mint_empty_site_document
 from clue_api.turn_action import (
@@ -918,6 +920,9 @@ class OpenDesignLegTool(Tool):
         context_refs = await submission_context_refs(
             conn, workspace_id=ctx.workspace_id, turn_id=turn.turn_id
         )
+        attachments = await submission_attachment_refs(
+            conn, workspace_id=ctx.workspace_id, turn_id=turn.turn_id
+        )
         await insert_submission(
             conn,
             turn_id=first_turn_id,
@@ -931,6 +936,7 @@ class OpenDesignLegTool(Tool):
             message_sha256=submission.message_sha256,
             idempotency_key=key,
             context_refs=context_refs,
+            attachment_refs=tuple(as_validated_attachment(row) for row in attachments),
             derivation=DERIVATION_DESIGN_LEG_FIRST_TURN,
             derived_from_turn_id=turn.turn_id,
         )
@@ -1674,6 +1680,11 @@ class FinishDesignLegTool(Tool):
                     workspace_id=ctx.workspace_id,
                     turn_id=turn.turn_id,
                 )
+                attachments = await submission_attachment_refs(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    turn_id=turn.turn_id,
+                )
                 await insert_submission(
                     conn,
                     turn_id=redelivered,
@@ -1687,6 +1698,7 @@ class FinishDesignLegTool(Tool):
                     message_sha256=submission.message_sha256,
                     idempotency_key=redelivery_key,
                     context_refs=context_refs,
+                    attachment_refs=tuple(as_validated_attachment(row) for row in attachments),
                     derivation=DERIVATION_DESIGN_LEG_REDELIVERY,
                     derived_from_turn_id=turn.turn_id,
                 )
