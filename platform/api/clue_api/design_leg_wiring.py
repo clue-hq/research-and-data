@@ -73,7 +73,10 @@ from clue_api.agent_turn_scope_pin import AgentTurnScopePinConflict, AgentTurnSc
 from clue_api.agent_turn_submission import (
     DERIVATION_DESIGN_LEG_FIRST_TURN,
     AgentTurnSubmissionRow,
+    SubmissionAttachmentRow,
     get_submission,
+    submission_attachment_refs,
+    thread_attachment_refs,
 )
 from clue_api.agent_turn_wiring import (
     DbAgentContextReceiptStore,
@@ -1231,6 +1234,7 @@ class DesignLegTurnRunner:
         card_payload: dict[str, JsonValue],
         stream: TurnStreamEmitter | None,
         scope_pin: AgentTurnScopePinRow | None = None,
+        attachments: tuple[SubmissionAttachmentRow, ...] = (),
     ) -> DesignLegTurnResult:
         workspace_id = submission.workspace_id
         leg_id = str(leg["id"])
@@ -1394,6 +1398,9 @@ class DesignLegTurnRunner:
                 project_context_artifacts=bundle_context,
             ),
             user_message_artifact_ref=user_message_ref,
+            # The message's files are on the saved message exactly as on the Head of ABM's path,
+            # so its chips survive a design-session turn.
+            attachment_refs=tuple(item.ref for item in attachments),
             focus_refs=focus_refs,
             requested_at=submission.requested_at,
         )
@@ -2902,6 +2909,11 @@ class DesignLegTurnRunner:
                 ],
             },
         }
+        attachments = await self._thread_attachments(submission)
+        if attachments:
+            # Spec 2026-10-30 §3.3: the files sent in this chat thread, frozen by reference. Absent
+            # when the thread has none, so an attachment-free envelope keeps its bytes.
+            config["attachments"] = attachments
         if account_card is not None:
             # G2: frozen by value, and only when the document actually named an account — an
             # un-personalized turn's envelope carries no such key at all (the design route's
@@ -2943,6 +2955,37 @@ class DesignLegTurnRunner:
         )
 
     # -- helpers -------------------------------------------------------------------------------
+
+    async def _thread_attachments(
+        self, submission: AgentTurnSubmissionRow
+    ) -> list[dict[str, JsonValue]]:
+        """Every file sent in this turn's chat thread, the newest per filename, each marked
+        ``current`` when this message itself carried it.
+
+        A derived submission (a session's first turn, a hand-back) holds copies of its source
+        message's rows, so ``current`` is decided by upload, not by turn.
+        """
+
+        async with self._conn_factory() as conn:
+            thread = await thread_attachment_refs(
+                conn, workspace_id=submission.workspace_id, thread_id=submission.thread_id
+            )
+            own = await submission_attachment_refs(
+                conn, workspace_id=submission.workspace_id, turn_id=submission.turn_id
+            )
+        current = {item.upload_id for item in own}
+        newest: dict[str, dict[str, JsonValue]] = {}
+        for item in thread:
+            newest.pop(item.filename, None)
+            newest[item.filename] = {
+                "filename": item.filename,
+                "media_type": item.ref.media_type,
+                "artifact_key": item.ref.artifact_key,
+                "sha256": item.ref.sha256,
+                "byte_count": item.ref.byte_count,
+                "current": item.upload_id in current,
+            }
+        return list(newest.values())
 
     async def _frozen_ad_lane(self, workspace_id: str) -> dict[str, Any] | None:
         """The ad lane serialized for the envelope, or ``None`` — never a failed offer.

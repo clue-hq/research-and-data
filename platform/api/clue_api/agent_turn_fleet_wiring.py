@@ -555,6 +555,7 @@ class ProjectConversationTurnRunner:
                     leg=open_leg,
                     user_message_ref=user_message_ref,
                     focus_refs=submission_focus_refs,
+                    attachments=submission_attachments,
                     card_payload=project_conversation_card_payload(
                         workspace_id=workspace_id,
                         project_id=scope.project_id,

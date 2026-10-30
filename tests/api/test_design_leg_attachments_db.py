@@ -213,3 +213,159 @@ def test_thread_attachments_list_every_message_in_order_without_derived_copies(
             )
 
     run_async(scenario())
+
+
+# --- Task 2: design-session turns carry the files and keep the chips -----------------------------
+
+
+def _worker(seeds: dict[str, Any], storage_root: Path, lane: Any) -> Any:
+    """The real turn worker with a design leg open: the Head of ABM must not run, the exit
+    check keeps the message in the session."""
+
+    from clue_api.agent_registry_wiring import build_agent_profile_registry
+    from clue_api.agent_turn_fleet_wiring import ProjectConversationTurnRunner
+    from clue_api.agent_turn_wiring import DbAgentHistoryStore, DbAgentTurnJournal
+    from clue_api.design_leg_wiring import DesignLegTurnRunner
+    from clue_api.toolbelt_wiring import build_toolbelt
+    from clue_design.exit_judgment import ExitJudgment
+    from tests.api.conftest import hermetic_flag_env
+    from tests.api.test_p34_leg_loop_gate_db import _HeadOfAbmMustNotRun
+    from tests.api.test_p37_exit_bridge_db import _finisher
+
+    async def stay(**kwargs: Any) -> ExitJudgment:
+        del kwargs
+        return ExitJudgment(close_this_session=False, reasoning="Design work.")
+
+    with hermetic_flag_env():
+        registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+    cf = seeds["conn_factory"]
+    turns = DbAgentTurnJournal(conn_factory=cf)
+    return ProjectConversationTurnRunner(
+        engine=_HeadOfAbmMustNotRun(turns),  # type: ignore[arg-type]
+        executor=None,  # type: ignore[arg-type]
+        recipes=None,  # type: ignore[arg-type]
+        starter=None,  # type: ignore[arg-type]
+        parameters=None,  # type: ignore[arg-type]
+        design_legs=DesignLegTurnRunner(
+            profiles=registry,
+            artifacts=seeds["artifacts"],
+            turns=turns,
+            history=DbAgentHistoryStore(conn_factory=cf),
+            lane=lane,
+            exit_judge=stay,
+            finisher=_finisher(seeds, storage_root),
+            conn_factory=cf,
+        ),
+        conn_factory=cf,
+        streaming=False,
+    )
+
+
+def test_a_design_session_turn_keeps_its_attachment_chips(tmp_path: Path) -> None:
+    from sqlalchemy import text
+
+    from tests.api.test_p34_design_leg_engine_db import _FakeLane
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="att-chip")
+            files = await attach(conn, seeds, (("photo.png", "image/png", b"\x89PNGchip"),))
+            submission = await _submit_message(
+                conn, seeds, label="att-chip-1", message="Use my photo.", attachment_refs=files
+            )
+            lane = _FakeLane(conn_factory=seeds["conn_factory"])
+            await _worker(seeds, tmp_path, lane).run(
+                turn_id=submission.turn_id, workspace_id=seeds["workspace_id"]
+            )
+            assert len(lane.envelopes) == 1
+            chips = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT artifact_key FROM agent_artifact_ref WHERE turn_id = :t "
+                            "AND ref_role = 'attachment' ORDER BY ordinal"
+                        ),
+                        {"t": submission.turn_id},
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert chips == [files[0].ref.artifact_key]
+
+    run_async(scenario())
+
+
+def test_the_design_run_envelope_lists_the_threads_files(tmp_path: Path) -> None:
+    from tests.api.test_p34_design_leg_engine_db import _FakeLane
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="att-env")
+            old = await attach(
+                conn,
+                seeds,
+                (("logo.png", "image/png", b"\x89PNGold"), ("notes.txt", "text/plain", b"n")),
+            )
+            await _submit_message(
+                conn, seeds, label="att-env-1", message="Earlier.", attachment_refs=old
+            )
+            new = await attach(
+                conn,
+                seeds,
+                (("logo.png", "image/png", b"\x89PNGnew"), ("brief.md", "text/markdown", b"#b")),
+            )
+            submission = await _submit_message(
+                conn, seeds, label="att-env-2", message="New logo.", attachment_refs=new
+            )
+            lane = _FakeLane(conn_factory=seeds["conn_factory"])
+            await _worker(seeds, tmp_path, lane).run(
+                turn_id=submission.turn_id, workspace_id=seeds["workspace_id"]
+            )
+            listed = lane.envelopes[0].config["attachments"]
+            assert sorted(listed, key=lambda item: item["filename"]) == [
+                {
+                    "filename": "brief.md",
+                    "media_type": "text/markdown",
+                    "artifact_key": new[1].ref.artifact_key,
+                    "sha256": new[1].ref.sha256,
+                    "byte_count": new[1].ref.byte_count,
+                    "current": True,
+                },
+                {
+                    "filename": "logo.png",
+                    "media_type": "image/png",
+                    "artifact_key": new[0].ref.artifact_key,
+                    "sha256": new[0].ref.sha256,
+                    "byte_count": new[0].ref.byte_count,
+                    "current": True,
+                },
+                {
+                    "filename": "notes.txt",
+                    "media_type": "text/plain",
+                    "artifact_key": old[1].ref.artifact_key,
+                    "sha256": old[1].ref.sha256,
+                    "byte_count": old[1].ref.byte_count,
+                    "current": False,
+                },
+            ]
+
+    run_async(scenario())
+
+
+def test_a_turn_without_files_sends_no_attachments_key(tmp_path: Path) -> None:
+    from tests.api.test_p34_design_leg_engine_db import _FakeLane
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="att-none")
+            submission = await _submit_message(
+                conn, seeds, label="att-none-1", message="Bolder headline."
+            )
+            lane = _FakeLane(conn_factory=seeds["conn_factory"])
+            await _worker(seeds, tmp_path, lane).run(
+                turn_id=submission.turn_id, workspace_id=seeds["workspace_id"]
+            )
+            assert "attachments" not in lane.envelopes[0].config
+
+    run_async(scenario())
