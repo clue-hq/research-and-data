@@ -132,7 +132,7 @@ wait_log smoke-worker worker.start
 docker run --rm --network "$NET" --group-add "$DOCKER_GID" -v /var/run/docker.sock:/var/run/docker.sock \
   -e SANDBOX="$SANDBOX" "$IMAGE" shell -c '
     set -e
-    python -c "from clue_api.sandbox.docker_runner import docker_available; ok, why = docker_available(\"$SANDBOX\"); assert ok, why"
+    python -c "from clue_agents.sandbox.docker_runner import docker_available; ok, why = docker_available(\"$SANDBOX\"); assert ok, why"
     echo "ok: docker_available($SANDBOX)"
     out=$(docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
           --user 1000:1000 "$SANDBOX" python -c "print(2 + 2)")

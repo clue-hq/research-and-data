@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from clue_api.sandbox.policy_sweep import SANDBOX_OUTPUT_EXTENSIONS, snapshot, sweep
-from clue_api.sandbox.workspaces import SandboxMounts
+from clue_agents.sandbox.policy_sweep import SANDBOX_OUTPUT_EXTENSIONS, snapshot, sweep
+from clue_agents.sandbox.workspaces import SandboxMounts
 from tests.api.sandbox.test_workspaces import _mounts
 
 

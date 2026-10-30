@@ -41,6 +41,9 @@ from sqlalchemy import text
 
 from clue_agents.ports import ReceiptSource
 from clue_agents.resources import AgentResourceMaterializer
+from clue_agents.sandbox.policy_sweep import snapshot as sweep_snapshot
+from clue_agents.sandbox.policy_sweep import sweep
+from clue_agents.sandbox.workspaces import sandbox_mounts_for_lease
 from clue_agents.worker_area import ChatScope, WorkerArea, claim_worker_area
 from clue_agents.workspace import AgentWorkspaceFactory, AgentWorkspaceLease
 from clue_agents.workspace_policy import PreparedWorkspaceRoot
@@ -52,9 +55,6 @@ from clue_api.agent_workspace_retention import AgentWorkspaceRetentionJob
 from clue_api.agent_workspace_snapshots import SNAPSHOT_REFERENCE_KIND, DbWorkspaceSnapshotStore
 from clue_api.agent_workspace_wiring import LOCAL_DIR, build_agent_workspace_factory
 from clue_api.quality_research_wiring import copy_source_run_files, write_reconciliation_files
-from clue_api.sandbox.policy_sweep import snapshot as sweep_snapshot
-from clue_api.sandbox.policy_sweep import sweep
-from clue_api.sandbox.workspaces import sandbox_mounts_for_lease
 from clue_config import Settings
 from clue_core import ExecutionId
 from clue_db import db_lifespan, transaction

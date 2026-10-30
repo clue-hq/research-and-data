@@ -12,7 +12,7 @@ from clue_agents import (
     WorkspaceConfigurationError,
     WorkspacePolicy,
 )
-from clue_api.sandbox.workspaces import (
+from clue_agents.sandbox.workspaces import (
     RunBudgetExhausted,
     SandboxMounts,
     SandboxWorkspaces,

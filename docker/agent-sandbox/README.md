@@ -6,7 +6,7 @@ container away when the script is done. This directory is that image.
 
 Spec: `docs/superpowers/specs/archive/2026-09-19-agent-code-execution-and-document-attachments-design.md`
 §3.4. The container flags (no network, read-only root, unprivileged user, cpu/memory/pids ceilings)
-live in `platform/api/clue_api/sandbox/docker_runner.py`, not here — this file is only the
+live in `platform/agents/clue_agents/sandbox/docker_runner.py`, not here — this file is only the
 filesystem the script gets to stand on.
 
 ## Build it

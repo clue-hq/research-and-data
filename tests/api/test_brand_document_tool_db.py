@@ -10,10 +10,10 @@ from uuid import UUID
 import pytest
 from sqlalchemy import text
 
+from clue_agents.sandbox.workspaces import SandboxMounts, SandboxWorkspaces
 from clue_api.brand_document_tool import WriteBrandDocumentInput, WriteBrandDocumentTool
 from clue_api.brand_knowledge_writes import write_brand_document_version
 from clue_api.product_management import read_brand_document
-from clue_api.sandbox.workspaces import SandboxMounts, SandboxWorkspaces
 from clue_api.turn_action import derive_turn_action_ref
 from clue_core import new_execution_id, new_operation_id
 from clue_storage import FsStorage

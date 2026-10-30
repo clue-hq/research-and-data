@@ -9,7 +9,7 @@ The shape is deliberately blunt. There is no network (``--network none``), no wr
 (``--read-only`` plus one ``noexec`` tmpfs for ``/tmp``), no capabilities (``--cap-drop ALL``,
 ``--security-opt no-new-privileges``), the worker's non-root UID/GID, and a
 fork bomb hits ``--pids-limit`` before it hits the host. The *only* host state the container can
-reach is the mounts :class:`~clue_api.sandbox.workspaces.SandboxMounts` names, and the only
+reach is the mounts :class:`~clue_agents.sandbox.workspaces.SandboxMounts` names, and the only
 environment it gets is two variables that keep Python and matplotlib from writing where they
 must not — no ``CLUE_*``, no provider keys, nothing inherited from the serving process (the
 ``env=`` handed to :func:`subprocess.run` replaces the parent environment rather than extending
@@ -30,7 +30,7 @@ import time
 from dataclasses import dataclass
 from typing import Final
 
-from clue_api.sandbox.workspaces import SandboxMounts
+from clue_agents.sandbox.workspaces import SandboxMounts
 
 __all__ = [
     "SandboxLimits",

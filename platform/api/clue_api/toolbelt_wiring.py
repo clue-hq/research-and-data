@@ -63,6 +63,7 @@ from uuid import UUID
 from pydantic import Field, JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_agents.sandbox.workspaces import SandboxWorkspaces
 from clue_api.account_research_fleet import read_latest_account_fleet_for_project_run
 from clue_api.agent_gate_wiring import register_agent_gate_tools
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
@@ -157,7 +158,6 @@ from clue_api.prose_synthesis_tools import (
 from clue_api.research_directive_tools import build_research_directive_tools
 from clue_api.research_view_tools import build_research_view_tools
 from clue_api.run_python_tool import build_run_python_tools
-from clue_api.sandbox.workspaces import SandboxWorkspaces
 from clue_api.stage0_inspection_tools import build_stage0_inspection_tools
 from clue_api.stage0_project_tools import stage0_project_tools
 from clue_api.stage0_tools import stage0_tools

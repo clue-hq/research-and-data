@@ -1,10 +1,10 @@
 """``run_python@1`` — the refusals it owes, the run it reports, and where it is registered.
 
-Nothing here starts a container. The tool's whole job above :mod:`clue_api.sandbox` is deciding
+Nothing here starts a container. The tool's whole job above :mod:`clue_agents.sandbox` is deciding
 whether a run may happen at all, spending the turn's budget when it may, and turning what came
 back into a bounded typed result — so the container itself is the one thing that is replaced with
 a stub. Every test either checks a refusal before ``run_script`` would be reached, or hands the
-tool a scripted :class:`~clue_api.sandbox.docker_runner.SandboxRun` and reads what it made of it.
+tool a scripted :class:`~clue_agents.sandbox.docker_runner.SandboxRun` and reads what it made of it.
 """
 
 from __future__ import annotations
@@ -17,6 +17,12 @@ from uuid import UUID
 import pytest
 
 from clue_agents import AgentRole
+from clue_agents.sandbox.docker_runner import SandboxRun
+from clue_agents.sandbox.workspaces import (
+    SandboxMounts,
+    SandboxWorkspaces,
+    sandbox_mounts_for_lease,
+)
 from clue_api.agent_registry_wiring import C6_AGENT_TOOL_AUTHORITY, c6_roles_for_tool
 from clue_api.run_python_tool import (
     INLINE_OUTPUT_BUDGET_BYTES,
@@ -24,8 +30,6 @@ from clue_api.run_python_tool import (
     RunPythonTool,
     build_run_python_tools,
 )
-from clue_api.sandbox.docker_runner import SandboxRun
-from clue_api.sandbox.workspaces import SandboxMounts, SandboxWorkspaces, sandbox_mounts_for_lease
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_config import Settings
 from clue_core import ExecutionId, OperationId

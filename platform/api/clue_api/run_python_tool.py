@@ -7,13 +7,13 @@ tool is that code path, and it is deliberately the narrowest one that works — 
 one locked-down container, one turn's workspace, a handful of runs per turn.
 
 Four things are the tool's own job, and everything else belongs to the three modules under
-:mod:`clue_api.sandbox` that it composes:
+:mod:`clue_agents.sandbox` that it composes:
 
 * **Deciding whether a run may happen at all.** Five refusals, each with a stable code: the
   sandbox is off, this deployment composed no workspace registry, the host cannot run the image,
   this turn registered no workspace, or this turn has spent its runs. Every one of them is raised
   *before* a container starts, and a refused call never costs the turn a run.
-* **Spending the turn's budget.** :meth:`~clue_api.sandbox.workspaces.SandboxWorkspaces.take_run`
+* **Spending the turn's budget.** :meth:`~clue_agents.sandbox.workspaces.SandboxWorkspaces.take_run`
   is the meter, and the remaining count travels back in the result so the model can see what it
   has left rather than discovering the ceiling by hitting it.
 * **Keeping the event loop free.** The container, the before-picture and the policy sweep all
@@ -38,9 +38,14 @@ from typing import ClassVar, Final
 from pydantic import Field
 
 from clue_agents.manual import tool_manual_link
-from clue_api.sandbox.docker_runner import SandboxLimits, SandboxRun, docker_available, run_script
-from clue_api.sandbox.policy_sweep import SweepResult, snapshot, sweep
-from clue_api.sandbox.workspaces import RunBudgetExhausted, SandboxMounts, SandboxWorkspaces
+from clue_agents.sandbox.docker_runner import (
+    SandboxLimits,
+    SandboxRun,
+    docker_available,
+    run_script,
+)
+from clue_agents.sandbox.policy_sweep import SweepResult, snapshot, sweep
+from clue_agents.sandbox.workspaces import RunBudgetExhausted, SandboxMounts, SandboxWorkspaces
 from clue_config import Settings
 from clue_toolbelt import (
     ExternalReplayBoundary,

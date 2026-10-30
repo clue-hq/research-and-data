@@ -58,6 +58,8 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.ports import AgentModelProvider
+from clue_agents.sandbox.docker_runner import kill_area_containers
+from clue_agents.sandbox.workspaces import SandboxWorkspaces
 from clue_agents.worker_area import WorkerArea
 from clue_api.agent_execution_wiring import DbAgentPlanJournal
 from clue_api.agent_model_wiring import build_agent_model_provider
@@ -197,8 +199,6 @@ from clue_api.run_composition import (
     build_stage0_claim_extractor,
 )
 from clue_api.run_events_wiring import build_run_event_emitter
-from clue_api.sandbox.docker_runner import kill_area_containers
-from clue_api.sandbox.workspaces import SandboxWorkspaces
 from clue_api.stage0_setup_fleet import Stage0ReconWorkHandler
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep_if_due
 from clue_api.sumble_discovery_gaps import build_production_sumble_discovery_gap_resolver
