@@ -113,3 +113,31 @@ def test_only_a_leg_request_gets_the_tool(tmp_path: Path, monkeypatch) -> None:
     assert direct.run_python_available is False
     assert sandbox_tool.design_run_python(leg, tmp_path, object()) is sentinel
     assert leg.run_python_available is True
+
+
+def test_a_design_run_carries_the_workers_area_label(tmp_path: Path, monkeypatch) -> None:
+    """Review M-2: a container a dead worker left running is killed by the next process of that
+    worker area, which finds it by the area's label — so a design run must carry it too."""
+
+    from types import SimpleNamespace
+
+    from clue_agents import worker_area
+    from lumen_agent import sandbox_tool
+
+    seen: dict = {}
+
+    def fake_run(code, *, mounts, limits, timeout_s, label=None, area=None):
+        seen["area"] = area
+        return SimpleNamespace(
+            exit_code=0, timed_out=False, stdout=b"", stderr=b"",
+            stdout_truncated=False, stderr_truncated=False, duration_ms=1,
+        )
+
+    monkeypatch.setattr(sandbox_tool, "run_script", fake_run)
+    monkeypatch.setattr(sandbox_tool, "docker_available", lambda image: (True, ""))
+    monkeypatch.setattr(worker_area, "_PROCESS_AREAS", {})
+    (tmp_path / "root" / "workers").mkdir(parents=True)
+    area = worker_area.process_worker_area(tmp_path / "root")
+    tool = build_design_run_python_tool(workspace=tmp_path / "ws", run_id="run_1", settings=_SETTINGS)
+    tool.invoke({"code": "print(1)"})
+    assert seen["area"] == area.name

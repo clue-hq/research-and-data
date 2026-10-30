@@ -23,6 +23,7 @@ from clue_agents.contracts import WorkspacePolicy
 from clue_agents.sandbox.docker_runner import SandboxLimits, docker_available, run_script
 from clue_agents.sandbox.policy_sweep import snapshot, sweep
 from clue_agents.sandbox.workspaces import SandboxMounts
+from clue_agents.worker_area import process_area_name
 
 __all__ = [
     "design_run_python",
@@ -127,7 +128,14 @@ def build_design_run_python_tool(
         mounts = design_sandbox_mounts(workspace)
         before = snapshot(mounts)
         run = run_script(
-            code, mounts=mounts, limits=limits, timeout_s=limits.timeout_s, label=run_id
+            code,
+            mounts=mounts,
+            limits=limits,
+            timeout_s=limits.timeout_s,
+            label=run_id,
+            # Review M-2: the worker area's label, so a container a dead worker left running is
+            # killed by the next process of this area, as the Head of ABM's are.
+            area=process_area_name(),
         )
         swept = sweep(mounts, before=before)
         return json.dumps(
