@@ -538,7 +538,7 @@ def _cell(value: Any, limit: int | None = None) -> str:
 
 #: Founder-approved wording (2026-10-30, reference ads spec §5.6). ``{count}`` = rows listed.
 BRAND_ADS_HEADING = (
-    "# The brand's ads\n"
+    "## The brand's ads\n"
     "These are the brand's own published ads and any images the team marked as ads — {count} in all.\n"
     "Open any of them with `view(\"asset:<id>\")` to see the picture and its full description\n"
     "(layout, text, typography, hierarchy). Look through several before you design, and pick\n"

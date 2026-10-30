@@ -122,7 +122,10 @@ def test_the_ad_list_opens_ad_assets_md(tmp_path, monkeypatch):
         asset_library={row["asset_id"]: _entry(row["asset_id"]) for row in BRAND_ADS},
     )
     text = (tools.trace_dir / "workspace" / "ad-assets.md").read_text()
-    assert text.index("# The brand's ads") < text.index(PROSE)
+    assert text.index("## The brand's ads") < text.index(PROSE)
+    assert [line for line in text.splitlines() if line.startswith("# ")] == [
+        "# Current-turn ad assets (advisory)"
+    ]
     assert "— 2 in all." in text and "`asset_ad_1`" in text and "LinkedIn ad" in text
     assert "ad-assets.md" in prompt
 

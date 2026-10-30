@@ -269,7 +269,7 @@ AD_LIBRARY = {aid: {"record": {"id": aid, "status": "ready"}} for aid in ("a1", 
 def test_the_list_opens_with_the_approved_heading_and_counts_only_rendered_rows() -> None:
     text = frame_mod.render_brand_ads_text(AD_ROWS, AD_LIBRARY)
     assert text.startswith(
-        "# The brand's ads\n"
+        "## The brand's ads\n"
         "These are the brand's own published ads and any images the team marked as ads — 2 in all.\n"
         "Open any of them with `view(\"asset:<id>\")` to see the picture and its full description\n"
         "(layout, text, typography, hierarchy). Look through several before you design, and pick\n"
