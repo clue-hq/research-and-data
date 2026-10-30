@@ -145,3 +145,18 @@ def test_an_ad_this_turn_cannot_open_is_not_listed(tmp_path, monkeypatch):
     )
     text = (tools.trace_dir / "workspace" / "ad-assets.md").read_text()
     assert "asset_ad_1" not in text and "— 1 in all." in text
+
+
+def test_a_sessions_old_ad_list_is_removed_when_there_are_no_ads_left(tmp_path, monkeypatch):
+    """A design session keeps its folder between turns; once the only ad is retyped, the
+    next turn must not read last turn's list."""
+    first, _ = _turn(
+        tmp_path, monkeypatch, session_id="dsess_ads", run_id="run_one",
+        brand_ads=BRAND_ADS[1:], asset_library={"asset_ad_2": _entry("asset_ad_2")},
+    )
+    path = first.trace_dir / "workspace" / "ad-assets.md"
+    assert path.is_file()
+    second, prompt = _turn(tmp_path, monkeypatch, session_id="dsess_ads", run_id="run_two")
+    assert second.trace_dir / "workspace" / "ad-assets.md" == path
+    assert not path.exists()
+    assert "ad-assets.md" not in prompt

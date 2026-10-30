@@ -9756,7 +9756,11 @@ def run_agent_turn_preview(
             # ids — not the asset index, which is kit-only, and not `view`, which lists library
             # ids only once the author has already guessed one wrong.
             config = replace(config, ad_pregenerated_assets=ad_pregenerated)
-        brand_ads = ad_runtime.context_brand_ads(ad_lane, asset_library)
+        try:
+            brand_ads = ad_runtime.context_brand_ads(ad_lane, asset_library)
+        except Exception:  # noqa: BLE001 - the list is advisory; it may never fail a turn
+            api_logger.warning("brand_ads_unreadable")
+            brand_ads = None
         if brand_ads:
             # Spec 2026-10-30 (reference ads §5.5): the whole list of the brand's ads, BY VALUE,
             # so the agent opens the ones it wants. Independent of the lane flag: a person's own

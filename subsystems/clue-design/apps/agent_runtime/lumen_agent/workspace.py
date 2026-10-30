@@ -381,6 +381,10 @@ def scaffold_workspace(tools: LumenDesignTools, prompt: str) -> Path:
             "# Current-turn ad assets (advisory)\n\n" + "\n\n".join(ad_sections) + "\n",
             encoding="utf-8",
         )
+    else:
+        # A design session keeps its folder between turns: last turn's list must not be read as
+        # this turn's (spec 2026-10-30, reference ads).
+        (workspace / "ad-assets.md").unlink(missing_ok=True)
 
     # Harness alignment I11: the state FILE does not repeat the message for the solo agent; the
     # graph state keeps `turn_request` for the runtime.

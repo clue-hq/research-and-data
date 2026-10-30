@@ -592,3 +592,26 @@ def test_a_turn_carries_the_list_even_with_the_lane_off(
     )
 
     assert [ad["asset_id"] for ad in captured["config"].brand_ads] == [marked]
+
+
+def test_a_list_that_cannot_be_built_costs_the_list_not_the_turn(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Spec anti-goal: a turn never fails because the ad list can't be read."""
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
+    monkeypatch.setattr(settings, "lumen_brand_ad_assets", True, raising=False)
+    _harvested(client, monkeypatch)
+    captured = _stub_scene_turn_runtime(monkeypatch)
+
+    def broken(*_args: Any) -> None:
+        raise ValueError("a malformed library entry")
+
+    monkeypatch.setattr(ad_runtime, "context_brand_ads", broken)
+
+    run_agent_turn_preview(
+        _turn(), repo_root(), workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    )
+
+    assert "config" in captured, "the turn reached the runtime"
+    assert captured["config"].brand_ads is None
+    assert captured["config"].ad_dna_card["prose"] == PROSE
