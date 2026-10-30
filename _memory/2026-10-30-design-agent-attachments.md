@@ -20,9 +20,32 @@ Ledger (rulings) in .superpowers/sdd/2026-10-30-design-agent-attachments/progres
 - T8 5c3c452: sandbox moved clue_api.sandbox -> clue_agents.sandbox.
 - T11 7568d46: composer has one intake (design-reference route removed).
 
-## Waiting on founder wording approval
-T3 (exit judgment v5 FILES block + paragraph), T9 (design run_python description), T10 (prompt
-paragraph + turn note wording). Then T12 live proof on the trenton lane.
+- T3 fee6435 exit judgment v5 (FILES block + approved rule); T9 36c10a7 design run_python
+  (lumen_agent/sandbox_tool.py, leg turns only); T10 58bcb51 ATTACHMENTS_GUIDANCE in scene/web/site
+  solo prompts (founder approved 2026-10-30; refused an ad-only "reference images" line).
+- Final review (fresh Opus reviewer) found 1 Critical + 5 Important; fixed test-first:
+  C-1 engine has no `chat_attachment` AssetSource → now `uploaded` + tag/provenance label;
+  I-1 thread list stops at the turn's own message; I-2 session snapshots skip attachments/;
+  I-3 DecompressionBombError → not shown; I-4 budget before fetch, per-file reads, decode off the
+  platform loop; I-5 upload-bytes route sends CSP sandbox + nosniff; M-1 (re-graded) long Unicode
+  filenames shortened. Report: .superpowers/sdd/.../final-review.md (scratch, gitignored).
+
+## Live proof (trenton lane, Pallet ws_42e41df16b9b4bbd886d1c57a5be3dcb, 2026-10-30)
+1. Ad session open, panel closed, two PNGs → chips kept, asset_att_* registered via real engine,
+   saved ad v26 places both (run_6fc57c65…). 2. Site from a message with brief.md + PDF → hero
+   exact from brief, PDF opened via run_python (page render in outputs/), CTA exact (run_941b9b85…;
+   test PDF's line overflowed its page, agent kept the visible "2,400 pa" verbatim and flagged it).
+3. HEIC → library PNG copy, placed in v28 (run_09eb871e…). 4. "Calculate the ROI from this Excel"
+   → exit judge v5 handed back with the xlsx on the redelivery; Head of ABM read it (ROI 140% /
+   171%). Sign-in: the founder signs in to Clerk in the pane (never type passwords into Clerk).
+
+## Deferred minors (review)
+M-2 design sandbox containers lack the worker-area label; M-3 outputs per-file cap 50 MB > session
+snapshot 25 MB; M-4 thread images re-registered each turn (label overwrite); M-5 HoA told an
+undecodable image is shown; M-6 clue-agents/clue-config not declared in the agent_runtime
+pyproject; M-7 setup helpers outside the try; M-8 SVG sniff reads only 4 KB; M-10 library copies
+survive chat-upload erasure (privacy sprint); M-11 two safe-filename helpers; HEIC chip thumbnail
+broken in Chrome; stale test_upload_refuses_a_pdf.
 
 ## Pre-existing failures seen (not ours)
 test_deepagent_harness::test_tool_surfaces_are_exactly_the_ledger (extra search_assets);
