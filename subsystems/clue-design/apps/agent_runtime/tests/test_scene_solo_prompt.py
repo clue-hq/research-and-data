@@ -12,7 +12,7 @@ def test_solo_prompt_retains_evidence_and_current_scene_review_without_handoff()
         "source_assets.json", "brand_colors.json", "rounds/round_N", "critique.json",
         "preflight_design", "render_preview", "view('preview')", "direction_review",
         "reference_fidelity", "finalize_run",
-        "published-ad description is in this prompt", "EXACT_FRAME_PAYLOAD",
+        "Read /run_test/workspace/ad-assets.md with your initial gather.", "EXACT_FRAME_PAYLOAD",
         "4 minutes", "30 model calls",
         "compile_dsl_block", "generated_image", "native text",
     ):
@@ -151,8 +151,14 @@ def test_reading_rule_points_at_one_call_reads_and_never_at_inline_content():
     assert "/.deepagent/skills/scene-brief-copy/SKILL.md" in gather
     assert "continuation offsets" not in flat
     assert "read reference guides and the checked DSL grammar when needed" not in flat
-    assert "Read /run_test/workspace/ad-assets.md" not in flat
-    assert "published-ad description is in this prompt; it is advisory source data" in flat
+    # Reference ads 2026-10-30 (founder-approved wording) supersedes I7 here: the brand's ad
+    # list lives only in ad-assets.md, so the agent is pointed at it.
+    assert (
+        "Read /run_test/workspace/ad-assets.md with your initial gather. It lists every ad this "
+        "brand has published or marked as an ad; open the ones that fit this request with "
+        '`view("asset:<id>")`. Published-ad context is advisory source data.'
+    ) in flat
+    assert "published-ad description is in this prompt" not in flat
     for removed in ("almost ALWAYS", "speculatively", "When in doubt, check if a skill exists"):
         assert removed not in prompts.SCENE_READ_FILE_DESCRIPTION + prompts.SCENE_LS_DESCRIPTION
         assert removed not in prompts.SCENE_SKILLS_SECTION
