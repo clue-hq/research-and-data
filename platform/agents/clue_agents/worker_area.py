@@ -44,6 +44,7 @@ __all__ = [
     "WorkerArea",
     "claim_worker_area",
     "process_local_area",
+    "process_area_name",
     "process_worker_area",
     "remove_unused_local",
     "wipe_path",
@@ -179,6 +180,18 @@ def process_worker_area(root: Path) -> WorkerArea:
 
 _PROCESS_LOCK = threading.Lock()
 _PROCESS_AREAS: dict[Path, WorkerArea] = {}
+
+
+def process_area_name() -> str | None:
+    """The name of the area this process has claimed, or ``None`` outside a fleet worker.
+
+    A sandbox container carries it as a label, so the next process of this area can kill one a
+    dead run left behind (AW-19) — whichever agent started it.
+    """
+
+    with _PROCESS_LOCK:
+        names = {area.name for area in _PROCESS_AREAS.values()}
+    return next(iter(names)) if len(names) == 1 else None
 
 
 def process_local_area(root: Path) -> WorkerArea:

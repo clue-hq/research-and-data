@@ -9,14 +9,14 @@ from pathlib import Path
 
 import pytest
 
-from clue_api.sandbox.docker_runner import (
+from clue_agents.sandbox.docker_runner import (
     SandboxLimits,
     build_command,
     docker_available,
     kill_area_containers,
     run_script,
 )
-from clue_api.sandbox.workspaces import sandbox_mounts_for_lease
+from clue_agents.sandbox.workspaces import sandbox_mounts_for_lease
 from tests.agents.workspace_helpers import make_workspace
 from tests.api.sandbox.test_workspaces import _mounts
 

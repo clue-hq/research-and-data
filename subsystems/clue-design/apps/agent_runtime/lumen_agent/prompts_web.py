@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from .platform_reads import ATTACHMENTS_GUIDANCE
 from .rubrics import load_clone_review_rubric
 
 WEB_SOURCE_CONTRACT_PATH = (
@@ -1256,6 +1257,8 @@ each; they arrive below the brief as numbered ANNOTATION lines (rulings R-A1..R-
     return f"""{WEB_SKILL_ROUTING}
 
 {WEB_ACCOUNT_EVIDENCE}
+
+{ATTACHMENTS_GUIDANCE}
 
 {_source_format_contract()}
 

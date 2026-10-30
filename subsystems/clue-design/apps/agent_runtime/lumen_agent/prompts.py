@@ -18,6 +18,8 @@ ambiguous passage.
 
 from __future__ import annotations
 
+from .platform_reads import ATTACHMENTS_GUIDANCE
+
 # SHARED_SURFACE_CONTRACT and IMAGERY_RUBRIC are verbatim COPIES from the
 # archived pipeline prompts (share-by-copy directive: the living deepagent
 # world imports nothing from the archive). Canonical from 2026-07-09 onward.
@@ -1585,6 +1587,8 @@ The shared guides, under /knowledge_docs/knowledge:
   directives are already in this prompt).
 - design-systems/*: brand-kit tokens and governance.""",
         _SCENE_SURFACE_CONTRACT, _SCENE_BATCHING_RULE,
+        # Spec 2026-10-30 §3.7: the chat's files (founder-approved wording).
+        ATTACHMENTS_GUIDANCE,
     ]
     if has_ad_assets:
         sections.append(

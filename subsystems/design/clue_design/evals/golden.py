@@ -90,6 +90,8 @@ class ExitGoldenFixture(BaseModel):
     brief: str
     history: tuple[dict[str, str], ...] = ()
     message: str
+    #: v5 judge inputs: the message's attached files, one ``describe_attached_file`` line each.
+    files: tuple[str, ...] = ()
     #: The canned verdict playing the LLM's part in :func:`run_decision_golden`. ``None``
     #: models unparseable output (the fail-safe negatives).
     judgment: ExitJudgment | None = None

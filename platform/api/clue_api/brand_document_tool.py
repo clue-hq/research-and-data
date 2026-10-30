@@ -33,6 +33,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.manual import tool_manual_link
+from clue_agents.sandbox.workspaces import SandboxWorkspaces
 from clue_api.brand_knowledge_writes import (
     current_brand_version,
     lock_brand,
@@ -40,7 +41,6 @@ from clue_api.brand_knowledge_writes import (
     write_brand_document_version,
 )
 from clue_api.product_management import read_brand_document
-from clue_api.sandbox.workspaces import SandboxWorkspaces
 from clue_api.turn_action import TurnActionUnresolvable, load_turn_identity, parse_turn_action_ref
 from clue_api.turn_binding import TRUSTED_TURN_FIELD
 from clue_db import ConnFactory, transaction

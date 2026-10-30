@@ -47,6 +47,20 @@ class AccountLogo:
     alternative: bool = False
 
 
+@dataclass(frozen=True)
+class AttachedImage:
+    """An image sent in the chat thread, registered in the image library for this request
+    (spec 2026-10-30 §3.4): the site agent may look at it and place it like any library image."""
+
+    asset_id: str
+    #: /asset-store/<sha256> of the library image (a PNG copy for HEIC, AVIF, TIFF, BMP, ICO).
+    file: str
+    filename: str
+    content_type: str
+    #: Sent with the message this request answers.
+    current: bool
+
+
 class SiteAssetPort(Protocol):
     def read(self, digest: str) -> tuple[str, bytes]:
         """``(media_type, bytes)`` of one of this workspace's blobs; raises when absent."""
@@ -122,6 +136,8 @@ class SiteTurnInputs:
     #: [{path, body_text}] — the opening turn's pinned instructions.md and decisions.md.
     project_files: list[dict] = field(default_factory=list)
     account_logos: list[AccountLogo] = field(default_factory=list)
+    #: Images sent in the chat thread, registered in the image library for this request.
+    attached_images: list[AttachedImage] = field(default_factory=list)
     #: Sections the turn may place: the document's own pins plus the newest of each name.
     agent_sections: dict[str, SiteSection] = field(default_factory=dict)
     #: {asset_id: {"record": AssetRecord, "description"?, "title"?, "tags"?, "origin": str}}.

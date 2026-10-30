@@ -3,7 +3,7 @@
 A tool is handed a :class:`~clue_toolbelt.ToolContext`, which names the execution and nothing
 else, so the conversation engine registers the turn's workspace here while it holds the lease and
 releases it on every exit path — the same arrangement as the code sandbox's registry
-(``clue_api.sandbox.workspaces.SandboxWorkspaces``). The fleet worker builds one instance and
+(``clue_agents.sandbox.workspaces.SandboxWorkspaces``). The fleet worker builds one instance and
 hands the same object to the toolbelt and to the engine; two instances would mean a tool that
 never finds the turn the engine bound.
 """

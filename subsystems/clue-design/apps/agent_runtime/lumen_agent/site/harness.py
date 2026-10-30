@@ -31,6 +31,8 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from py_lumen_obs import get_logger
 
 from ..config import AgentRuntimeConfig
+from ..platform_reads import ATTACHMENTS_GUIDANCE, SITE_ATTACHED_IMAGES_LINE, with_attachments_note
+from ..sandbox_tool import design_run_python
 from .inputs import SiteSection, SiteTurnInputs
 from .tools import SiteTools, site_tool_set
 from .workspace import (
@@ -51,6 +53,7 @@ FINISH_REMINDERS = 2
 READ_ONLY = [
     "/brief.md", "/site.md", "/history.md", "/skills/**", "/skills-e5/**", "/skills-live/**", "/catalog/**",
     "/brand/**", "/research/**", "/seller/**", "/fetched/**", "/project-context/**", "/work/**",
+    "/attachments/**",
 ]
 #: T12a–T12f (founder-approved, Task 0).
 ROUND_LIMIT_NOTE = "Stopped: this request reached its limit of {limit} model calls."
@@ -427,7 +430,8 @@ def site_system_prompt(workspace: Path, *, live: bool = False) -> str:
     (ruling S2). ``live``: the workspace publishes live sites, so the render line names
     render_page's hydration notes."""
 
-    return _base_prompt(workspace, live=live)
+    # Spec 2026-10-30 §3.7: the chat's files (founder-approved wording), and where its images are.
+    return f"{_base_prompt(workspace, live=live)}\n\n{ATTACHMENTS_GUIDANCE} {SITE_ATTACHED_IMAGES_LINE}\n"
 
 
 # --- the working copy (site-turn durability, 2026-10-16) -----------------------------------------
@@ -633,7 +637,11 @@ def build_site_agent(
     ]
     agent = create_agent(
         model,
-        tools=site_tool_set(tools),
+        tools=[
+            *site_tool_set(tools),
+            # Spec 2026-10-30 §3.5: on a leg request, Python over the chat's files.
+            *filter(None, [design_run_python(tools, tools.workspace, tools.inputs.platform_reads)]),
+        ],
         system_prompt=site_system_prompt(tools.workspace, live=live),
         middleware=middleware,
         checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),
@@ -748,7 +756,7 @@ def run_site_turn(
 
     tools: SiteTools | None = None
     try:
-        materialize_workspace(workspace, inputs, site=site)
+        materialized = materialize_workspace(workspace, inputs, site=site)
         # The baseline of "did this turn change anything" is the STORED site, taken before any
         # working copy is laid over the folder.
         tools = SiteTools(workspace=workspace, inputs=inputs, base_site=site, event_sink=event_sink)
@@ -777,7 +785,17 @@ def run_site_turn(
         "configurable": {"thread_id": thread_id or run_id},
         "callbacks": handlers,
     }
-    initial = {"messages": [HumanMessage(content=prompt, additional_kwargs={RUN_ID_KEY: run_id})]}
+    note = materialized.get("attachments_note", "") if tools is not None else ""
+    initial = {
+        "messages": [
+            HumanMessage(
+                content=with_attachments_note(
+                    prompt, note, can_run_python=getattr(tools, "run_python_available", False)
+                ),
+                additional_kwargs={RUN_ID_KEY: run_id},
+            )
+        ]
+    }
 
     def calls() -> list[dict]:
         return [item.as_json() for item in collector.calls]

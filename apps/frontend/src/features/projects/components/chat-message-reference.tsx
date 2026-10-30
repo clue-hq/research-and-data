@@ -5,6 +5,7 @@ import {
   designReferenceThumbnailUrl,
 } from "../model/chat-message-presentation";
 import type { ProjectEntity } from "../model/project-workspace";
+import { canPreviewInBrowser } from "../model/chat-attachments";
 import { ChatAttachment } from "./chat-attachment";
 import { ChatMentionVisual } from "./chat-mention";
 import styles from "./project-flow.module.css";
@@ -36,7 +37,9 @@ export function ChatMessageReference({
           mediaType: reference.mediaType ?? (isAsset ? "image/png" : "application/octet-stream"),
           url: isAsset
             ? reference.thumbnailDigest ? designReferenceThumbnailUrl(reference.thumbnailDigest) : ""
-            : reference.uploadId ? chatUploadBytesUrl(reference.uploadId) : "",
+            : reference.uploadId && !undrawableImage(reference.mediaType)
+              ? chatUploadBytesUrl(reference.uploadId)
+              : "",
         }}
       />
     );
@@ -58,4 +61,10 @@ export function ChatMessageReference({
       />
     </span>
   );
+}
+
+/** An image a browser cannot draw (HEIC, HEIF, TIFF): its chip shows the icon, not a broken thumbnail. */
+function undrawableImage(mediaType: string | null | undefined): boolean {
+  const type = (mediaType ?? "").toLowerCase();
+  return type.startsWith("image/") && !canPreviewInBrowser(type);
 }

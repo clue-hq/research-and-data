@@ -262,7 +262,7 @@ def test_v3_prompt_numbers_the_artifacts_and_marks_a_tagged_one() -> None:
     assert '2. "Mercy ad" (scene ad)\nARTIFACTS>>>' in prompt
     assert "(artifact 1)" in prompt
     assert "addressed_artifacts" in prompt and "clarifying_question" in prompt
-    assert prompt.rstrip().endswith("prompt_version: v4")
+    assert prompt.rstrip().endswith("prompt_version: v5")
 
 
 def test_a_prompt_with_no_artifact_at_all_still_says_so_honestly() -> None:
@@ -394,3 +394,62 @@ def test_the_new_fields_are_known_keys_and_everything_else_is_still_forbidden() 
         )
         is None
     )
+
+
+# --- v5: the message's files ---------------------------------------------------------------------
+
+
+def test_the_prompt_lists_the_messages_files() -> None:
+    from clue_design.exit_judgment import describe_attached_file
+
+    files = tuple(
+        describe_attached_file(name, media)
+        for name, media in (
+            ("q3.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            ("brief.pdf", "application/pdf"),
+            ("logo.svg", "image/svg+xml"),
+            ("photo.heic", "image/heic"),
+            (
+                "deck.pptx",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            ),
+            (
+                "memo.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ),
+            ("rows.csv", "text/csv"),
+            ("data.json", "application/json"),
+            ("notes.md", "text/markdown"),
+        )
+    )
+    prompt = render_exit_judgment_prompt(brief="b", history=(), message="m", files=files)
+    assert EXIT_JUDGMENT_PROMPT_VERSION == "v5"
+    inside = prompt.split("<<<FILES\n", 1)[1].split("\nFILES>>>", 1)[0]
+    assert inside.splitlines() == [
+        '"q3.xlsx" (spreadsheet)',
+        '"brief.pdf" (PDF)',
+        '"logo.svg" (SVG image)',
+        '"photo.heic" (image)',
+        '"deck.pptx" (PowerPoint deck)',
+        '"memo.docx" (Word document)',
+        '"rows.csv" (CSV)',
+        '"data.json" (JSON)',
+        '"notes.md" (text)',
+    ]
+    assert "Files attached to the message do not decide where it belongs" in prompt
+
+
+def test_a_message_without_files_has_no_files_block() -> None:
+    prompt = render_exit_judgment_prompt(brief="b", history=(), message="m")
+    assert "<<<FILES" not in prompt
+
+
+def test_the_golden_set_carries_the_founders_file_cases() -> None:
+    by_name = {fixture.name: fixture for fixture in load_fixtures()}
+    for name in (
+        "design-07-ad-from-spreadsheet",
+        "design-08-pdf-brief",
+        "strategy-04-roi-from-spreadsheet",
+    ):
+        assert by_name[name].files, name
+    assert by_name["strategy-04-roi-from-spreadsheet"].expected.reason == "out_of_scope"

@@ -3,7 +3,8 @@
 The bytes live in the content-addressed artifact store like every turn artifact; this module owns
 the two things that store cannot say — the filename the person gave the file and which family it
 belongs to — and the validation both the upload route and the submission route apply. Three
-families are accepted: text (.md, .txt), image (PNG, JPEG, WebP, GIF) and document (PDF, DOCX,
+families are accepted: text (.md, .txt), image (PNG, JPEG, WebP, GIF, SVG, HEIC/HEIF, AVIF, TIFF,
+BMP, ICO) and document (PDF, DOCX,
 PPTX, XLSX, CSV, JSON). A document is never converted here — it is checked by size and magic bytes
 and stored as-is, for the agent's workspace to read. Specs:
 docs/superpowers/specs/archive/2026-09-18-chat-attachments-design.md and
@@ -48,7 +49,23 @@ PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentatio
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 ALLOWED_TEXT_MEDIA_TYPES = frozenset({"text/markdown", "text/plain"})
-ALLOWED_IMAGE_MEDIA_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
+ALLOWED_IMAGE_MEDIA_TYPES = frozenset(
+    {
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "image/gif",
+        # Spec 2026-10-30 §3.6: a model is shown a PNG copy of these, and SVG is opened as a file
+        # (clue_agents.attachment_images).
+        "image/svg+xml",
+        "image/heic",
+        "image/heif",
+        "image/avif",
+        "image/tiff",
+        "image/bmp",
+        "image/x-icon",
+    }
+)
 ALLOWED_DOCUMENT_MEDIA_TYPES = frozenset(
     {"application/pdf", DOCX, PPTX, XLSX, "text/csv", "application/json"}
 )
@@ -62,6 +79,14 @@ _EXTENSION_MEDIA_TYPES = {
     ".jpeg": "image/jpeg",
     ".webp": "image/webp",
     ".gif": "image/gif",
+    ".svg": "image/svg+xml",
+    ".heic": "image/heic",
+    ".heif": "image/heif",
+    ".avif": "image/avif",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
+    ".bmp": "image/bmp",
+    ".ico": "image/x-icon",
     ".pdf": "application/pdf",
     ".docx": DOCX,
     ".pptx": PPTX,
@@ -73,6 +98,19 @@ _MAGIC = {
     "image/png": (b"\x89PNG\r\n\x1a\n",),
     "image/jpeg": (b"\xff\xd8\xff",),
     "image/gif": (b"GIF87a", b"GIF89a"),
+    "image/tiff": (b"II*\x00", b"MM\x00*"),
+    "image/bmp": (b"BM",),
+    "image/x-icon": (b"\x00\x00\x01\x00",),
+}
+#: ISO base media ``ftyp`` brands (bytes 8–12) of a HEIC/HEIF or AVIF file.
+_FTYP_BRANDS = {
+    "image/heic": frozenset(
+        {b"heic", b"heix", b"heim", b"heis", b"hevc", b"hevx", b"mif1", b"msf1"}
+    ),
+    "image/heif": frozenset(
+        {b"heic", b"heix", b"heim", b"heis", b"hevc", b"hevx", b"mif1", b"msf1"}
+    ),
+    "image/avif": frozenset({b"avif", b"avis", b"mif1", b"msf1"}),
 }
 _WHITESPACE = re.compile(r"\s+")
 
@@ -113,7 +151,7 @@ def resolve_media_type(*, declared: str | None, filename: str) -> str:
         raise UploadRefused(
             "UPLOAD_UNSUPPORTED_TYPE",
             "attach a .md, .txt, .pdf, .docx, .pptx, .xlsx, .csv or .json file, "
-            "or a PNG, JPEG, WebP or GIF image",
+            "or a PNG, JPEG, WebP, GIF, SVG, HEIC, AVIF, TIFF, BMP or ICO image",
         )
     return by_extension
 
@@ -161,6 +199,20 @@ def validate_upload_bytes(*, data: bytes, media_type: str, settings: Settings) -
     if media_type == "image/webp":
         if not (data[:4] == b"RIFF" and data[8:12] == b"WEBP"):
             raise UploadRefused("UPLOAD_NOT_AN_IMAGE", "the file is not a WebP image")
+        return
+    if media_type in _FTYP_BRANDS:
+        if not (data[4:8] == b"ftyp" and data[8:12] in _FTYP_BRANDS[media_type]):
+            raise UploadRefused("UPLOAD_NOT_AN_IMAGE", f"the file is not a {media_type} image")
+        return
+    if media_type == "image/svg+xml":
+        try:
+            # The whole document, not a head: design tools put long comments and DOCTYPEs before
+            # the <svg> tag, and an image is at most the image limit, checked above.
+            document = data.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise UploadRefused("UPLOAD_NOT_AN_IMAGE", "the file is not an SVG image") from exc
+        if "<svg" not in document:
+            raise UploadRefused("UPLOAD_NOT_AN_IMAGE", "the file is not an SVG image")
         return
     if not data.startswith(_MAGIC[media_type]):
         raise UploadRefused("UPLOAD_NOT_AN_IMAGE", f"the file is not a {media_type} image")

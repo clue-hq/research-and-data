@@ -69,7 +69,7 @@ from wcmatch import glob as wcglob
 from .critique_fidelity import CRITIQUE_FILENAME, normalize_critique_document
 from .materialize import _LOCK_NAME
 from .paths import normalize_agent_key
-from .platform_reads import PROJECT_CONTEXT_DIR, SELLER_DIR
+from .platform_reads import ATTACHMENTS_DIR, PROJECT_CONTEXT_DIR, SELLER_DIR
 
 logger = get_logger("lumen_agent.fs_backend")
 
@@ -97,7 +97,7 @@ class AgentWorkspaceBackend(FilesystemBackend):
         critique_observer: Callable[[Path, str], str | None] | None = None,
         active_run_id: str | None = None,
         history_thread_id: str | None = None,
-        readonly_subdirs: tuple[str, ...] = (SELLER_DIR, PROJECT_CONTEXT_DIR),
+        readonly_subdirs: tuple[str, ...] = (SELLER_DIR, PROJECT_CONTEXT_DIR, ATTACHMENTS_DIR),
     ) -> None:
         super().__init__(root_dir=root_dir, virtual_mode=True, max_file_size_mb=max_file_size_mb)
         # W1.5: whether reference assets rode this turn. Only a reference turn

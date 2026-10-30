@@ -29,14 +29,14 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
-from .inputs import AccountLogo, SiteSection, SiteTurnInputs
+from .inputs import AccountLogo, AttachedImage, SiteSection, SiteTurnInputs
 
 SITE_DIR = Path(__file__).resolve().parent
 
 #: Rebuilt from the database at the start of every request.
 REGENERATED = (
     "brief.md", "site.md", "research", "catalog", "brand", "project-context", "skills",
-    "skills-e5", "skills-live", "page.json", "pages", "shell.json",
+    "skills-e5", "skills-live", "page.json", "pages", "shell.json", "attachments",
 )
 #: Left out of the session snapshot: everything rebuilt per request, plus `seller/` (rewritten per
 #: pin by `write_seller_knowledge`), `work/` (one request's compaction offloads) and
@@ -259,8 +259,11 @@ def account_logo_section(logos: Sequence[AccountLogo]) -> str:
     return "\n".join(out + [""])
 
 
-def turn_brand(brand: Mapping[str, Any], logos: Sequence[AccountLogo]) -> dict:
-    """The brand the turn validates with: the stored brand plus this request's account logos."""
+def turn_brand(
+    brand: Mapping[str, Any], logos: Sequence[AccountLogo], attached: Sequence[AttachedImage] = ()
+) -> dict:
+    """The brand the turn validates with: the stored brand plus this request's account logos and
+    the images sent in the chat."""
 
     merged = copy.deepcopy(dict(brand))
     assets = merged.setdefault("assets", {})
@@ -270,7 +273,25 @@ def turn_brand(brand: Mapping[str, Any], logos: Sequence[AccountLogo]) -> dict:
             "description": logo.label or LOGO_CELLS.get(logo.cell, logo.cell),
             "mime": logo.content_type, "file": logo.file, "logo": None,
         }
+    for image in attached:
+        assets[image.asset_id] = {
+            "kind": "attached_image", "label": image.filename,
+            "description": f"attached in chat: {image.filename}",
+            "mime": image.content_type, "file": image.file, "logo": None,
+        }
     return merged
+
+
+def attached_images_section(images: Sequence[AttachedImage]) -> str:
+    """brand/brand.md's list of the images sent in the chat, by the file a page places."""
+
+    if not images:
+        return ""
+    out = ["", "## Images attached in this chat", ""]
+    for image in sorted(images, key=lambda item: not item.current):
+        when = "with this message" if image.current else "earlier in this chat"
+        out.append(f"- `{image.file}`: {image.filename} (sent {when})")
+    return "\n".join(out + [""])
 
 
 def site_pages_of(site: Mapping[str, Any]) -> dict[str, dict]:
@@ -913,7 +934,11 @@ def materialize_workspace(
     plan.md, history.md and fetched/ (the agent's memory). Returns a summary for the run record.
     """
 
-    from lumen_agent.platform_reads import write_seller_knowledge
+    from lumen_agent.platform_reads import (
+        read_thread_attachments,
+        write_seller_knowledge,
+        write_thread_attachments,
+    )
 
     workspace.mkdir(parents=True, exist_ok=True)
     for name in REGENERATED:
@@ -938,6 +963,11 @@ def materialize_workspace(
 
     if inputs.platform_reads is not None:
         write_seller_knowledge(workspace, inputs.platform_reads, record=record or (lambda *a, **k: None))
+    # Spec 2026-10-30 §3.3: the chat's files, rebuilt every request, read-only (READ_ONLY).
+    attachments_note = write_thread_attachments(
+        workspace,
+        read_thread_attachments(inputs.platform_reads, record=record or (lambda *a, **k: None)),
+    )
     if inputs.project_files:
         context = workspace / "project-context"
         context.mkdir()
@@ -956,7 +986,10 @@ def materialize_workspace(
     brand_file = workspace / "brand" / "brand.md"
     brand_file.parent.mkdir(parents=True, exist_ok=True)
     existing = brand_file.read_text() if brand_file.exists() else ""
-    brand_file.write_text(existing.rstrip() + "\n" + account_logo_section(inputs.account_logos))
+    brand_file.write_text(
+        existing.rstrip() + "\n" + account_logo_section(inputs.account_logos)
+        + attached_images_section(inputs.attached_images)
+    )
     if inputs.agent_sections:
         components = workspace / "catalog" / "seller-components.md"
         components.parent.mkdir(parents=True, exist_ok=True)
@@ -972,10 +1005,11 @@ def materialize_workspace(
     write_site_files(workspace, site)
     if any(page.get("content") for page in site_pages_of(site).values()):
         versions = inputs.site_versions.list_versions(10) if inputs.site_versions is not None else []
-        (workspace / "site.md").write_text(site_summary(workspace, turn_brand(inputs.brand, inputs.account_logos), versions))
+        (workspace / "site.md").write_text(site_summary(workspace, turn_brand(inputs.brand, inputs.account_logos, inputs.attached_images), versions))
     return {
         "research_blocks": len(inputs.overview) + len(inputs.insights),
         "claims_labelled": len(labels),
         "people_in_research": len(research_people(inputs.overview + inputs.insights)),
         "clones": len(list((workspace / "catalog" / "clones").glob("*.md"))),
+        "attachments_note": attachments_note,
     }

@@ -184,5 +184,10 @@ def register_upload_routes(
                 "Content-Disposition": f'inline; filename="{safe_name}"',
                 # The bytes are immutable and tenant-scoped: a shared cache must never hold them.
                 "Cache-Control": "private, max-age=3600",
+                # A person's file served from the app's own origin: an SVG (or anything a browser
+                # might sniff as HTML) opened in a tab must not run script with the viewer's session
+                # (review I-5). Pictures still render in <img>.
+                "Content-Security-Policy": "sandbox; default-src 'none'",
+                "X-Content-Type-Options": "nosniff",
             },
         )

@@ -63,7 +63,7 @@ from pathlib import Path, PurePosixPath
 from typing import Final
 
 from clue_agents.contracts import WorkspacePolicy
-from clue_api.sandbox.workspaces import SandboxMounts
+from clue_agents.sandbox.workspaces import SandboxMounts
 
 __all__ = [
     "SANDBOX_OUTPUT_EXTENSIONS",

@@ -31,6 +31,7 @@ from clue_agents import (
     TurnLayerSource,
     WorkspaceProductLayerSource,
 )
+from clue_agents.sandbox.workspaces import SandboxWorkspaces
 from clue_api.agent_model_wiring import build_agent_model_provider
 from clue_api.agent_registry_wiring import build_agent_profile_registry
 from clue_api.agent_turn_wiring import (
@@ -45,7 +46,6 @@ from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.crm.read_sinks import CrmReadSinks
 from clue_api.deep import ProfileAccountFn
 from clue_api.project_library_refresh import ProjectLibraryRefresher
-from clue_api.sandbox.workspaces import SandboxWorkspaces
 from clue_api.turn_binding import CapturedTurnBinder
 from clue_config import Secrets, Settings
 from clue_config.gateway import GatewayConfig

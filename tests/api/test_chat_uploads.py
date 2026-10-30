@@ -108,3 +108,53 @@ def test_document_bytes_rules() -> None:
     with pytest.raises(UploadRefused) as not_utf8:
         validate_upload_bytes(data=b"\xff\xfe,x\n", media_type="text/csv", settings=settings)
     assert not_utf8.value.code == "UPLOAD_NOT_A_DOCUMENT"
+
+
+def test_more_image_formats_are_accepted_by_their_bytes() -> None:
+    """Spec 2026-10-30 §3.6: SVG, HEIC/HEIF, AVIF, TIFF, BMP and ICO are chat images too."""
+
+    settings = Settings(_env_file=None)
+    accepted = {
+        "image/svg+xml": b'<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"/>',
+        "image/heic": b"\x00\x00\x00\x18ftypheic" + b"\x00" * 12,
+        "image/heif": b"\x00\x00\x00\x18ftypmif1" + b"\x00" * 12,
+        "image/avif": b"\x00\x00\x00\x1cftypavif" + b"\x00" * 12,
+        "image/tiff": b"II*\x00" + b"\x00" * 12,
+        "image/bmp": b"BM" + b"\x00" * 14,
+        "image/x-icon": b"\x00\x00\x01\x00" + b"\x00" * 12,
+    }
+    for media_type, data in accepted.items():
+        assert attachment_family(media_type) == "image"
+        validate_upload_bytes(data=data, media_type=media_type, settings=settings)
+    validate_upload_bytes(
+        data=b"MM\x00*" + b"\x00" * 12, media_type="image/tiff", settings=settings
+    )
+    for extension, media_type in (
+        ("svg", "image/svg+xml"),
+        ("heic", "image/heic"),
+        ("heif", "image/heif"),
+        ("avif", "image/avif"),
+        ("tif", "image/tiff"),
+        ("tiff", "image/tiff"),
+        ("bmp", "image/bmp"),
+        ("ico", "image/x-icon"),
+    ):
+        assert resolve_media_type(declared=None, filename=f"a.{extension}") == media_type
+    with pytest.raises(UploadRefused) as refused:
+        validate_upload_bytes(data=PNG, media_type="image/heic", settings=settings)
+    assert refused.value.code == "UPLOAD_NOT_AN_IMAGE"
+    with pytest.raises(UploadRefused) as refused:
+        validate_upload_bytes(data=b"<html></html>", media_type="image/svg+xml", settings=settings)
+    assert refused.value.code == "UPLOAD_NOT_AN_IMAGE"
+
+
+def test_an_svg_whose_tag_follows_a_long_comment_is_accepted() -> None:
+    """Review M-8: the check read only the first 4 KB, refusing a valid SVG whose <svg> tag comes
+    after a long comment or DOCTYPE (design tools write both)."""
+
+    svg = (
+        b'<?xml version="1.0"?>\n<!-- '
+        + b"x" * 6000
+        + b' -->\n<svg xmlns="http://www.w3.org/2000/svg"/>'
+    )
+    validate_upload_bytes(data=svg, media_type="image/svg+xml", settings=Settings(_env_file=None))

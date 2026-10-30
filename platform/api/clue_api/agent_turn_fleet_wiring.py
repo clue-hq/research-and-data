@@ -555,6 +555,7 @@ class ProjectConversationTurnRunner:
                     leg=open_leg,
                     user_message_ref=user_message_ref,
                     focus_refs=submission_focus_refs,
+                    attachments=submission_attachments,
                     card_payload=project_conversation_card_payload(
                         workspace_id=workspace_id,
                         project_id=scope.project_id,
@@ -1874,6 +1875,7 @@ def build_design_leg_exit_judge(
         artifacts: tuple[str, ...] = (),
         artifact: str | None = None,
         tags: tuple[str, ...] = (),
+        files: tuple[str, ...] = (),
     ) -> ExitJudgment | None:
         try:
             if not model_holder:
@@ -1905,6 +1907,7 @@ def build_design_leg_exit_judge(
                 artifacts=artifacts,
                 artifact=artifact,
                 tags=tags,
+                files=files,
             )
             # Lane 3 slice 3b: the judge is an `evaluator` in its own trace, and the direct
             # model call carries the LangChain handler so its generation nests underneath.
@@ -1927,6 +1930,7 @@ def build_design_leg_exit_judge(
                         "artifacts": list(artifacts),
                         "artifact": artifact,
                         "tags": list(tags),
+                        "files": list(files),
                     },
                 ) as current,
             ):

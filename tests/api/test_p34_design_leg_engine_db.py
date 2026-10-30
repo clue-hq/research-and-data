@@ -286,6 +286,7 @@ async def _submit_message(
     focus_refs: tuple[DomainObjectRef, ...] = (),
     derivation: str | None = None,
     derived_from_turn_id: UUID | None = None,
+    attachment_refs: tuple[Any, ...] = (),
 ) -> AgentTurnSubmissionRow:
     turn_id = uuid5(NAMESPACE_URL, f"p34e:{label}:turn")
     captured = await persist_user_turn(
@@ -311,6 +312,7 @@ async def _submit_message(
         message_sha256=captured.artifact_ref.sha256,
         idempotency_key=f"p34e-{label}",
         context_refs=focus_refs,
+        attachment_refs=attachment_refs,
         previous_turn_outcome=previous_turn_outcome,
         derivation=derivation,
         derived_from_turn_id=derived_from_turn_id,

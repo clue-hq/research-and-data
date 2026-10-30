@@ -225,7 +225,7 @@ class SiteTools:
         self.retry_delay_s = retry_delay_s
         #: The brand this turn validates with: the stored brand, the account's logos, and every
         #: image the turn generates or finds (Contract 1: a blob of this workspace).
-        self.brand = turn_brand(inputs.brand, inputs.account_logos)
+        self.brand = turn_brand(inputs.brand, inputs.account_logos, inputs.attached_images)
         self._initial_asset_ids = frozenset(self.brand.get("assets") or {})
         #: Sections the pages may place: the workspace's, plus any written this turn.
         self.sections: dict[str, SiteSection] = dict(inputs.agent_sections)

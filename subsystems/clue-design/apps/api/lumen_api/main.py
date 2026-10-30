@@ -10573,6 +10573,74 @@ def _host_engine_cache_root(host: Any, workspace_id: str) -> Path:
     return api_engine_cache_root(workspace_id)
 
 
+def _attached_images(
+    host: Any, envelope: Any, run_subject: Any, platform_reads: Any
+) -> tuple[tuple[Any, ...], dict[str, str]]:
+    """The thread's files and the library ids of its images (spec 2026-10-30 §3.4). A read or a
+    registration that fails leaves the turn as it was: the files are still the agent's folder."""
+
+    from .attached_images import register_attached_images
+
+    try:
+        files = tuple(platform_reads.thread_attachments())
+    except Exception:  # noqa: BLE001 - the files are a capability, never a precondition
+        api_logger.warning("design_turn.thread_attachments_unavailable", run_id=envelope.run_id)
+        return (), {}
+    if not files:
+        return (), {}
+    # Review M-7: building the turn's helpers is part of the step, so a failure there leaves the
+    # turn running with its files in attachments/, never failed.
+    try:
+        with _setup_step(envelope.run_id, "attached_images"):
+            repo = HybridRepository(envelope.workspace_id, ensure_workspace=False)
+            registered = register_attached_images(
+                core=_turn_core(host),
+                blobs=_turn_blob_store(host, envelope.workspace_id),
+                cache_dir=_host_engine_cache_root(host, envelope.workspace_id),
+                invocations=_turn_design_tools(host, run_subject),
+                run_id=envelope.run_id,
+                files=files,
+                known=lambda asset_ids: set(repo.get_asset_records(asset_ids)),
+            )
+    except Exception:  # noqa: BLE001 - attached images are a capability, never a precondition
+        api_logger.warning("design_turn.attached_images_failed", run_id=envelope.run_id, exc_info=True)
+        return files, {}
+    return files, registered
+
+
+def _with_attached_references(
+    host: Any, envelope: Any, run_subject: Any, payload: Any, platform_reads: Any
+) -> Any:
+    from .attached_images import attached_reference_ids
+
+    files, registered = _attached_images(host, envelope, run_subject, platform_reads)
+    references = attached_reference_ids(payload.reference_asset_ids or [], files, registered)
+    if references == list(payload.reference_asset_ids or []):
+        return payload
+    return payload.model_copy(update={"reference_asset_ids": references})
+
+
+def _site_attached_images(host: Any, envelope: Any, run_subject: Any, platform_reads: Any) -> list:
+    import hashlib
+
+    from lumen_agent.site.inputs import AttachedImage
+
+    if platform_reads is None:
+        return []
+    files, registered = _attached_images(host, envelope, run_subject, platform_reads)
+    return [
+        AttachedImage(
+            asset_id=registered[item.sha256],
+            file=f"/asset-store/{hashlib.sha256(item.viewable[0]).hexdigest()}",
+            filename=item.filename,
+            content_type=item.viewable[1],
+            current=bool(item.current),
+        )
+        for item in files
+        if item.sha256 in registered
+    ]
+
+
 def _turn_core(host: Any) -> CoreClient:
     """The Rust engine client. The detached fleet worker has no ``app.state`` to take one from,
     so it builds the same client ``create_app`` would."""
@@ -11028,6 +11096,14 @@ def _execute_agent_turn_job(
                     exc_info=True,
                 )
                 platform_reads = None
+
+    # --- spec 2026-10-30 §3.4: the images sent in this chat become library images --------------
+    # Registered once each (keyed by the file's own digest, so a retry registers the same ids),
+    # and the ones sent with THIS message ride as references after any the person tagged, up to
+    # the cap. Only when this worker resolves the references itself (a leg envelope); a manifest
+    # the offerer froze is consumed as it is.
+    if platform_reads is not None and reference_assets is _REFERENCES_UNRESOLVED:
+        payload = _with_attached_references(host, envelope, run_subject, payload, platform_reads)
 
     # --- genad Task 5: is this turn's proposal ours to commit? ---------------------------------
     # ALL of: a leg block, a pinned document, and the leg's frozen CAS base. A direct editor turn
@@ -12563,6 +12639,9 @@ def _execute_site_turn_job(
             inputs = replace(
                 inputs,
                 live_sites=live,
+                # Spec 2026-10-30 §3.4: the chat's images, registered in the library, so the site
+                # agent can look at them and place them (its attachments/ folder has the originals).
+                attached_images=_site_attached_images(host, envelope, run_subject, platform_reads),
                 clarification_already_requested=payload.previous_turn_outcome == "clarification_requested",
                 sections=DurableSiteSectionPort(
                     store=store, invocations=invocations, run_id=envelope.run_id, brand=inputs.brand, interactive=live

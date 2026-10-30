@@ -11,13 +11,8 @@ import {
 } from "@/features/projects/hooks/use-project-chat-controller";
 import { useChatAttachments } from "@/features/projects/hooks/use-chat-attachments";
 import { useMentionDirectory } from "@/features/projects/hooks/use-mention-directory";
-import { useDesignReferenceAttachments } from "@/features/projects/hooks/use-design-reference-attachments";
 import { CHAT_ATTACHMENT_ACCEPT } from "@/features/projects/model/chat-attachments";
 import { buildComposerCatalog } from "@/features/projects/model/composer-context-catalog";
-import {
-  DESIGN_REFERENCE_ACCEPT,
-  MAX_DESIGN_REFERENCE_ATTACHMENTS,
-} from "@/features/projects/model/design-reference-attachments";
 import type { useProjectWorkspaceController } from "@/features/projects/hooks/use-project-workspace-controller";
 import { useAddToOpenChatController } from "@/features/projects/hooks/use-add-to-open-chat-controller";
 import { ResearchProgressCard } from "@/features/projects/components/research-progress-card";
@@ -39,7 +34,6 @@ import { useFileDrop } from "../hooks/use-file-drop";
 import { agentRunLockForThread } from "../model/agent-run-lock";
 import { artifactsToAutoOpen } from "../model/artifact-auto-open";
 import { isWebsiteKind } from "../model/artifact-kind";
-import { routeAttachmentFiles } from "../model/attachment-routing";
 import {
   chatDockContent,
   chatDockDismissedBySubmission,
@@ -456,45 +450,18 @@ export function ChatSurface({
     joinedVersion,
     seedSceneStream,
   ]);
-  const designReferencesEnabled =
-    chat.designLegOpen &&
-    shell.artifactKind === "ad" &&
-    sceneSession.activeDocumentId !== null;
-  const referenceAttachments = useDesignReferenceAttachments({
-    enabled: designReferencesEnabled,
-  });
-  // The ordinary chat attachments (`.md`/`.txt`/images the turn carries). They
-  // are independent of the design leg: ruling 4 only decides which of the two
-  // hooks a dropped IMAGE belongs to while an ad leg is open.
+  // The composer's ONE attachment intake (spec 2026-10-30 §3.8): every file —
+  // text, document or image, whatever the panel shows — is a chat attachment,
+  // and the server decides how it reaches the agent. The `+` picker and the
+  // drop target both land here.
   const chatAttachments = useChatAttachments({
     enabled: workspace.composerCapabilities.attachments,
   });
-  /**
-   * The composer's ONE attachment intake — the `+` picker and (task 14) the
-   * drop target both land here, so a file takes the same route whichever
-   * gesture delivered it.
-   */
-  const handleAttachmentFiles = (files: File[]) => {
-    const routed = routeAttachmentFiles(files, designReferencesEnabled);
-    if (routed.design.length > 0) referenceAttachments.onFiles(routed.design);
-    if (routed.chat.length > 0) chatAttachments.onFiles(routed.chat);
-  };
-  /** One chip list, two owners: whichever hook holds the id removes it. */
-  const handleAttachmentRemove = (attachmentId: string) => {
-    const design = referenceAttachments.attachments.some(
-      (attachment) => attachment.id === attachmentId,
-    );
-    if (design) referenceAttachments.remove(attachmentId);
-    else chatAttachments.remove(attachmentId);
-  };
   // Dropping a file anywhere on the chat pane lands in the SAME intake the `+`
-  // picker uses, so a dropped image still follows ruling 4's design/chat route.
-  // The gate is the button's gate, verbatim: a surface that will accept a file
-  // from the picker accepts the same file from a drop.
+  // picker uses. The gate is the button's gate, verbatim.
   const drop = useFileDrop({
-    enabled:
-      designReferencesEnabled || workspace.composerCapabilities.attachments,
-    onFiles: handleAttachmentFiles,
+    enabled: workspace.composerCapabilities.attachments,
+    onFiles: chatAttachments.onFiles,
   });
   // Same gate as the reference images above: a `design_node` ref only means
   // anything beside the open design leg's document, and the backend refuses a
@@ -804,20 +771,9 @@ export function ChatSurface({
     entityIds?: string[],
     justAdded?: WebAnnotation,
   ): Promise<boolean> => {
-    // Snapshot references synchronously before any await. A queued turn owns these
-    // exact asset ids even if uploads or selection change before the POST returns.
-    const referenceSnapshot = designReferencesEnabled
-      ? referenceAttachments.snapshotContextRefs()
-      : [];
-    if (
-      referenceAttachments.attachments.length > 0 &&
-      referenceSnapshot === null
-    ) {
-      return false;
-    }
-    // The chat attachments, snapshotted for the same reason and refused for the
-    // same one: a turn carries the files that were ready when it was sent, and
-    // an upload still in flight is not one of them.
+    // The chat attachments, snapshotted synchronously before any await and
+    // refused while one is still uploading: a turn carries the files that were
+    // ready when it was sent, and an upload in flight is not one of them.
     const attachmentSnapshot = chatAttachments.snapshot();
     if (chatAttachments.attachments.length > 0 && attachmentSnapshot === null) {
       return false;
@@ -858,7 +814,6 @@ export function ChatSurface({
       ...entityContextRefs,
       ...editTargetContextRefs(editTargetSnapshot),
       ...annotationContextRefs(annotationSnapshot),
-      ...(referenceSnapshot ?? []),
     ];
     // The annotations can BE the message: a marketer who wrote three notes and
     // pressed send said everything in them, and the refs carry the words.
@@ -884,7 +839,6 @@ export function ChatSurface({
       shell.setEditing(false);
     }
     if (accepted.status !== "accepted") return false;
-    referenceAttachments.clear();
     chatAttachments.clear();
     // R-A3: the annotations are now the turn's, so the chips and the badges in
     // the canvas go together. Only on an ACCEPTED submit — a refused one leaves
@@ -1155,27 +1109,10 @@ export function ChatSurface({
               running={runControl.running}
               stopping={chat.stopPending}
               onStop={runControl.onStop}
-              attachmentAccept={
-                designReferencesEnabled
-                  ? `${DESIGN_REFERENCE_ACCEPT},${CHAT_ATTACHMENT_ACCEPT}`
-                  : CHAT_ATTACHMENT_ACCEPT
-              }
-              attachmentError={
-                (designReferencesEnabled ? referenceAttachments.error : null) ??
-                chatAttachments.error
-              }
-              attachmentInputDisabled={
-                designReferencesEnabled &&
-                referenceAttachments.attachments.length >=
-                  MAX_DESIGN_REFERENCE_ATTACHMENTS
-              }
+              attachmentAccept={CHAT_ATTACHMENT_ACCEPT}
+              attachmentError={chatAttachments.error}
               attachmentLabel="Attach files"
-              attachments={[
-                ...(designReferencesEnabled
-                  ? referenceAttachments.attachments
-                  : []),
-                ...chatAttachments.attachments,
-              ]}
+              attachments={[...chatAttachments.attachments]}
               // Never disabled while work is detached: the user keeps the wheel.
               disabled={chat.access !== null || chat.route !== null}
               dropActive={drop.active}
@@ -1184,15 +1121,13 @@ export function ChatSurface({
               modelPickerOpen={controller.modelPickerOpen}
               models={workspace.models}
               onAttachmentFiles={
-                designReferencesEnabled ||
                 workspace.composerCapabilities.attachments
-                  ? handleAttachmentFiles
+                  ? chatAttachments.onFiles
                   : undefined
               }
               onAttachmentRemove={
-                designReferencesEnabled ||
                 workspace.composerCapabilities.attachments
-                  ? handleAttachmentRemove
+                  ? chatAttachments.remove
                   : undefined
               }
               onEntityRemove={
@@ -1210,11 +1145,7 @@ export function ChatSurface({
               onPromptChange={controller.setPrompt}
               onSubmit={(prompt, entityIds) => submitTurn(prompt, entityIds)}
               prompt={controller.prompt}
-              sendDisabled={
-                (designReferencesEnabled &&
-                  referenceAttachments.submissionBlocked) ||
-                chatAttachments.submissionBlocked
-              }
+              sendDisabled={chatAttachments.submissionBlocked}
               // Slice 2 (R-A2): chips on the bar are already a message — the
               // notes ride the refs — so Send works on an empty box and the
               // turn reads "See annotations."

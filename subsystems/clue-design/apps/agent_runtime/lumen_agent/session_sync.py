@@ -25,9 +25,13 @@ import mimetypes
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
+from .platform_reads import ATTACHMENTS_DIR
+
 #: Per-file ceiling. A session's memory is briefs, notes and round previews; anything larger is a
 #: turn's scratch output that the next turn does not need in order to continue the conversation.
-MAX_FILE_BYTES = 25 * 1024 * 1024
+#: Founder 2026-10-30: a design run may keep up to 500 MB of output, and its session carries it, so
+#: nothing the agent keeps lives only on one worker's disk (AW-8).
+MAX_FILE_BYTES = 500 * 1024 * 1024
 
 #: The one manifest key prefix that does NOT live under the session folder — the conversation
 #: history is written beside ``sessions/``, at the workspace root, by the deepagents middleware.
@@ -48,7 +52,10 @@ def _iter_workspace_files(session_dir: Path, exclude: frozenset[str] = frozenset
         # file would otherwise be read and stored as if it were session content.
         if path.is_symlink() or not path.is_file():
             continue
-        if path.relative_to(workspace).parts[0] in exclude:
+        # attachments/ is the chat's files, rebuilt from the platform every turn (spec 2026-10-30):
+        # never session memory, and never a second copy of a file the person may later erase.
+        top = path.relative_to(workspace).parts[0]
+        if top in exclude or top == ATTACHMENTS_DIR:
             continue
         if path.stat().st_size <= MAX_FILE_BYTES:
             yield path.relative_to(session_dir).as_posix(), path

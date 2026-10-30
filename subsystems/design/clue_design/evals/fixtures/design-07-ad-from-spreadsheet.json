@@ -1,0 +1,22 @@
+{
+  "name": "design-07-ad-from-spreadsheet",
+  "kind": "clearly_design",
+  "brief": "Launch-day artboard for Acme's Q3 campaign.",
+  "history": [],
+  "files": [
+    "\"q3-analysis.xlsx\" (spreadsheet)"
+  ],
+  "message": "Make the ad from the analysis in this spreadsheet.",
+  "judgment": {
+    "close_this_session": false,
+    "hand_message_to_strategy_agent": false,
+    "current_artifact_accepted": false,
+    "reasoning": "The spreadsheet is material for this ad; the ask is design work on it."
+  },
+  "expected": {
+    "action": "continue",
+    "reason": null,
+    "fail_safe": false
+  },
+  "why": "A file does not decide where a message belongs: the ask is an ad built from the spreadsheet (founder ruling 2026-10-30)."
+}

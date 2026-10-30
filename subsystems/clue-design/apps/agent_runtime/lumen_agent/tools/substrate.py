@@ -420,6 +420,9 @@ class LumenDesignTools:
         #: carry every ledger entry since the last frame — see `_contiguous_sink_extra`.
         self._streamed_ledger_len = 0
         self.effective_brand_context: Optional[JsonObject] = None
+        #: Spec 2026-10-30 §3.3: the lines naming the chat's files, written by the scaffold and
+        #: added to the turn's message ("" when the chat has none).
+        self.attachments_note = ""
         # K1: compact brand context card, built once from the by-value kit in
         # config (None without a kit). Injected via load_knowledge and
         # curated_context — the full kit JSON never enters model history.

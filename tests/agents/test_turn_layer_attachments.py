@@ -118,3 +118,68 @@ def test_an_undescribed_attachment_keeps_the_pointer_line() -> None:
         f"Attachment reference only: artifact_key={brief.artifact_key} "
         f"sha256={brief.sha256} media_type=text/markdown byte_count=120"
     ) in [c.body for c in candidates]
+
+
+def test_an_svg_is_opened_as_a_file_and_a_tiff_is_shown() -> None:
+    """Spec 2026-10-30 §3.6: SVG is never sent as a picture; TIFF is shown (as a PNG copy)."""
+
+    message = _ref("a", "text/plain", 5)
+    drawing = _ref("b", "image/svg+xml", 300)
+    scan = _ref("c", "image/tiff", 900)
+    request = AgentTurnRequest(
+        turn_id=uuid4(),
+        thread_id="thr_l7_svg",
+        constitution=constitution(workspace_id=WS),
+        user_message_artifact_ref=message,
+        attachment_refs=(drawing, scan),
+        requested_at=datetime.now(UTC),
+    )
+    import io
+
+    from PIL import Image
+
+    tiff = io.BytesIO()
+    Image.new("RGB", (3, 2)).save(tiff, format="TIFF")
+    source = TurnLayerSource(
+        _Reader({message.artifact_key: b"hello", scan.artifact_key: tiff.getvalue()}),
+        attachments=_Describer(
+            {
+                drawing.artifact_key: _Desc("logo.svg", "attachments/logo.svg", "image"),
+                scan.artifact_key: _Desc("scan.tif", "attachments/scan.tif", "image"),
+            }
+        ),
+    )
+    candidates = asyncio.run(source.load(request=request, profile=None, history=()))
+    assert (
+        'Attachment "logo.svg" (image/svg+xml, 300 bytes) was attached to this message. '
+        "It is at attachments/logo.svg; open it with read_file."
+    ) in [c.body for c in candidates]
+    assert candidates[-1].image_refs == (scan,)
+
+
+def test_an_image_that_cannot_be_shown_is_not_said_to_be_shown() -> None:
+    """Review M-5: a TIFF whose bytes do not decode is not sent as a picture, so the line must not
+    tell the agent it can see it."""
+
+    message = _ref("a", "text/plain", 5)
+    scan = _ref("c", "image/tiff", 900)
+    request = AgentTurnRequest(
+        turn_id=uuid4(),
+        thread_id="thr_l7_broken",
+        constitution=constitution(workspace_id=WS),
+        user_message_artifact_ref=message,
+        attachment_refs=(scan,),
+        requested_at=datetime.now(UTC),
+    )
+    source = TurnLayerSource(
+        _Reader({message.artifact_key: b"hello", scan.artifact_key: b"not a tiff"}),
+        attachments=_Describer(
+            {scan.artifact_key: _Desc("scan.tif", "attachments/scan.tif", "image")}
+        ),
+    )
+    candidates = asyncio.run(source.load(request=request, profile=None, history=()))
+    assert (
+        'Attachment "scan.tif" (image/tiff, 900 bytes) was attached to this message. '
+        "It is at attachments/scan.tif; it could not be shown to you as a picture."
+    ) in [c.body for c in candidates]
+    assert candidates[-1].image_refs == ()

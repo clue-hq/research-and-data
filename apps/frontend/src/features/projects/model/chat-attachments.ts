@@ -28,6 +28,14 @@ export const CHAT_ATTACHMENT_ACCEPT = [
   ".jpeg",
   ".webp",
   ".gif",
+  ".svg",
+  ".heic",
+  ".heif",
+  ".avif",
+  ".tif",
+  ".tiff",
+  ".bmp",
+  ".ico",
   "text/markdown",
   "text/plain",
   "application/pdf",
@@ -40,6 +48,13 @@ export const CHAT_ATTACHMENT_ACCEPT = [
   "image/jpeg",
   "image/webp",
   "image/gif",
+  "image/svg+xml",
+  "image/heic",
+  "image/heif",
+  "image/avif",
+  "image/tiff",
+  "image/bmp",
+  "image/x-icon",
 ].join(",");
 
 export const CHAT_ATTACHMENT_LIMITS = {
@@ -53,7 +68,21 @@ export const CHAT_ATTACHMENT_LIMITS = {
 export type AttachmentFamily = "text" | "image" | "document";
 
 const TEXT = new Set(["text/markdown", "text/plain"]);
-const IMAGE = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+const IMAGE = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  // Spec 2026-10-30 §3.6: the server shows a model a PNG copy of these, and
+  // opens an SVG as a file.
+  "image/svg+xml",
+  "image/heic",
+  "image/heif",
+  "image/avif",
+  "image/tiff",
+  "image/bmp",
+  "image/x-icon",
+]);
 const DOCUMENT = new Set([
   "application/pdf",
   DOCX,
@@ -77,6 +106,14 @@ const BY_EXT: Record<string, string> = {
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
   ".gif": "image/gif",
+  ".svg": "image/svg+xml",
+  ".heic": "image/heic",
+  ".heif": "image/heif",
+  ".avif": "image/avif",
+  ".tif": "image/tiff",
+  ".tiff": "image/tiff",
+  ".bmp": "image/bmp",
+  ".ico": "image/x-icon",
 };
 
 /**
@@ -96,6 +133,19 @@ export function attachmentMediaType(file: {
   const dot = file.name.lastIndexOf(".");
   return dot >= 0 ? (BY_EXT[file.name.slice(dot).toLowerCase()] ?? null) : null;
 }
+
+/**
+ * Whether a browser can draw this image as a preview. HEIC/HEIF and TIFF are
+ * accepted attachments (the agent is shown a PNG copy) but most browsers
+ * cannot draw them, so their chips show the image icon instead of a broken
+ * thumbnail.
+ */
+export function canPreviewInBrowser(mediaType: string): boolean {
+  const type = mediaType.toLowerCase();
+  return IMAGE.has(type) && !NO_BROWSER_PREVIEW.has(type);
+}
+
+const NO_BROWSER_PREVIEW = new Set(["image/heic", "image/heif", "image/tiff"]);
 
 /** `null` for a file this chat will not carry at all. */
 export function attachmentFamily(file: {
@@ -119,7 +169,10 @@ export function attachmentLimitError(
   }
   for (const file of incoming) {
     const family = attachmentFamily(file);
-    if (family === "image" && file.size > CHAT_ATTACHMENT_LIMITS.imageMaxBytes) {
+    if (
+      family === "image" &&
+      file.size > CHAT_ATTACHMENT_LIMITS.imageMaxBytes
+    ) {
       return `${file.name} is over 10 MB.`;
     }
     if (family === "text" && file.size > CHAT_ATTACHMENT_LIMITS.textMaxBytes) {

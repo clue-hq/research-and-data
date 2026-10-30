@@ -1,7 +1,7 @@
 """The conversation engine binds the turn's sandbox workspace for exactly the turn (Task 11).
 
 ``run_python@1`` is handed ids, never handles, so it finds its host directories by looking the
-turn up in :class:`~clue_api.sandbox.workspaces.SandboxWorkspaces`. That registry is only ever
+turn up in :class:`~clue_agents.sandbox.workspaces.SandboxWorkspaces`. That registry is only ever
 truthful if the engine registers *while it holds the lease* and releases on every exit path —
 otherwise a later turn's script could run against a released (or another turn's) tree.
 
@@ -28,13 +28,13 @@ from clue_agents import (
     MountRequest,
 )
 from clue_agents.ports import TurnBinding
+from clue_agents.sandbox.workspaces import SandboxWorkspaces
 from clue_agents.worker_area import ChatScope
 from clue_agents.workspace import AgentWorkspaceFactory
 from clue_agents.workspace_policy import PreparedWorkspaceRoot
 from clue_api import conversation_turns as engine_module
 from clue_api.conversation_turns import ConversationTurnEngine
 from clue_api.crm.read_sinks import CrmReadSinks
-from clue_api.sandbox.workspaces import SandboxWorkspaces
 from clue_core import ExecutionId
 from tests.agents.conftest import artifact, constitution
 from tests.agents.workspace_helpers import make_factory, policy
@@ -279,7 +279,7 @@ def test_a_runtime_that_raises_still_releases_the_binding(
 
 
 def _unused_mounts(factory: Any) -> Any:
-    from clue_api.sandbox.workspaces import SandboxMounts
+    from clue_agents.sandbox.workspaces import SandboxMounts
 
     return SandboxMounts(
         thread_root=factory.thread_host_path(WORKSPACE_ID, PROJECT_ID, THREAD_ID),
