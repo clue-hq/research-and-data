@@ -1,15 +1,15 @@
-"""Pre-generation: brand-coherent imagery per named style group (spec §4.3, §5 W2).
+"""Pre-generation: one background from each of up to four of the brand's ads (spec §4.3, §5 W2).
 
-One to three assets per group, generated offline against the brand's own harvested creatives,
-so a later ad turn has something to place instead of having to invent a ground mid-run.
+Generated offline against the brand's own harvested creatives, so a later ad turn has something
+to place instead of having to invent a ground mid-run.
 
-**Card shape, after the 2026-08-26 prose ruling.** The card no longer carries a per-system
-field-by-field breakdown, so a prompt's substance is now the card's PROSE (the brand's ads
-described in the model's own words) plus the style group's name. That is a truer anchor than
-the old ``ground_treatment`` field was: it is what the ads actually look like rather than one
-slot of a form. The durable link column is still called ``visual_system`` (migration
-``50ce19bf5ef7``) and now carries the style group's name — the column keeps its W2 name because
-renaming it would be a migration that buys nothing.
+**One background per ad (founder ruling 2026-10-30, reference ads spec §6).** Backgrounds used to
+be made per style group, every one seeing the same handful of ads. There are no groups now: each
+of the first :data:`ADS_TO_GENERATE_FROM` ads gets one background, made with that ad as its only
+reference and told to imitate its background, in the shape closest to the ad's own. The card's
+prose still rides every prompt. The durable link column is still called ``visual_system``
+(migration ``50ce19bf5ef7``) and now carries the source ad's creative id — the column keeps its W2
+name because renaming it would be a migration that buys nothing.
 
 **Nothing about the model call is new here.** It goes through the hardened provider seam W1.4
 and W1.7 built: the resolved image model id, ``aspect_ratio`` riding ``image_config``
@@ -19,9 +19,8 @@ to do with the answer.
 
 **Prompt discipline: background only.** The engine supplies structure, typography and tokens
 (spec §1); the image model supplies atmosphere. So every prompt built here is explicitly told
-to produce no text, no logo, no wordmark, no UI and no people — a generated ground with baked-in
-type is a ground the engine cannot lay type on, and it is the single most common way generated
-ad imagery becomes unusable.
+to produce no text, no logo, no wordmark and no UI — a generated ground with baked-in type is a
+ground the engine cannot lay type on.
 
 **A failed generation is never fatal.** Each asset is attempted independently and a failure is
 recorded and skipped, exactly as one rotten creative URL is during harvest. The harvest and the
@@ -37,44 +36,31 @@ from dataclasses import dataclass, field
 from typing import Any
 
 __all__ = [
-    "ASSETS_PER_SYSTEM",
-    "MAX_REFERENCE_IMAGES",
+    "ADS_TO_GENERATE_FROM",
     "PROSE_IN_PROMPT_CHARS",
     "PregeneratedAsset",
     "PregenerationOutcome",
     "background_prompt_for",
-    "pregenerate_for_card",
+    "pregenerate_for_ads",
+    "shape_for",
 ]
 
 JsonObject = dict[str, Any]
 
-#: Assets per named style group (spec §4.3: "2–3 assets"). Two by default — one wide ground
-#: and one square — because a group that gets three near-identical grounds has not gained a
-#: choice, it has gained two more things to scroll past in the library manifest.
-ASSETS_PER_SYSTEM = 2
+#: How many of the brand's ads get a background each (founder 2026-10-30: "make 3-4 from 3-4
+#: different ads"). Each background is made from ONE ad, so the set differs the way the ads do.
+ADS_TO_GENERATE_FROM = 4
 
 #: How much of the card's prose rides one image prompt. The card is bounded for the AGENT's
 #: opening context, which is a different budget from an image model's prompt: past a paragraph
 #: or two an image prompt stops steering and starts averaging.
 PROSE_IN_PROMPT_CHARS = 900
 
-#: How many harvested creatives condition one generation call. The cap mirrors the runtime's
-#: own ``REFERENCE_ASSETS_MAX``: past four, references dilute rather than steer (ruling D1).
-MAX_REFERENCE_IMAGES = 4
-
-#: The (aspect_ratio, label) pairs each system is asked for, in order.
+#: The (aspect_ratio, label) shapes a background can take; each takes its ad's nearest one.
 ASSET_SHAPES = (
-    ("16:9", "wide ground"),
-    ("1:1", "square ground"),
-    ("4:5", "portrait ground"),
-)
-
-#: Appended to every prompt. Not negotiable and not per-system: the division of labour between
-#: the image model and the engine is a property of the pipeline, not of a brand's taste.
-BACKGROUND_ONLY_CLAUSE = (
-    "Produce a background image only. No text of any kind, no letters, no numbers, no "
-    "wordmark, no logo, no watermark, no user interface, no charts, no people and no faces. "
-    "Leave the composition open in the middle so type and a card can be laid over it later."
+    ("16:9", "wide"),
+    ("1:1", "square"),
+    ("4:5", "portrait"),
 )
 
 
@@ -106,148 +92,161 @@ class PregenerationOutcome:
         ]
 
 
-def background_prompt_for(
-    group: JsonObject, *, prose: str, shape_label: str, brand_name: str | None
-) -> str:
-    """One style group's background prompt, in the brand's own described words.
+def background_prompt_for(*, prose: str, shape_label: str, brand_name: str | None) -> str:
+    """One background's prompt, sent with ONE of the brand's ads attached.
 
-    The card's PROSE is the prompt's substance — that is the whole point of distilling it.
-    Anchoring generation in a description of what the brand's ads actually look like, rather
-    than in an adjective someone typed, is what makes the output a member of the brand's family
-    instead of a generically pretty image.
+    Founder-approved wording (2026-10-30): imitate the attached ad's background and leave out
+    everything placed on top of it. The card's prose still rides along so the background
+    belongs to the brand's family, not only to the one ad.
     """
-    parts: list[str] = []
-    if brand_name:
-        parts.append(f"A {shape_label} for {brand_name}'s advertising.")
-    else:
-        parts.append(f"A {shape_label} for a brand's advertising.")
-    described = str(prose or "").strip()[:PROSE_IN_PROMPT_CHARS]
+    brand = f"{brand_name}'s" if brand_name else "a brand's"
+    parts = [
+        f"A {shape_label} background for {brand} advertising.",
+        "The attached image is one of the brand's published ads.",
+        "Imitate that ad's background: its colours, gradients, textures, shapes, light and mood.",
+        "Leave out everything placed on top of it: its words, logo, people, product shots and "
+        "screenshots.",
+    ]
+    described = str(prose or "").strip()[:PROSE_IN_PROMPT_CHARS].rstrip()
     if described:
-        parts.append(f"The brand's published ads, described: {described}")
-    name = str(group.get("name") or "").strip()
-    if name:
-        parts.append(f"This ground belongs to the brand's '{name}' style group.")
-    parts.append(BACKGROUND_ONLY_CLAUSE)
+        parts.append(f"The brand's published ads, described: {described.removesuffix('.')}.")
+    parts.append(
+        "Produce a background image only. No text of any kind, no letters, no numbers, no "
+        "wordmark, no logo, no watermark, no user interface."
+    )
     return " ".join(parts)
 
 
-def pregenerate_for_card(
+def shape_for(image_bytes: bytes) -> tuple[str, str]:
+    """The ``ASSET_SHAPES`` entry closest to an ad's own ratio; square when it cannot be read."""
+    import io
+
+    from PIL import Image
+
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            width, height = image.size
+    except Exception:  # noqa: BLE001 - an unreadable ad still gets a background
+        return ASSET_SHAPES[1]
+    if not width or not height:
+        return ASSET_SHAPES[1]
+    ratio = width / height
+
+    def distance(shape: tuple[str, str]) -> float:
+        across, down = (int(part) for part in shape[0].split(":"))
+        return abs(ratio - across / down)
+
+    return min(ASSET_SHAPES, key=distance)
+
+
+def pregenerate_for_ads(
     card: JsonObject,
     *,
+    ads: list[tuple[str, bytes, str]],
     core: Any,
     cache_dir: str,
     generate: Callable[..., Any],
-    reference_images: list[tuple[bytes, str]] | None = None,
     brand_name: str | None = None,
-    assets_per_system: int = ASSETS_PER_SYSTEM,
     generation_key_for: Callable[..., str] | None = None,
     find_generated: Callable[[str], JsonObject | None] | None = None,
     max_bytes: int | None = None,
 ) -> PregenerationOutcome:
-    """Generate imagery for every named style group on one card.
+    """One background from each of the first :data:`ADS_TO_GENERATE_FROM` different ads.
+
+    ``ads`` is ``(creative_id, image_bytes, mime_type)`` per harvested ad, in the harvest's
+    order. Each generation is sent that one ad as its only reference image, takes the shape
+    closest to it, and is linked under its creative id (``visual_system``, the W2 column name).
 
     ``generate`` is the image provider's ``generate`` — injected rather than imported so a test
-    never has to be one monkeypatch away from a real model call, and so the caller keeps the
-    choice of which hardened entry point is used.
-
-    ``core`` is the ingestion lane's recording core proxy, so the generated bytes get durable
-    custody and a re-pointed record location on the way past, exactly as harvested creative
-    bytes do. The registry row itself is written by the CALLER through the governed
-    ``design_register_generated_asset`` tool: this function produces records and links, it does
-    not write to the database.
+    never has to be one monkeypatch away from a real model call. ``core`` is the ingestion
+    lane's recording core proxy, so the generated bytes get durable custody. The registry row
+    itself is written by the CALLER through the governed ``design_register_generated_asset``
+    tool: this function produces records and links, it does not write to the database.
     """
     outcome = PregenerationOutcome()
-    groups = card.get("style_groups") or []
     prose = str(card.get("prose") or "")
-    references = (reference_images or [])[:MAX_REFERENCE_IMAGES]
-
-    for group in groups:
-        if not isinstance(group, dict):
-            continue
-        name = str(group.get("name") or "").strip()
-        if not name:
-            continue
-        for aspect_ratio, shape_label in ASSET_SHAPES[: max(0, assets_per_system)]:
-            prompt = background_prompt_for(
-                group, prose=prose, shape_label=shape_label, brand_name=brand_name
+    # Different ads only: two identical images would make two identical backgrounds.
+    chosen: dict[str, tuple[str, bytes, str]] = {}
+    for ad in ads:
+        if len(chosen) >= ADS_TO_GENERATE_FROM:
+            break
+        chosen.setdefault(_digest(ad[1]), ad)
+    for creative_id, ad_bytes, ad_mime in chosen.values():
+        aspect_ratio, shape_label = shape_for(ad_bytes)
+        prompt = background_prompt_for(prose=prose, shape_label=shape_label, brand_name=brand_name)
+        generation_key = (
+            generation_key_for(
+                prompt=prompt, aspect_ratio=aspect_ratio, reference_digest=_digest(ad_bytes)
             )
-            generation_key = (
-                generation_key_for(prompt=prompt, aspect_ratio=aspect_ratio)
-                if generation_key_for is not None
-                else None
+            if generation_key_for is not None
+            else None
+        )
+        # PRE-SPEND PROBE, the ``/assets/generate`` route's own pattern and for its own reason:
+        # this is the read that AVOIDS the model call, so it has to happen before it. Every
+        # generated image has different bytes and therefore a different content-derived asset
+        # id, so without the ledger a re-offered job silently pays for the whole set again.
+        if generation_key and find_generated is not None:
+            claimed = find_generated(generation_key)
+            if claimed:
+                outcome.assets.append(_claimed_asset(claimed, creative_id, prompt, aspect_ratio, 1))
+                continue
+        try:
+            generated = generate(
+                prompt=prompt,
+                aspect_ratio=aspect_ratio,
+                reference_images=[(ad_bytes, ad_mime)],
             )
-            # PRE-SPEND PROBE, the ``/assets/generate`` route's own pattern and for its own
-            # reason: this is the read that AVOIDS the model call, so it has to happen before
-            # it. It matters most on the path nobody plans for — the reaper re-offering a job
-            # whose worker died after generating — because every generated image has different
-            # bytes and therefore a different content-derived asset id, so without the ledger a
-            # re-offer silently pays for the whole set again.
-            if generation_key and find_generated is not None:
-                claimed = find_generated(generation_key)
-                if claimed:
-                    outcome.assets.append(
-                        _claimed_asset(claimed, name, prompt, aspect_ratio, len(references))
-                    )
-                    continue
-            try:
-                generated = generate(
-                    prompt=prompt,
-                    aspect_ratio=aspect_ratio,
-                    reference_images=references or None,
-                )
-            except Exception as error:  # noqa: BLE001 - a typed provider failure or anything else
-                outcome.failures.append((f"{name}:{aspect_ratio}", _reason(error)))
-                continue
+        except Exception as error:  # noqa: BLE001 - a typed provider failure or anything else
+            outcome.failures.append((creative_id, _reason(error)))
+            continue
 
-            image_bytes = getattr(generated, "image_bytes", b"")
-            if not image_bytes:
-                outcome.failures.append((f"{name}:{aspect_ratio}", "image_model.no_image"))
-                continue
+        image_bytes = getattr(generated, "image_bytes", b"")
+        if not image_bytes:
+            outcome.failures.append((creative_id, "image_model.no_image"))
+            continue
 
-            asset_id = f"asset_gen_{_digest(image_bytes)[:16]}"
-            response = core.ingest_asset(
-                cache_dir,
-                base64.b64encode(image_bytes).decode("ascii"),
-                asset_id,
-                f"{name} — {shape_label}"[:120],
-                declared_mime_type=getattr(generated, "mime_type", None),
-                kind="raster_image",
-                license=getattr(generated, "license", None),
-                provenance=getattr(generated, "provenance", None),
-                source={
-                    "kind": "generated",
-                    "request_id": asset_id,
+        asset_id = f"asset_gen_{_digest(image_bytes)[:16]}"
+        response = core.ingest_asset(
+            cache_dir,
+            base64.b64encode(image_bytes).decode("ascii"),
+            asset_id,
+            f"{creative_id} — {shape_label} background"[:120],
+            declared_mime_type=getattr(generated, "mime_type", None),
+            kind="raster_image",
+            license=getattr(generated, "license", None),
+            provenance=getattr(generated, "provenance", None),
+            source={
+                "kind": "generated",
+                "request_id": asset_id,
+                "model": getattr(generated, "model", None),
+            },
+            tags=["ad-pregenerated", f"source-ad:{creative_id}"],
+            max_bytes=max_bytes,
+            raise_on_error=False,
+        )
+        record = ((response or {}).get("asset") or {}).get("record") or {}
+        if not record.get("id"):
+            outcome.failures.append((creative_id, "asset_ingest_failed"))
+            continue
+
+        outcome.assets.append(
+            PregeneratedAsset(
+                asset_id=str(record["id"]),
+                visual_system=creative_id,
+                prompt=prompt,
+                record=record,
+                generation_key=generation_key,
+                generation={
                     "model": getattr(generated, "model", None),
+                    "aspect_ratio": aspect_ratio,
+                    # W1.7(b): the model's REAL dimensions, not the ones we asked for.
+                    "width": getattr(generated, "width", None),
+                    "height": getattr(generated, "height", None),
+                    "aspect_ratio_honored": getattr(generated, "aspect_ratio_honored", None),
+                    "reference_count": 1,
                 },
-                tags=["ad-pregenerated", f"visual-system:{name}"],
-                max_bytes=max_bytes,
-                raise_on_error=False,
             )
-            record = ((response or {}).get("asset") or {}).get("record") or {}
-            if not record.get("id"):
-                outcome.failures.append((f"{name}:{aspect_ratio}", "asset_ingest_failed"))
-                continue
-
-            outcome.assets.append(
-                PregeneratedAsset(
-                    asset_id=str(record["id"]),
-                    visual_system=name,
-                    prompt=prompt,
-                    record=record,
-                    generation_key=generation_key,
-                    generation={
-                        "model": getattr(generated, "model", None),
-                        "aspect_ratio": aspect_ratio,
-                        # W1.7(b): the model's REAL dimensions, not the ones we asked for.
-                        "width": getattr(generated, "width", None),
-                        "height": getattr(generated, "height", None),
-                        "aspect_ratio_honored": getattr(
-                            generated, "aspect_ratio_honored", None
-                        ),
-                        "reference_count": len(references),
-                    },
-                )
-            )
+        )
     return outcome
 
 

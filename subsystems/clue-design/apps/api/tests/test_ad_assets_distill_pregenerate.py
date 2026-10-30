@@ -21,11 +21,11 @@ from lumen_ingestion.ad_library.distill import (
 from lumen_ingestion.ad_library.distill import _CARD_SCHEMA as CARD_SCHEMA
 from lumen_ingestion.ad_library.distill import _SYSTEM_PROMPT as DISTILL_PROMPT
 from lumen_ingestion.ad_library.pregenerate import (
-    BACKGROUND_ONLY_CLAUSE,
-    MAX_REFERENCE_IMAGES,
+    ADS_TO_GENERATE_FROM,
     PROSE_IN_PROMPT_CHARS,
     background_prompt_for,
-    pregenerate_for_card,
+    pregenerate_for_ads,
+    shape_for,
 )
 
 PROSE = (
@@ -134,39 +134,35 @@ def test_the_flag_gates_the_distiller_even_with_a_key(monkeypatch: pytest.Monkey
     assert resolve_distiller().active is False
 
 
-# --- pre-generation prompts ------------------------------------------------------------------
+# --- pre-generation prompts (founder-approved wording, 2026-10-30) ----------------------------
 
 
-def test_every_prompt_is_background_only() -> None:
-    """RED CASE: a generated ground with baked-in type is a ground the engine cannot use."""
-    prompt = background_prompt_for(
-        _group("Deep Green"), prose=PROSE, shape_label="wide ground", brand_name="Ramp"
+def test_the_prompt_is_the_approved_text() -> None:
+    assert background_prompt_for(prose="Bold teal.", shape_label="square", brand_name="Acme") == (
+        "A square background for Acme's advertising. The attached image is one of the brand's "
+        "published ads. Imitate that ad's background: its colours, gradients, textures, shapes, "
+        "light and mood. Leave out everything placed on top of it: its words, logo, people, "
+        "product shots and screenshots. The brand's published ads, described: Bold teal. "
+        "Produce a background image only. No text of any kind, no letters, no numbers, no "
+        "wordmark, no logo, no watermark, no user interface."
     )
-    assert BACKGROUND_ONLY_CLAUSE in prompt
-    for forbidden in ("No text", "no logo", "no people", "no user interface"):
-        assert forbidden in prompt
-
-
-def test_the_prompt_is_anchored_in_the_cards_own_description() -> None:
-    """Generation conditioned on what the brand's ads actually look like, not on a typed
-    adjective — the prose IS the substance now that the five-field taxonomy is gone."""
-    prompt = background_prompt_for(
-        _group("Deep Green"), prose=PROSE, shape_label="square ground", brand_name="Ramp"
+    # A prose without its own full stop gets exactly one.
+    assert "described: Bold teal. Produce" in background_prompt_for(
+        prose="Bold teal", shape_label="square", brand_name="Acme"
     )
-    assert "one flat deep-green field" in prompt
-    assert "A lime accent shows up once" in prompt
-    assert "Ramp" in prompt
-    assert "Deep Green" in prompt
+
+
+def test_no_brand_and_no_prose_still_read_as_sentences() -> None:
+    prompt = background_prompt_for(prose="  ", shape_label="wide", brand_name=None)
+    assert prompt.startswith("A wide background for a brand's advertising. ")
+    assert "described:" not in prompt
 
 
 def test_the_prose_riding_an_image_prompt_is_bounded_separately() -> None:
     """An agent's opening-context budget is not an image model's prompt budget: past a
     paragraph or two an image prompt stops steering and starts averaging."""
     prompt = background_prompt_for(
-        _group("Deep Green"),
-        prose="z" * (PROSE_IN_PROMPT_CHARS * 4),
-        shape_label="wide ground",
-        brand_name=None,
+        prose="z" * (PROSE_IN_PROMPT_CHARS * 4), shape_label="wide", brand_name=None
     )
     assert prompt.count("z") == PROSE_IN_PROMPT_CHARS
 
@@ -206,39 +202,69 @@ def _generator(calls: list[dict[str, Any]]):
     return generate
 
 
-def test_each_named_system_gets_its_own_bounded_set_of_assets() -> None:
-    card = _card_payload(style_groups=[_group("A"), _group("B")])
-    calls: list[dict[str, Any]] = []
+def _png(width: int, height: int) -> bytes:
+    import io
 
-    outcome = pregenerate_for_card(
-        card,
-        core=_FakeCore(),
-        cache_dir="/tmp/engine-cache",
-        generate=_generator(calls),
-        assets_per_system=2,
+    from PIL import Image
+
+    out = io.BytesIO()
+    Image.new("RGB", (width, height), "teal").save(out, format="PNG")
+    return out.getvalue()
+
+
+def _ads(count: int) -> list[tuple[str, bytes, str]]:
+    return [(f"adcre_{n}", _png(100 + n, 100), "image/png") for n in range(count)]
+
+
+def _run(ads, generate, **kwargs: Any):
+    return pregenerate_for_ads(
+        _card_payload(), ads=ads, core=_FakeCore(), cache_dir="/tmp/engine-cache",
+        generate=generate, **kwargs,
     )
 
-    assert len(outcome.assets) == 4
-    assert {asset.visual_system for asset in outcome.assets} == {"A", "B"}
-    assert [call["aspect_ratio"] for call in calls] == ["16:9", "1:1", "16:9", "1:1"]
-    links = outcome.links()
-    assert all(link["visual_system"] and link["prompt"] for link in links)
 
-
-def test_the_harvested_creatives_condition_the_generation_and_are_capped() -> None:
+def test_each_of_four_ads_gets_one_background_from_its_own_image_only() -> None:
     calls: list[dict[str, Any]] = []
-    references = [(b"ref%d" % n, "image/png") for n in range(MAX_REFERENCE_IMAGES + 3)]
+    ads = _ads(6)
 
-    pregenerate_for_card(
-        _card_payload(style_groups=[_group("A")]),
-        core=_FakeCore(),
-        cache_dir="/tmp/engine-cache",
-        generate=_generator(calls),
-        reference_images=references,
-        assets_per_system=1,
-    )
+    outcome = _run(ads, _generator(calls))
 
-    assert len(calls[0]["reference_images"]) == MAX_REFERENCE_IMAGES
+    assert ADS_TO_GENERATE_FROM == 4
+    assert len(calls) == 4
+    assert [call["reference_images"] for call in calls] == [[(data, mime)] for _, data, mime in ads[:4]]
+    assert [link["visual_system"] for link in outcome.links()] == ["adcre_0", "adcre_1", "adcre_2", "adcre_3"]
+    assert all(link["prompt"] for link in outcome.links())
+
+
+def test_fewer_ads_make_one_background_each() -> None:
+    calls: list[dict[str, Any]] = []
+    assert len(_run(_ads(2), _generator(calls)).assets) == 2
+    assert len(calls) == 2
+
+
+def test_ads_with_the_same_image_count_once() -> None:
+    """Identical images would only make identical backgrounds; the next different ad is used."""
+    calls: list[dict[str, Any]] = []
+    same = _png(100, 100)
+    ads = [("adcre_a", same, "image/png"), ("adcre_b", same, "image/png"), *_ads(4)[1:]]
+
+    outcome = _run(ads, _generator(calls))
+
+    assert [link["visual_system"] for link in outcome.links()] == ["adcre_a", "adcre_1", "adcre_2", "adcre_3"]
+
+
+def test_the_shape_follows_the_ads_own_ratio() -> None:
+    assert shape_for(_png(1200, 628)) == ("16:9", "wide")
+    assert shape_for(_png(1080, 1350)) == ("4:5", "portrait")
+    assert shape_for(_png(1080, 1080)) == ("1:1", "square")
+    assert shape_for(b"not an image") == ("1:1", "square")
+
+
+def test_the_generation_asks_for_the_ads_shape() -> None:
+    calls: list[dict[str, Any]] = []
+    _run([("adcre_w", _png(1200, 628), "image/png")], _generator(calls))
+    assert calls[0]["aspect_ratio"] == "16:9"
+    assert calls[0]["prompt"].startswith("A wide background for")
 
 
 def test_one_failed_generation_does_not_lose_the_others() -> None:
@@ -247,76 +273,53 @@ def test_one_failed_generation_does_not_lose_the_others() -> None:
     good = _generator(calls)
 
     def generate(**kwargs: Any) -> _Generated:
-        if kwargs.get("aspect_ratio") == "1:1":
+        if kwargs["reference_images"][0][0] == _ads(2)[1][1]:
             raise RuntimeError("provider exploded")
         return good(**kwargs)
 
-    outcome = pregenerate_for_card(
-        _card_payload(style_groups=[_group("A"), _group("B")]),
-        core=_FakeCore(),
-        cache_dir="/tmp/engine-cache",
-        generate=generate,
-        assets_per_system=2,
-    )
+    outcome = _run(_ads(2), generate)
 
-    assert len(outcome.assets) == 2
-    assert [target for target, _reason in outcome.failures] == ["A:1:1", "B:1:1"]
+    assert len(outcome.assets) == 1
+    assert [target for target, _reason in outcome.failures] == ["adcre_1"]
 
 
 def test_a_text_only_reply_is_recorded_rather_than_registered() -> None:
     """The provider's own no_image retry is upstream; an empty result still must not
     become a zero-byte asset row."""
-
-    def generate(**kwargs: Any) -> _Generated:
-        return _Generated(image_bytes=b"")
-
-    outcome = pregenerate_for_card(
-        _card_payload(style_groups=[_group("A")]),
-        core=_FakeCore(),
-        cache_dir="/tmp/engine-cache",
-        generate=generate,
-        assets_per_system=1,
-    )
+    outcome = _run(_ads(1), lambda **kwargs: _Generated(image_bytes=b""))
     assert outcome.assets == []
-    assert outcome.failures == [("A:16:9", "image_model.no_image")]
+    assert outcome.failures == [("adcre_0", "image_model.no_image")]
 
 
 def test_an_asset_already_in_the_generation_ledger_is_reused_without_paying_again() -> None:
-    """RED CASE: without the pre-spend probe, a re-offered job re-pays for every asset.
-
-    Every generated image has different bytes and therefore a different content-derived asset
-    id, so byte-level dedup cannot save a retry — only the ledger key can, and only if it is
-    consulted BEFORE the provider call.
-    """
+    """RED CASE: without the pre-spend probe, a re-offered job re-pays for every asset."""
     calls: list[dict[str, Any]] = []
     claimed = {"asset": {"id": "asset_gen_already_here", "media": {}}}
+    keys: list[dict[str, Any]] = []
 
-    outcome = pregenerate_for_card(
-        _card_payload(style_groups=[_group("A")]),
-        core=_FakeCore(),
-        cache_dir="/tmp/engine-cache",
-        generate=_generator(calls),
-        assets_per_system=1,
-        generation_key_for=lambda **kwargs: "ledger-key",
+    def key_for(**kwargs: Any) -> str:
+        keys.append(kwargs)
+        return "ledger-key"
+
+    outcome = _run(
+        _ads(1), _generator(calls), generation_key_for=key_for,
         find_generated=lambda key: claimed if key == "ledger-key" else None,
     )
 
     assert calls == [], "the model must not be called when the ledger already holds the asset"
     assert [asset.asset_id for asset in outcome.assets] == ["asset_gen_already_here"]
     assert outcome.assets[0].generation["reused_from_generation_ledger"] is True
-    # A re-used asset is already registered; it must not claim the key a second time.
     assert outcome.assets[0].generation_key is None
+    # The key is built from the ad's OWN bytes, so another ad never re-uses this background.
+    import hashlib
+
+    assert keys[0]["reference_digest"] == hashlib.sha256(_ads(1)[0][1]).hexdigest()
 
 
 def test_a_ledger_miss_still_generates_and_carries_the_key_for_the_claim() -> None:
     calls: list[dict[str, Any]] = []
-    outcome = pregenerate_for_card(
-        _card_payload(style_groups=[_group("A")]),
-        core=_FakeCore(),
-        cache_dir="/tmp/engine-cache",
-        generate=_generator(calls),
-        assets_per_system=1,
-        generation_key_for=lambda **kwargs: "ledger-key",
+    outcome = _run(
+        _ads(1), _generator(calls), generation_key_for=lambda **kwargs: "ledger-key",
         find_generated=lambda key: None,
     )
     assert len(calls) == 1
@@ -325,7 +328,6 @@ def test_a_ledger_miss_still_generates_and_carries_the_key_for_the_claim() -> No
 
 def test_the_real_returned_dimensions_are_recorded_not_the_requested_ones() -> None:
     """W1.7(b): a caller must never be misled by its own ask."""
-    calls: list[dict[str, Any]] = []
 
     def generate(**kwargs: Any) -> _Generated:
         del kwargs
@@ -333,15 +335,8 @@ def test_the_real_returned_dimensions_are_recorded_not_the_requested_ones() -> N
             image_bytes=b"\x89PNG\r\n\x1a\nx", width=1024, height=1024, aspect_ratio_honored=False
         )
 
-    outcome = pregenerate_for_card(
-        _card_payload(style_groups=[_group("A")]),
-        core=_FakeCore(),
-        cache_dir="/tmp/engine-cache",
-        generate=generate,
-        assets_per_system=1,
-    )
+    outcome = _run([("adcre_w", _png(1200, 628), "image/png")], generate)
     generation = outcome.assets[0].generation
     assert generation["aspect_ratio"] == "16:9"
     assert (generation["width"], generation["height"]) == (1024, 1024)
     assert generation["aspect_ratio_honored"] is False
-    assert calls == []
