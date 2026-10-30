@@ -147,3 +147,27 @@ async def _bytes_are_absent_once_the_artifact_is_erased(tmp_path: Path) -> None:
             served = await client.get(f"/frontend/v1/uploads/{data['upload_id']}/bytes")
         assert served.status_code == 404
         assert served.json()["detail"]["code"] == "UPLOAD_NOT_FOUND"
+
+
+def test_an_uploaded_svg_is_served_sandboxed(tmp_path: Path) -> None:
+    """Review I-5 (2026-10-30): an SVG is served from the app's own origin, so a script inside it
+    would run with the viewer's session if opened in a tab. The bytes are served sandboxed."""
+
+    run_async(_an_uploaded_svg_is_served_sandboxed(tmp_path))
+
+
+async def _an_uploaded_svg_is_served_sandboxed(tmp_path: Path) -> None:
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+    async with rollback_conn(seed_pack=False) as conn:
+        ws = await seed_workspace(conn, f"ws_upl_route_{uuid4().hex[:8]}")
+        async with _client(conn, tmp_path, ws) as client:
+            response = await client.post(
+                "/frontend/v1/uploads", files={"file": ("logo.svg", svg, "image/svg+xml")}
+            )
+            assert response.status_code == 201, response.text
+            served = await client.get(
+                f"/frontend/v1/uploads/{response.json()['data']['upload_id']}/bytes"
+            )
+        assert served.status_code == 200
+        assert served.headers["content-security-policy"] == "sandbox; default-src 'none'"
+        assert served.headers["x-content-type-options"] == "nosniff"
