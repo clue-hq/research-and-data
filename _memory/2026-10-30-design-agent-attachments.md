@@ -39,15 +39,13 @@ Ledger (rulings) in .superpowers/sdd/2026-10-30-design-agent-attachments/progres
    → exit judge v5 handed back with the xlsx on the redelivery; Head of ABM read it (ROI 140% /
    171%). Sign-in: the founder signs in to Clerk in the pane (never type passwords into Clerk).
 
-## Deferred minors (review)
-M-2 design sandbox containers lack the worker-area label; M-3 outputs per-file cap 50 MB > session
-snapshot 25 MB; M-4 thread images re-registered each turn (label overwrite); M-5 HoA told an
-undecodable image is shown; M-6 clue-agents/clue-config not declared in the agent_runtime
-pyproject; M-7 setup helpers outside the try; M-8 SVG sniff reads only 4 KB; M-10 library copies
-survive chat-upload erasure (privacy sprint); M-11 two safe-filename helpers; HEIC chip thumbnail
-broken in Chrome; stale test_upload_refuses_a_pdf.
-
-## Pre-existing failures seen (not ours)
-test_deepagent_harness::test_tool_surfaces_are_exactly_the_ledger (extra search_assets);
-test_scene_turn_persist 4x duplicate run_id; tests/api/sandbox/test_docker_runner 1x (no
-`python` on host PATH). Frontend tsc 60 errors pre-existing.
+## Review minors — resolved at the founder's ask (2026-10-30), except M-10
+M-2 design sandbox containers carry the worker area label (clue_agents.worker_area.process_area_name);
+M-3 + founder ruling: design outputs/ 500 MB and session snapshots carry files up to 500 MB;
+M-4 images already in the library are reused (no re-ingest, label kept); M-5 an undecodable image is
+not described as shown — new L7 sentence "it could not be shown to you as a picture." AWAITS FOUNDER
+WORDING APPROVAL; M-6 agent_runtime pyproject declares clue-agents/config/core/design (+ guard test);
+M-7 image setup fully inside the guarded step; M-8 SVG check reads the whole document; M-11 one
+safe-name rule (clue_agents.attachment_names); HEIC/HEIF/TIFF chips show the icon, not a broken
+thumbnail. STILL PARKED for the privacy sprint: M-10 attached images in the library survive erasure
+of the chat upload. Stale pre-existing test: test_frontend_read_uploads_db::test_upload_refuses_a_pdf.
