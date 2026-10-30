@@ -70,3 +70,13 @@ def test_svg_is_never_shown_as_a_picture() -> None:
 
 def test_bytes_that_do_not_decode_are_not_shown() -> None:
     assert viewable_image(b"not a tiff", "image/tiff") is None
+
+
+def test_an_image_too_large_to_decode_safely_is_not_shown() -> None:
+    """Review I-3: a 12 KB TIFF can claim 196 million pixels; Pillow refuses it with a
+    DecompressionBombError, which must mean "not shown", never a failed turn."""
+
+    buffer = io.BytesIO()
+    Image.new("1", (14000, 14000), 1).save(buffer, format="TIFF", compression="group4")
+    assert len(buffer.getvalue()) < 100_000
+    assert viewable_image(buffer.getvalue(), "image/tiff") is None

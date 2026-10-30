@@ -63,7 +63,9 @@ def viewable_image(data: bytes, media_type: str) -> tuple[bytes, str] | None:
             frame = image.convert("RGBA" if _has_alpha(image) else "RGB")
             out = io.BytesIO()
             frame.save(out, format="PNG")
-    except (UnidentifiedImageError, OSError, ValueError):
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        # A file that does not decode, or claims more pixels than is safe to decode, is not
+        # shown; it is still in the agent's folder.
         return None
     return out.getvalue(), "image/png"
 
