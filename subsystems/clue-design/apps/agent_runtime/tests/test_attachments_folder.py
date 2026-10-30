@@ -225,3 +225,11 @@ def test_an_unavailable_file_reads_in_plain_words(tmp_path: Path) -> None:
     )
     assert "old.png (its file was deleted)" in note
     assert "lost.png (its file could not be found)" in note
+
+
+def test_a_file_the_platform_left_out_for_the_budget_is_named_not_included(tmp_path: Path) -> None:
+    note = write_thread_attachments(
+        tmp_path, [_File("now.pdf", b"%PDF"), _File("old.pdf", b"", current=False, unavailable="over_budget")]
+    )
+    assert _names(tmp_path) == ["now.pdf"]
+    assert "Not included: old.pdf (this chat's files pass 150 MB)" in note

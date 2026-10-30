@@ -152,3 +152,66 @@ def test_a_run_without_files_reads_none(tmp_path: Path) -> None:
             assert await asyncio.to_thread(reads.thread_attachments) == ()
 
     run_async(scenario())
+
+
+def test_the_budget_is_applied_before_any_bytes_are_read_and_one_failure_stays_one(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Review I-4: a long thread's files are not all read into memory; the current message's
+    files come first, anything past the budget is named and never fetched, and one file that
+    cannot be read does not take the others down."""
+
+    from clue_api import design_platform_reads
+    from clue_api.design_platform_reads import build_design_platform_reads_factory
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            workspace_id = f"ws_dpra_{uuid4().hex[:8]}"
+            project = await seed_project(conn, workspace_id, name="budget")
+            cf = conn_session_factory(conn)
+            storage = FsStorage(tmp_path / "artifacts")
+            store = DurableAgentArtifactStore(storage=storage, conn_factory=cf)
+
+            async def put(data: bytes, media: str) -> Any:
+                return await store.persist_body(
+                    workspace_id=workspace_id, data=data, media_type=media
+                )
+
+            old = await put(b"o" * 600, "application/pdf")
+            broken = await put(b"b" * 10, "text/plain")
+            now = await put(b"n" * 600, "application/pdf")
+
+            class _Storage:
+                gets: list[str] = []
+
+                async def get(self, key: str) -> bytes:
+                    type(self).gets.append(key)
+                    if key == broken.artifact_key:
+                        raise OSError("bucket hiccup")
+                    return await storage.get(key)
+
+            monkeypatch.setattr(design_platform_reads, "THREAD_ATTACHMENTS_MAX_BYTES", 1000)
+            envelope = _envelope(
+                workspace_id,
+                project.project_id,
+                [
+                    _listed(old, "old.pdf", current=False),
+                    _listed(broken, "broken.txt", current=False),
+                    _listed(now, "now.pdf", current=True),
+                ],
+            )
+            factory = build_design_platform_reads_factory(
+                invoker=None,  # type: ignore[arg-type]
+                storage=_Storage(),  # type: ignore[arg-type]
+                conn_factory=cf,
+            )
+            reads = await asyncio.to_thread(factory, envelope)
+            files = {
+                item.filename: item for item in await asyncio.to_thread(reads.thread_attachments)
+            }
+            assert files["now.pdf"].data == b"n" * 600
+            assert (files["old.pdf"].unavailable, files["old.pdf"].data) == ("over_budget", b"")
+            assert old.artifact_key not in _Storage.gets
+            assert files["broken.txt"].unavailable == "missing"
+
+    run_async(scenario())

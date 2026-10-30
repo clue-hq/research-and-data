@@ -353,6 +353,9 @@ def write_thread_attachments(workspace: Path, files: Sequence[Any]) -> str:
     missing: list[str] = []
     over: list[str] = []
     for item in ordered:
+        if item.unavailable == "over_budget":
+            over.append(item.filename)
+            continue
         if item.unavailable:
             missing.append(
                 f"{item.filename} ({_UNAVAILABLE_WORDS.get(item.unavailable, item.unavailable)})"

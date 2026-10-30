@@ -114,6 +114,11 @@ class SellerKnowledge:
 EMPTY_SELLER_KNOWLEDGE = SellerKnowledge(None, (), None, None)
 
 
+#: How many bytes of the thread's files one design run reads: this message's files first. The same
+#: figure as the design folder's budget (``lumen_agent.platform_reads``) and a message's total.
+THREAD_ATTACHMENTS_MAX_BYTES = 157_286_400
+
+
 @dataclass(frozen=True)
 class AttachedFile:
     """One file sent in the leg's chat thread (spec 2026-10-30 §3.3).
@@ -121,8 +126,8 @@ class AttachedFile:
     ``current`` is true when the message this turn answers carried it. ``viewable`` is what an
     agent may look at and a design library may hold: the image itself for PNG, JPEG, WebP and GIF,
     a PNG copy for HEIC, AVIF, TIFF, BMP and ICO, the drawing itself for SVG, and ``None`` for
-    every other file. ``unavailable`` names why the bytes could not be read (``erased``,
-    ``missing``); such a file carries no bytes.
+    every other file. ``unavailable`` names why the bytes were not read (``erased``,
+    ``missing``, ``over_budget``); such a file carries no bytes.
     """
 
     filename: str
@@ -403,47 +408,58 @@ class DesignPlatformReads:
             return self._attachments
         workspace_id = self._envelope.workspace_id
 
-        async def read() -> tuple[AttachedFile, ...]:
-            files: list[AttachedFile] = []
-            for item in listed:
-                key = str(item["artifact_key"])
-                media_type = str(item["media_type"])
-                async with self._conn_factory() as conn:
-                    row = (
-                        await conn.execute(
-                            text(
-                                "SELECT erased_at IS NOT NULL OR purged_at IS NOT NULL AS gone "
-                                "FROM artifact WHERE storage_key = :key AND workspace_id = :ws"
-                            ),
-                            {"key": key, "ws": workspace_id},
-                        )
-                    ).one_or_none()
-                data = b""
-                unavailable: str | None = None
-                if row is None:
-                    unavailable = "missing"
-                elif row.gone:
-                    unavailable = "erased"
-                else:
-                    try:
-                        data = await self._storage.get(key)
-                    except Exception:
-                        log.warning("design_platform_reads.attachment_unreadable", key=key)
-                        unavailable = "missing"
-                files.append(
-                    AttachedFile(
-                        filename=_safe_filename(str(item["filename"])),
-                        media_type=media_type,
-                        sha256=str(item["sha256"]),
-                        data=data,
-                        current=bool(item.get("current")),
-                        viewable=None if unavailable else _viewable(data, media_type),
-                        unavailable=unavailable,
+        async def read_one(key: str) -> tuple[bytes, str | None]:
+            async with self._conn_factory() as conn:
+                row = (
+                    await conn.execute(
+                        text(
+                            "SELECT erased_at IS NOT NULL OR purged_at IS NOT NULL AS gone "
+                            "FROM artifact WHERE storage_key = :key AND workspace_id = :ws"
+                        ),
+                        {"key": key, "ws": workspace_id},
                     )
-                )
-            return tuple(files)
+                ).one_or_none()
+            if row is None:
+                return b"", "missing"
+            if row.gone:
+                return b"", "erased"
+            return await self._storage.get(key), None
 
-        self._attachments = self._guarded(read, tool="thread_attachments")
+        # Review I-4: the budget is spent on this message's files first, and decided from the
+        # listed sizes before any byte is read; a file past it is named, never fetched. Each file is
+        # its own read, so one that cannot be read is one unavailable file, not an empty folder.
+        ordered = sorted(listed, key=lambda item: not item.get("current"))
+        spent = 0
+        files: dict[int, AttachedFile] = {}
+        for item in ordered:
+            key = str(item["artifact_key"])
+            media_type = str(item["media_type"])
+            data: bytes = b""
+            unavailable: str | None = None
+            size = int(item.get("byte_count") or 0)
+            if spent + size > THREAD_ATTACHMENTS_MAX_BYTES:
+                unavailable = "over_budget"
+            else:
+                try:
+                    data, unavailable = self._guarded(
+                        lambda key=key: read_one(key), tool="thread_attachments"
+                    )
+                except DesignPlatformReadError:
+                    log.warning("design_platform_reads.attachment_unreadable", key=key)
+                    unavailable = "missing"
+                if unavailable is None:
+                    spent += len(data)
+            files[id(item)] = AttachedFile(
+                filename=_safe_filename(str(item["filename"])),
+                media_type=media_type,
+                sha256=str(item["sha256"]),
+                data=data,
+                current=bool(item.get("current")),
+                # Decoded here, on the calling worker thread, never on the platform's loop.
+                viewable=None if unavailable else _viewable(data, media_type),
+                unavailable=unavailable,
+            )
+        self._attachments = tuple(files[id(item)] for item in listed)
         return self._attachments
 
     # --- the seller ---------------------------------------------------------------------------
