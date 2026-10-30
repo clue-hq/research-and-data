@@ -1,0 +1,22 @@
+{
+  "name": "strategy-04-roi-from-spreadsheet",
+  "kind": "clearly_strategy",
+  "brief": "Launch-day artboard for Acme's Q3 campaign.",
+  "history": [],
+  "files": [
+    "\"q3-analysis.xlsx\" (spreadsheet)"
+  ],
+  "message": "Calculate the ROI from this Excel.",
+  "judgment": {
+    "close_this_session": true,
+    "hand_message_to_strategy_agent": true,
+    "current_artifact_accepted": false,
+    "reasoning": "Calculating ROI is analysis, not design; the strategy agent should get the message and its file."
+  },
+  "expected": {
+    "action": "finish",
+    "reason": "out_of_scope",
+    "fail_safe": false
+  },
+  "why": "The same spreadsheet with a non-design ask goes back to the Head of ABM with the file (founder ruling 2026-10-30)."
+}

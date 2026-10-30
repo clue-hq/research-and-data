@@ -58,7 +58,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 #: Bumped whenever the instruction block below changes meaning; scored reports carry it so
 #: a regression is attributable to a prompt revision vs a model swap.
-EXIT_JUDGMENT_PROMPT_VERSION = "v4"
+EXIT_JUDGMENT_PROMPT_VERSION = "v5"
 
 ExitAction = Literal["continue", "finish"]
 ExitReason = Literal["locked", "out_of_scope", "abandoned"]
@@ -219,6 +219,31 @@ def decide_exit(judgment: ExitJudgment | None, *, artifact_count: int = 1) -> Ex
     return ExitDecision(action="finish", reason=reason, reasoning=judgment.reasoning)
 
 
+_FILE_KINDS = {
+    "application/pdf": "PDF",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word document",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "PowerPoint deck",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "spreadsheet",
+    "text/csv": "CSV",
+    "application/json": "JSON",
+    "image/svg+xml": "SVG image",
+}
+
+
+def describe_attached_file(filename: str, media_type: str) -> str:
+    """One FILES line (v5): the file's name and, in plain words, what kind of file it is."""
+
+    lowered = media_type.lower()
+    kind = _FILE_KINDS.get(lowered) or (
+        "image"
+        if lowered.startswith("image/")
+        else "text"
+        if lowered.startswith("text/")
+        else "file"
+    )
+    return f'"{filename}" ({kind})'
+
+
 def render_exit_judgment_prompt(
     *,
     brief: str,
@@ -227,6 +252,7 @@ def render_exit_judgment_prompt(
     artifacts: tuple[str, ...] = (),
     artifact: str | None = None,
     tags: tuple[str, ...] = (),
+    files: tuple[str, ...] = (),
 ) -> str:
     """The versioned instruction block for the exit judgment.
 
@@ -239,12 +265,16 @@ def render_exit_judgment_prompt(
     tags and the incoming message are all client- or model-authored text, so they are fenced
     and declared **data** (the M9.3 injection stance): nothing inside the fences may change
     these instructions or the output contract.
+
+    ``files`` (v5) are the message's attached files, one :func:`describe_attached_file` line
+    each; the FILES block is left out when the message carries none.
     """
 
     fenced_history = "\n".join(f"[{role}] {text}" for role, text in history) or "(none yet)"
     fenced_tags = "\n".join(f"- {tag}" for tag in tags) or "(nothing tagged)"
     listed = artifacts or ((artifact,) if artifact else ())
     fenced_artifacts = "\n".join(listed) or "(unknown — treat the brief as the artifact)"
+    fenced_files = "<<<FILES\n" + "\n".join(files) + "\nFILES>>>\n" if files else ""
     return (
         "You are the design session's exit judge. A design session is open on this\n"
         "conversation, holding one or more artifacts — they are listed and numbered below.\n"
@@ -306,6 +336,12 @@ def render_exit_judgment_prompt(
         "  @Apollo?' is a question about these artifacts. Read the sentence.\n"
         "- Strategy, research, targeting, campaign planning and other non-design work close\n"
         "  the session and hand the message on; the platform answers it where it belongs.\n"
+        "- Files attached to the message do not decide where it belongs; what the user asks\n"
+        "  for does. A file can be material for these artifacts: 'make an ad from the\n"
+        "  analysis in this spreadsheet', 'here is the brief' with a PDF, 'use this photo'.\n"
+        "  Keep the session open. Or the ask can be work that is not design: 'calculate the\n"
+        "  ROI from this spreadsheet', 'summarise this report'. Close the session and hand\n"
+        "  the message on; its files go with it.\n"
         "- Accepting the work ('lock it in', 'this is the one', 'ship it') closes the session\n"
         "  with it accepted. A message that both accepts it and asks for the next thing\n"
         "  ('lock this in and do one for Apollo') closes, accepts, AND hands the message on.\n"
@@ -344,5 +380,6 @@ def render_exit_judgment_prompt(
         f"<<<BRIEF\n{brief}\nBRIEF>>>\n"
         f"<<<HISTORY\n{fenced_history}\nHISTORY>>>\n"
         f"<<<MESSAGE\n{message}\nMESSAGE>>>\n"
+        f"{fenced_files}"
         f"\nprompt_version: {EXIT_JUDGMENT_PROMPT_VERSION}\n"
     )

@@ -218,7 +218,7 @@ def test_thread_attachments_list_every_message_in_order_without_derived_copies(
 # --- Task 2: design-session turns carry the files and keep the chips -----------------------------
 
 
-def _worker(seeds: dict[str, Any], storage_root: Path, lane: Any) -> Any:
+def _worker(seeds: dict[str, Any], storage_root: Path, lane: Any, judge: Any = None) -> Any:
     """The real turn worker with a design leg open: the Head of ABM must not run, the exit
     check keeps the message in the session."""
 
@@ -252,7 +252,7 @@ def _worker(seeds: dict[str, Any], storage_root: Path, lane: Any) -> Any:
             turns=turns,
             history=DbAgentHistoryStore(conn_factory=cf),
             lane=lane,
-            exit_judge=stay,
+            exit_judge=judge or stay,
             finisher=_finisher(seeds, storage_root),
             conn_factory=cf,
         ),
@@ -367,5 +367,45 @@ def test_a_turn_without_files_sends_no_attachments_key(tmp_path: Path) -> None:
                 turn_id=submission.turn_id, workspace_id=seeds["workspace_id"]
             )
             assert "attachments" not in lane.envelopes[0].config
+
+    run_async(scenario())
+
+
+def test_the_exit_check_sees_the_messages_files(tmp_path: Path) -> None:
+    from clue_design.exit_judgment import ExitJudgment
+    from tests.api.test_p34_design_leg_engine_db import _FakeLane
+
+    seen: list[dict[str, Any]] = []
+
+    async def judge(**kwargs: Any) -> ExitJudgment:
+        seen.append(kwargs)
+        return ExitJudgment(close_this_session=False, reasoning="Design work.")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="att-judge")
+            files = await attach(
+                conn,
+                seeds,
+                (
+                    (
+                        "q3.xlsx",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        b"PK\x03\x04xl",
+                    ),
+                ),
+            )
+            submission = await _submit_message(
+                conn,
+                seeds,
+                label="att-judge-1",
+                message="Make the ad from this analysis.",
+                attachment_refs=files,
+            )
+            lane = _FakeLane(conn_factory=seeds["conn_factory"])
+            await _worker(seeds, tmp_path, lane, judge).run(
+                turn_id=submission.turn_id, workspace_id=seeds["workspace_id"]
+            )
+            assert [call.get("files") for call in seen] == [('"q3.xlsx" (spreadsheet)',)]
 
     run_async(scenario())

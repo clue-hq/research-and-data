@@ -1,0 +1,22 @@
+{
+  "name": "design-08-pdf-brief",
+  "kind": "clearly_design",
+  "brief": "Launch-day artboard for Acme's Q3 campaign.",
+  "history": [],
+  "files": [
+    "\"campaign brief.pdf\" (PDF)"
+  ],
+  "message": "Here is the brief.",
+  "judgment": {
+    "close_this_session": false,
+    "hand_message_to_strategy_agent": false,
+    "current_artifact_accepted": false,
+    "reasoning": "The PDF is the brief for this artifact."
+  },
+  "expected": {
+    "action": "continue",
+    "reason": null,
+    "fail_safe": false
+  },
+  "why": "A PDF sent as the brief is material for the open design (spec 2026-10-30 \u00a75)."
+}

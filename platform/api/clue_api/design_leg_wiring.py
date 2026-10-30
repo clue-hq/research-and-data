@@ -115,6 +115,7 @@ from clue_design.exit_judgment import (
     ExitDecision,
     ExitJudgment,
     decide_exit,
+    describe_attached_file,
 )
 from clue_design.sessions import design_session_id
 from clue_fleet.enums import FleetTaskKind
@@ -254,6 +255,7 @@ class DesignLegExitJudge(Protocol):
         artifacts: tuple[str, ...] = (),
         artifact: str | None = None,
         tags: tuple[str, ...] = (),
+        files: tuple[str, ...] = (),
     ) -> ExitJudgment | None: ...
 
 
@@ -1505,6 +1507,7 @@ class DesignLegTurnRunner:
                     user_message_ref=user_message_ref,
                     focus_refs=focus_refs,
                     leg_documents=leg_documents,
+                    attachments=attachments,
                 )
             if exit_decision is not None and exit_decision.action == "finish":
                 assert exit_decision.reason is not None  # decide_exit always maps a close
@@ -2014,6 +2017,7 @@ class DesignLegTurnRunner:
         user_message_ref: ArtifactRef,
         focus_refs: Sequence[DomainObjectRef] = (),
         leg_documents: Sequence[Mapping[str, Any]] = (),
+        attachments: Sequence[SubmissionAttachmentRow] = (),
     ) -> ExitDecision | None:
         """Run the exit judgment for this turn, or ``None`` when the bridge is not composed.
 
@@ -2072,12 +2076,18 @@ class DesignLegTurnRunner:
         except Exception:
             log.warning("design_leg.exit_judge_context_unresolved", exc_info=True)
         try:
+            # v5 (spec 2026-10-30 §3.2): the message's files, one line each. Passed only when the
+            # message carries some, so an attachment-free turn asks exactly what it asked before.
+            files = tuple(
+                describe_attached_file(item.filename, item.ref.media_type) for item in attachments
+            )
             judgment: ExitJudgment | None = await self._exit_judge(
                 brief=str(bundle.get("brief") or ""),
                 history=tuple(history),
                 message=message,
                 artifacts=artifacts,
                 tags=tags,
+                **({"files": files} if files else {}),
             )
         except Exception:
             log.warning("design_leg.exit_judge_raised", exc_info=True)
