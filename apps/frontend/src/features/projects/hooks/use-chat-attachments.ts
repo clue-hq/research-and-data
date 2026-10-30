@@ -8,6 +8,7 @@ import {
   attachmentFamily,
   attachmentLimitError,
   attachmentMediaType,
+  canPreviewInBrowser,
   chatAttachmentSnapshot,
 } from "../model/chat-attachments";
 
@@ -88,9 +89,14 @@ export function useChatAttachments({
       const pending = files.map((file) => {
         const id = `chat-attachment-${crypto.randomUUID()}`;
         const family = attachmentFamily(file);
-        // Only an image has a preview worth an object URL; a text file's chip
-        // shows its name, so minting one would leak a URL for nothing.
-        const url = family === "image" ? URL.createObjectURL(file) : "";
+        // Only an image a browser can draw has a preview worth an object URL;
+        // any other chip shows its name and icon, so minting one would leak a
+        // URL for nothing (and draw a broken thumbnail for HEIC or TIFF).
+        const mediaType = attachmentMediaType(file) ?? "";
+        const url =
+          family === "image" && canPreviewInBrowser(mediaType)
+            ? URL.createObjectURL(file)
+            : "";
         if (url) objectUrls.current.set(id, url);
         return {
           attachment: {

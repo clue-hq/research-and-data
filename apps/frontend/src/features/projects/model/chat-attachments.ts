@@ -134,6 +134,19 @@ export function attachmentMediaType(file: {
   return dot >= 0 ? (BY_EXT[file.name.slice(dot).toLowerCase()] ?? null) : null;
 }
 
+/**
+ * Whether a browser can draw this image as a preview. HEIC/HEIF and TIFF are
+ * accepted attachments (the agent is shown a PNG copy) but most browsers
+ * cannot draw them, so their chips show the image icon instead of a broken
+ * thumbnail.
+ */
+export function canPreviewInBrowser(mediaType: string): boolean {
+  const type = mediaType.toLowerCase();
+  return IMAGE.has(type) && !NO_BROWSER_PREVIEW.has(type);
+}
+
+const NO_BROWSER_PREVIEW = new Set(["image/heic", "image/heif", "image/tiff"]);
+
 /** `null` for a file this chat will not carry at all. */
 export function attachmentFamily(file: {
   name: string;

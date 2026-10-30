@@ -190,3 +190,28 @@ test("SVG, HEIC, AVIF, TIFF, BMP and ICO are chat images (spec 2026-10-30)", () 
     assert.ok(CHAT_ATTACHMENT_ACCEPT.split(",").includes(accepted), accepted);
   }
 });
+
+test("only images a browser can draw get a preview (HEIC, HEIF and TIFF get the icon)", async () => {
+  const { canPreviewInBrowser } = await import("./chat-attachments");
+  for (const type of [
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/gif",
+    "image/svg+xml",
+    "image/avif",
+    "image/bmp",
+    "image/x-icon",
+  ]) {
+    assert.equal(canPreviewInBrowser(type), true, type);
+  }
+  for (const type of [
+    "image/heic",
+    "image/heif",
+    "image/tiff",
+    "application/pdf",
+    "text/markdown",
+  ]) {
+    assert.equal(canPreviewInBrowser(type), false, type);
+  }
+});
