@@ -23,7 +23,11 @@ from uuid import UUID, uuid5
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from clue_agents.attachment_images import is_shown_as_picture, viewable_image
+from clue_agents.attachment_images import (
+    CONVERTIBLE_IMAGE_TYPES,
+    is_shown_as_picture,
+    viewable_image,
+)
 from clue_agents.contracts import (
     AgentProfile,
     AgentTurnRequest,
@@ -657,6 +661,20 @@ class TurnLayerSource:
         described: Mapping[str, AttachmentDescription] = (
             await self._attachments.describe(request) if self._attachments is not None else {}
         )
+        # Review M-5: a format the model is shown as a PNG copy is shown only if that copy can be
+        # made; one that cannot is neither sent as a picture nor described as one.
+        shown: list[ArtifactRef] = []
+        for ref in request.attachment_refs:
+            if not is_shown_as_picture(ref.media_type):
+                continue
+            if ref.media_type.lower() in CONVERTIBLE_IMAGE_TYPES:
+                try:
+                    data = await self._artifacts.read(ref)
+                except Exception:
+                    continue
+                if viewable_image(data, ref.media_type) is None:
+                    continue
+            shown.append(ref)
         for index, ref in enumerate(request.attachment_refs):
             info = described.get(ref.artifact_key)
             size = f"{ref.byte_count:,} bytes"
@@ -685,6 +703,8 @@ class TurnLayerSource:
                     info.family == "image" and not is_shown_as_picture(ref.media_type)
                 ):
                     opener = "open it with read_file."
+                elif info.family == "image" and ref not in shown:
+                    opener = "it could not be shown to you as a picture."
                 elif info.family == "image":
                     opener = "it is also shown to you as an image in this message."
                 else:
@@ -769,9 +789,7 @@ class TurnLayerSource:
                 # An image cannot be read with ``read_file``; the only way a model sees one is
                 # beside the words it was sent with, so the turn's images ride this message.
                 # Everything else on the turn stays a pointer the agent opens deliberately.
-                image_refs=tuple(
-                    ref for ref in request.attachment_refs if is_shown_as_picture(ref.media_type)
-                ),
+                image_refs=tuple(shown),
             )
         )
         return result
