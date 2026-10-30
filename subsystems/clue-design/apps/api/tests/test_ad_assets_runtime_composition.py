@@ -505,7 +505,7 @@ def test_a_legs_own_attachments_survive_the_key_less_envelope_and_beat_auto_atta
 
 
 def _entry(asset_id: str, creative_type: Optional[str], *, created_at: str = "2026-09-01",
-           title: str = "", width: int = 0, height: int = 0) -> dict:
+           title: str = "", width: int = 0, height: int = 0, marked: bool = False) -> dict:
     record: dict = {"id": asset_id, "kind": "raster_image", "status": "ready"}
     if width:
         record["raster"] = {"pixel_width": width, "pixel_height": height}
@@ -513,6 +513,7 @@ def _entry(asset_id: str, creative_type: Optional[str], *, created_at: str = "20
                    "description": f"About {asset_id}."}
     if creative_type is not None:
         entry["creative_type"] = creative_type
+        entry["asset_context"] = {"classification_origin": "human" if marked else "ai"}
     return entry
 
 
@@ -533,7 +534,7 @@ def test_the_list_holds_harvested_ads_and_person_marked_ones_newest_first() -> N
     library = {
         "a1": _entry("a1", "ad", title="T1", width=1200, height=628),
         "a2": _entry("a2", "ad"),
-        "a3": _entry("a3", "ad", created_at="2026-10-03"),
+        "a3": _entry("a3", "ad", created_at="2026-10-03", marked=True),
         "a4": _entry("a4", "photo"),
     }
     ads = ad_runtime.context_brand_ads(_ads_lane(), library)
@@ -560,7 +561,14 @@ def test_a_harvested_ad_missing_from_the_library_is_left_out() -> None:
 
 
 def test_person_marked_ads_are_listed_with_no_lane() -> None:
-    assert [ad["asset_id"] for ad in ad_runtime.context_brand_ads(None, {"a3": _entry("a3", "ad")})] == ["a3"]
+    ads = ad_runtime.context_brand_ads(None, {"a3": _entry("a3", "ad", marked=True)})
+    assert [(ad["asset_id"], ad["from"]) for ad in ads] == [("a3", "marked_by_person")]
+
+
+def test_a_harvested_ad_outside_the_lane_is_still_called_a_linkedin_ad() -> None:
+    """Only code calls an asset an ad without a person: an un-overridden ``ad`` is harvested."""
+    ads = ad_runtime.context_brand_ads(None, {"a1": _entry("a1", "ad")})
+    assert [(ad["asset_id"], ad["from"]) for ad in ads] == [("a1", "linkedin_ad")]
 
 
 def test_no_ads_is_none() -> None:

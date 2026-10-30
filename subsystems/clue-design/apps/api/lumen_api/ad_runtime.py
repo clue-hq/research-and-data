@@ -312,11 +312,11 @@ def context_brand_ads(
     """Every ad of the brand the agent can open this turn, newest first, or ``None``.
 
     Two sources, one list: the harvested creatives (with their headline and post copy), and
-    every other library asset whose shown type is ``ad`` — which, since only code and people
-    may call an asset an ad, means a person marked it. A harvested ad is listed while its
-    library entry is in this turn's library and its type is ``ad`` or not yet known (no
-    description); a person who retyped it removes it. Needs no lane: a person's own ads are
-    listed when the harvest lane is off.
+    every other library asset whose shown type is ``ad``. Only code and people may call an
+    asset an ad, so such an asset is a person's mark when a person set its type, and otherwise
+    a harvested ad the lane does not carry (listed without copy). A harvested ad is listed
+    while its library entry is in this turn's library and its type is ``ad`` or not yet known
+    (no description); a person who retyped it removes it. Needs no lane.
     """
     from lumen_agent.engine_mirror import record_pixel_dims
 
@@ -348,7 +348,10 @@ def context_brand_ads(
             ads.append(row(asset_id, entry, "linkedin_ad", creative))
     for asset_id, entry in library.items():
         if asset_id not in harvested and isinstance(entry, dict) and entry.get("creative_type") == "ad":
-            ads.append(row(asset_id, entry, "marked_by_person", {}))
+            # Only code and people call an asset an ad: one no person typed is a harvested ad
+            # this turn's lane does not carry (lane off, or past its creative cap).
+            marked = (entry.get("asset_context") or {}).get("classification_origin") == "human"
+            ads.append(row(asset_id, entry, "marked_by_person" if marked else "linkedin_ad", {}))
     if not ads:
         return None
     dated = sorted((ad for ad in ads if ad["created_at"]), key=lambda ad: str(ad["created_at"]), reverse=True)
