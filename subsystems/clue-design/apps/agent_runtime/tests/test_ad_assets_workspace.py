@@ -100,3 +100,48 @@ def test_absent_lane_keeps_director_prompt_and_workspace_unchanged(tmp_path, mon
     tools, prompt = _turn(tmp_path, monkeypatch, fast_loop=False)
     assert not (tools.trace_dir / "workspace" / "ad-assets.md").exists()
     assert prompt == build_orchestrator_prompt(f"/{tools.run_id}/workspace")
+
+
+# --- the brand's ad list opens ad-assets.md (spec 2026-10-30, reference ads §5.5) -------------
+
+BRAND_ADS = [
+    {"asset_id": "asset_ad_1", "from": "linkedin_ad", "headline": "Spend less",
+     "commentary": "Copy.", "title": "Teal", "description": "A teal card.", "width": 1200,
+     "height": 628, "created_at": "2026-10-02"},
+    {"asset_id": "asset_ad_2", "from": "marked_by_person", "headline": None, "commentary": None,
+     "title": None, "description": None, "width": None, "height": None, "created_at": None},
+]
+
+
+def test_the_ad_list_opens_ad_assets_md(tmp_path, monkeypatch):
+    tools, prompt = _turn(
+        tmp_path,
+        monkeypatch,
+        ad_dna_card=AD_DNA_CARD,
+        brand_ads=BRAND_ADS,
+        asset_library={row["asset_id"]: _entry(row["asset_id"]) for row in BRAND_ADS},
+    )
+    text = (tools.trace_dir / "workspace" / "ad-assets.md").read_text()
+    assert text.index("# The brand's ads") < text.index(PROSE)
+    assert "— 2 in all." in text and "`asset_ad_1`" in text and "LinkedIn ad" in text
+    assert "ad-assets.md" in prompt
+
+
+def test_person_marked_ads_alone_still_write_the_file(tmp_path, monkeypatch):
+    tools, prompt = _turn(
+        tmp_path,
+        monkeypatch,
+        brand_ads=BRAND_ADS[1:],
+        asset_library={"asset_ad_2": _entry("asset_ad_2")},
+    )
+    text = (tools.trace_dir / "workspace" / "ad-assets.md").read_text()
+    assert "`asset_ad_2`" in text and "— 1 in all." in text
+    assert "ad-assets.md" in prompt
+
+
+def test_an_ad_this_turn_cannot_open_is_not_listed(tmp_path, monkeypatch):
+    tools, prompt = _turn(
+        tmp_path, monkeypatch, brand_ads=BRAND_ADS, asset_library={"asset_ad_2": _entry("asset_ad_2")}
+    )
+    text = (tools.trace_dir / "workspace" / "ad-assets.md").read_text()
+    assert "asset_ad_1" not in text and "— 1 in all." in text

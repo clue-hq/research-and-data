@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 from py_lumen_obs import get_logger
 
 from .engine_mirror import record_pixel_dims
-from .frame import render_ad_dna_card_text, render_pregenerated_assets_text
+from .frame import render_ad_dna_card_text, render_brand_ads_text, render_pregenerated_assets_text
 from .image_crop import recorded_generated_image_origin
 from .paths import to_virtual
 from .platform_reads import (
@@ -360,13 +360,17 @@ def scaffold_workspace(tools: LumenDesignTools, prompt: str) -> Path:
     # discovery surface before choosing imagery. Reuse the renderers and the placement
     # lookup so a missing/unready library record is never advertised as usable artwork.
     ad_sections: list[str] = []
-    if tools.config.ad_dna_card:
-        ad_sections.append(render_ad_dna_card_text(tools.config.ad_dna_card))
     library = {
         asset_id: entry
         for asset_id in (tools.config.asset_library or {})
         if (entry := tools._library_asset_entry(asset_id)) is not None
     }
+    # Spec 2026-10-30 (reference ads §5.5): every ad of the brand this turn can open comes first.
+    brand_ads = render_brand_ads_text(tools.config.brand_ads or [], library)
+    if brand_ads:
+        ad_sections.append(brand_ads)
+    if tools.config.ad_dna_card:
+        ad_sections.append(render_ad_dna_card_text(tools.config.ad_dna_card))
     grounds = render_pregenerated_assets_text(
         tools.config.ad_pregenerated_assets or [], library
     )
