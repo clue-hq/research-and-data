@@ -40,7 +40,7 @@ logger = get_logger("lumen_agent.sandbox_tool")
 
 OUTPUTS_DIR = "outputs"
 #: What one design workspace's ``outputs/`` may hold, in all.
-OUTPUTS_MAX_BYTES = 50 * 1024 * 1024
+OUTPUTS_MAX_BYTES = 500 * 1024 * 1024
 #: What a run's printed output may put back into the conversation; the rest is cut, with a note.
 _INLINE_OUTPUT_BYTES = 16 * 1024
 

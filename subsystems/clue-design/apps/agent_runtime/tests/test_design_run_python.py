@@ -31,7 +31,7 @@ def test_the_mounts_are_attachments_to_read_and_outputs_to_write(tmp_path: Path)
     mounts = design_sandbox_mounts(tmp_path)
     assert dict(mounts.read_only) == {"attachments": tmp_path / "attachments"}
     assert dict(mounts.read_write) == {"outputs": tmp_path / "outputs"}
-    assert mounts.policy.max_total_bytes == OUTPUTS_MAX_BYTES == 50 * 1024 * 1024
+    assert mounts.policy.max_total_bytes == OUTPUTS_MAX_BYTES == 500 * 1024 * 1024
     assert (tmp_path / "attachments").is_dir() and (tmp_path / "outputs").is_dir()
 
 
@@ -150,3 +150,5 @@ def test_an_output_the_session_cannot_carry_is_never_kept(tmp_path: Path) -> Non
     from lumen_agent.session_sync import MAX_FILE_BYTES
 
     assert design_sandbox_mounts(tmp_path).policy.max_file_bytes == MAX_FILE_BYTES
+    # Founder 2026-10-30: a design run may keep up to 500 MB of output, and a snapshot carries it.
+    assert MAX_FILE_BYTES == 500 * 1024 * 1024

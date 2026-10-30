@@ -105,7 +105,9 @@ def test_symlinks_and_oversize_files_never_travel(tmp_path: Path) -> None:
     outside = tmp_path / "outside.txt"
     outside.write_text("elsewhere", encoding="utf-8")
     (workspace / "link.txt").symlink_to(outside)
-    (workspace / "huge.bin").write_bytes(b"0" * (MAX_FILE_BYTES + 1))
+    # Sparse: the size is what is checked, and a real file one byte over the cap would be 500 MB.
+    with (workspace / "huge.bin").open("wb") as huge:
+        huge.truncate(MAX_FILE_BYTES + 1)
     manifest = snapshot_session(session, register=_Blobs().register, history_file=None)
     assert set(manifest["files"]) == {"workspace/brief.md"}
 
