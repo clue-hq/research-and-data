@@ -1,7 +1,7 @@
 # Richer reference ads for the ad agent — design
 
 Date: 2026-10-30. Branch: `fix/design-reference-ads` (from `main` at `bc8cc30dc`).
-Status: approved by the founder 2026-10-30.
+Status: approved by the founder 2026-10-30; built 2026-10-31 on `fix/design-reference-ads` (record `_memory/2026-10-30-design-reference-ads.md`).
 
 ## 1. Why
 
