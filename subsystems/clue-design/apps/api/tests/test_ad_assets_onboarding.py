@@ -22,7 +22,7 @@ from conftest import make_client, wait_for_ingestion_job
 from lumen_api import main as main_module
 from lumen_api.main import create_app
 from lumen_ingestion.ad_library.adyntel import AdyntelProvider
-from lumen_ingestion.ad_library.distill import AdDnaCard, StyleGroup
+from lumen_ingestion.ad_library.distill import AdDnaCard
 from lumen_ingestion.ad_library.provider import AdLibraryPage
 from py_lumen_config import settings
 
@@ -147,7 +147,6 @@ def _card() -> AdDnaCard:
             "a product card on the right. A lime accent shows up once, on the call to "
             "action. The logo sits bottom left, reversed out of the green."
         ),
-        style_groups=(StyleGroup(name="Deep Field", creative_ids=("adcre_stub",)),),
         model="stub/vision",
     )
 
@@ -509,16 +508,14 @@ def test_a_full_run_harvests_distils_and_pregenerates(
     assert steps["custody"]["custodied"] == 4
     assert steps["record"]["count"] == 4
     assert steps["distill"]["status"] == "ok"
-    assert steps["distill"]["style_groups"] == 1
-    assert steps["pregenerate"]["status"] == "ok"
-    assert steps["pregenerate"]["generated"] == 2
+    assert steps["distill"]["style_groups"] == 0
+    # Task 4 → Task 8 interim: grounds were made per style group, and there are none now.
+    assert steps["pregenerate"]["status"] == "empty"
 
     lane = client.get(f"/brand-ad-assets/{brand_kit_id}").json()
     assert lane["card"]["version"] == 1
     assert lane["card"]["card"]["prose"].startswith("These ads are one flat deep-green field")
-    assert lane["card"]["card"]["style_groups"][0]["name"] == "Deep Field"
-    assert len(lane["pregenerated_assets"]) == 2
-    assert {asset["visual_system"] for asset in lane["pregenerated_assets"]} == {"Deep Field"}
+    assert lane["card"]["card"]["style_groups"] == []
     assert len(lane["creatives"]) == 4
 
     creative = lane["creatives"][0]
@@ -741,7 +738,6 @@ def test_a_second_harvest_appends_a_version_and_leaves_the_first_untouched(
 
     revised = AdDnaCard(
         prose="A later harvest saw something else: these ads are photographs, edge to edge.",
-        style_groups=(StyleGroup(name="Second Look", creative_ids=("adcre_stub",)),),
         model="stub/vision",
     )
     second = _run_job(client, tmp_path, brand_kit_id=brand_kit_id, distiller=_StubDistiller(revised))
@@ -749,13 +745,12 @@ def test_a_second_harvest_appends_a_version_and_leaves_the_first_untouched(
 
     lane = client.get(f"/brand-ad-assets/{brand_kit_id}").json()
     assert lane["card"]["version"] == 2
-    assert lane["card"]["card"]["style_groups"][0]["name"] == "Second Look"
+    assert lane["card"]["card"]["prose"].startswith("A later harvest saw something else")
 
     from lumen_ingestion.ad_library.store import AdAssetsStore
 
     store = AdAssetsStore(workspace_id=client.headers["X-Workspace-Id"])
     original = store.get_card(lane["card"]["card_id"], 1)
-    assert original["card"]["style_groups"][0]["name"] == "Deep Field"
     assert original["card"]["prose"].startswith("These ads are one flat deep-green field")
 
 

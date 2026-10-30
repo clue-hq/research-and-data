@@ -13,9 +13,7 @@ import pytest
 
 from lumen_ingestion.ad_library.distill import (
     CARD_SCHEMA_VERSION,
-    MAX_GROUP_NAME_CHARS,
     MAX_PROSE_CHARS,
-    MAX_STYLE_GROUPS,
     NullAdDnaDistiller,
     bounded_card,
     resolve_distiller,
@@ -53,15 +51,15 @@ def _card_payload(**overrides: Any) -> dict:
 
 
 def test_a_well_formed_payload_becomes_a_stamped_prose_card() -> None:
-    """Founder ruling 2026-08-26: the card is a DESCRIPTION, plus the minimal group→ids link."""
+    """Founder rulings 2026-08-26 and 2026-10-30: the card is a DESCRIPTION, and no ad is
+    grouped any more. ``style_groups`` stays in the payload, always empty, so stored cards keep
+    their version-2 shape."""
     card = bounded_card(_card_payload())
     assert card is not None
     payload = card.to_json()
     assert payload["schema_version"] == CARD_SCHEMA_VERSION == 2
     assert payload["prose"] == PROSE
-    assert payload["style_groups"] == [
-        {"name": "Deep Green", "creative_ids": ["adcre_a", "adcre_b"]}
-    ]
+    assert payload["style_groups"] == []
     # The five-field taxonomy is gone, not merely unused.
     assert "visual_systems" not in payload
     for retired in ("layout_skeleton", "ground_treatment", "accent_spend", "type_feel"):
@@ -75,18 +73,6 @@ def test_the_prose_is_truncated_to_the_bound() -> None:
     assert len(card.prose) == MAX_PROSE_CHARS
 
 
-def test_the_style_group_count_and_names_are_capped() -> None:
-    card = bounded_card(
-        _card_payload(style_groups=[_group(f"Look {n}") for n in range(MAX_STYLE_GROUPS + 5)])
-    )
-    assert card is not None
-    assert len(card.style_groups) == MAX_STYLE_GROUPS
-
-    long_name = bounded_card(_card_payload(style_groups=[_group("y" * 400)]))
-    assert long_name is not None
-    assert len(long_name.style_groups[0].name) == MAX_GROUP_NAME_CHARS
-
-
 def test_a_card_that_describes_nothing_is_none_not_an_empty_card() -> None:
     """RED CASE. An empty card recorded as a version tells every later turn that this brand's
     ads look like nothing in particular — a confident lie about a distillation that failed."""
@@ -95,25 +81,6 @@ def test_a_card_that_describes_nothing_is_none_not_an_empty_card() -> None:
     assert bounded_card({"style_groups": [_group("Deep Green")]}) is None
     assert bounded_card("not a payload") is None
     assert bounded_card(None) is None
-
-
-def test_a_described_card_with_no_groups_is_still_a_real_card() -> None:
-    """The description is the card. A brand whose ads are all one look honestly has no
-    groups to name, and the turn-time selector falls back to recency when that happens."""
-    card = bounded_card({"prose": PROSE, "style_groups": []})
-    assert card is not None
-    assert card.style_groups == ()
-    assert card.to_json()["style_groups"] == []
-
-
-def test_unnamed_and_malformed_groups_are_dropped_without_losing_the_named_ones() -> None:
-    card = bounded_card(
-        _card_payload(
-            style_groups=[{"name": ""}, "junk", _group("Real"), {"name": "   "}]
-        )
-    )
-    assert card is not None
-    assert [group.name for group in card.style_groups] == ["Real"]
 
 
 # --- the vision prompt -----------------------------------------------------------------------
@@ -128,20 +95,15 @@ def test_the_vision_prompt_asks_for_a_description_and_not_a_form() -> None:
     for nudge in ("how an ad is laid out", "how colour behaves", "what the imagery is like"):
         assert nudge in DISTILL_PROMPT
     assert "Treat that as a nudge, not a checklist." in DISTILL_PROMPT
-    # The one machine link survives, and the names stay the model's to choose.
-    assert "list the creative_ids that belong to it" in DISTILL_PROMPT
-    assert "The names are yours to choose." in DISTILL_PROMPT
 
 
 def test_the_response_schema_pins_the_envelope_and_no_longer_pins_the_content() -> None:
     """RED CASE for the ruling, at the place it was actually enforced. Parsing still needs a
     schema; what the schema must NOT do any more is make five named fields mandatory — a
     required field is exactly what forces a confident answer to a question the ads never
-    asked. ``prose`` is one free-text field, and the only structure left is the group link."""
-    assert set(CARD_SCHEMA["required"]) == {"prose", "style_groups"}
-    assert CARD_SCHEMA["properties"]["prose"] == {"type": "string"}
-    group_schema = CARD_SCHEMA["properties"]["style_groups"]["items"]
-    assert set(group_schema["required"]) == {"name", "creative_ids"}
+    asked. ``prose`` is one free-text field and the only one (no group link since 2026-10-30)."""
+    assert set(CARD_SCHEMA["required"]) == {"prose"}
+    assert CARD_SCHEMA["properties"] == {"prose": {"type": "string"}}
     for retired in ("layout_skeleton", "ground_treatment", "accent_spend", "type_feel"):
         assert retired not in json.dumps(CARD_SCHEMA)
 

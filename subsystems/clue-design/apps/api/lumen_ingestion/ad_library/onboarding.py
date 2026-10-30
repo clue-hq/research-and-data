@@ -875,12 +875,7 @@ def _distil(creatives: list[Any], *, distiller: Any, evidence: JsonObject) -> Ad
             "reason": getattr(engine, "last_failure_reason", None) or "the model returned no card",
         }
         return None
-    # How much of the harvest the groups cover: every shown ad should sit in one group.
-    evidence["steps"]["distill_grouping"] = {
-        "ads_shown": len(previews),
-        "ads_grouped": sum(len(group.creative_ids) for group in card.style_groups),
-        "ads_left_out": list(getattr(engine, "last_ungrouped", ()) or ()),
-    }
+    evidence["steps"]["distill_coverage"] = {"ads_shown": len(previews)}
     return card
 
 
