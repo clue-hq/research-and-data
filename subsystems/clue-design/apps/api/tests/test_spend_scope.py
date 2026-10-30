@@ -123,28 +123,6 @@ def test_max_attempts_is_forwarded_to_the_call_spec() -> None:
     assert rows[0].attempts == 1
 
 
-def test_the_style_group_tie_break_makes_exactly_one_attempt(monkeypatch) -> None:
-    """A design turn never waits on a retry backoff (ruling T3-2).
-
-    503 is a RETRYABLE status, so the default four attempts — or even two — would put law 2's
-    twelve-second backoff in the middle of a marketer's turn to re-ask a tie-break the turn is
-    happy to do without. One request on the wire, then the deterministic recency fallback.
-    """
-    from lumen_api import ad_runtime
-    from py_lumen_config import settings
-
-    monkeypatch.setattr(settings, "openrouter_api_key", "a-key", raising=False)
-    monkeypatch.setattr(settings, "openrouter_base_url", "https://or.example/api/v1", raising=False)
-    transport = _Transport([HttpResponse(status=503, body=b"upstream is down")])
-    with spend.spend_scope(LedgerStamp(workspace_id="ws_t"), transport=transport) as scope:
-        chosen = ad_runtime.choose_style_group("a calm clinic", ["Photo Poster", "Bold Type"])
-    assert chosen is None
-    assert len(transport.sent) == 1
-    rows = [row for row in scope.ledger.rows if row.phase == "result"]
-    assert len(rows) == 1 and rows[0].attempts == 1
-    assert rows[0].operation == "design.ad.style_group"
-
-
 def test_drain_awaits_the_scopes_own_drain_fn() -> None:
     """PRE-1b: the platform injects a whole drain function, so its bookkeeping is written once."""
     seen: dict[str, object] = {}

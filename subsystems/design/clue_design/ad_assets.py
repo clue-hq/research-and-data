@@ -452,7 +452,7 @@ PREGENERATED_CONTEXT_MAX = 12
 #: ``aspect_ratio`` → the words pre-generation itself used for that shape. Mirrored rather
 #: than imported to keep this substrate module free of an ingestion-side import; a ratio with
 #: no entry renders as the bare ratio, which is still true.
-SHAPE_WORDS = {"16:9": "wide ground", "1:1": "square ground", "4:5": "portrait ground"}
+SHAPE_WORDS = {"16:9": "wide background", "1:1": "square background", "4:5": "portrait background"}
 
 
 def reduce_creative_assets(creatives: list[JsonObject]) -> dict[str, str]:
@@ -469,6 +469,25 @@ def reduce_creative_assets(creatives: list[JsonObject]) -> dict[str, str]:
     }
 
 
+def reduce_creatives(rows: list[JsonObject]) -> list[JsonObject]:
+    """Each harvested creative reduced to what the agent's ad list needs, in the rows' order.
+
+    Spec 2026-10-30 (reference ads §5.5): the agent sees every ad with its headline and post
+    copy. A row missing either id contributes nothing — there are no bytes to open.
+    """
+    return [
+        {
+            "creative_id": str(row["creative_id"]),
+            "asset_id": str(row["asset_id"]),
+            "headline": row.get("headline"),
+            "commentary": row.get("commentary"),
+            "created_at": row.get("created_at"),
+        }
+        for row in rows
+        if row.get("creative_id") and row.get("asset_id")
+    ]
+
+
 def reduce_card_payload(card_row: Any) -> JsonObject | None:
     """The card's PAYLOAD (``card_json`` contents), not the row wrapper, or ``None``."""
     if not isinstance(card_row, dict):
@@ -480,7 +499,7 @@ def reduce_card_payload(card_row: Any) -> JsonObject | None:
 def reduce_pregenerated(
     rows: list[JsonObject] | None, *, limit: int = PREGENERATED_CONTEXT_MAX
 ) -> list[JsonObject]:
-    """Each pre-generated ground reduced to the three facts a turn's context needs."""
+    """Each pre-generated background reduced to the two facts a turn's context needs."""
     listed: list[JsonObject] = []
     for row in rows or ():
         if len(listed) >= limit:
@@ -490,13 +509,7 @@ def reduce_pregenerated(
             continue
         generation = row.get("generation")
         ratio = str((generation or {}).get("aspect_ratio") or "").strip()
-        listed.append(
-            {
-                "asset_id": asset_id,
-                "style_group": str(row.get("visual_system") or "").strip(),
-                "shape": SHAPE_WORDS.get(ratio, ratio),
-            }
-        )
+        listed.append({"asset_id": asset_id, "shape": SHAPE_WORDS.get(ratio, ratio)})
     return listed
 
 
@@ -533,4 +546,5 @@ async def frozen_ad_lane(conn: AsyncConnection, *, workspace_id: str) -> JsonObj
         "card": reduce_card_payload(card_row),
         "creative_assets": creative_assets,
         "pregenerated": pregenerated,
+        "creatives": reduce_creatives(creatives),
     }
