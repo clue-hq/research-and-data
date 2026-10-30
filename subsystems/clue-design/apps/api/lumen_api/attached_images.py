@@ -15,7 +15,7 @@ person's file in ``attachments/`` is never changed.
 from __future__ import annotations
 
 import base64
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -47,8 +47,13 @@ def register_attached_images(
     invocations: Any,
     run_id: str,
     files: Sequence[Any],
+    known: Callable[[list[str]], set[str]] | None = None,
 ) -> dict[str, str]:
     """Register every viewable attached image. Returns ``{original sha256: library asset_id}``.
+
+    ``known(asset_ids)`` answers which of the ids are already in the library: those are reused as
+    they are (review M-4), so a later turn neither re-runs the engine nor overwrites a label the
+    person changed.
 
     An image the engine refuses, or whose registration fails, is left out and logged: it is still
     a file in ``attachments/``, and a turn is never failed over it.
@@ -60,11 +65,24 @@ def register_attached_images(
 
     registered: dict[str, str] = {}
     cache = Path(cache_dir)
+    wanted = [
+        attached_asset_id(item.sha256)
+        for item in files
+        if not item.unavailable and item.viewable is not None
+    ]
+    try:
+        existing = known(wanted) if known is not None and wanted else set()
+    except Exception:  # noqa: BLE001 - a failed lookup only costs a re-registration
+        logger.warning("attached_image.lookup_failed", exc_info=True)
+        existing = set()
     for item in files:
         if item.unavailable or item.viewable is None or item.sha256 in registered:
             continue
         data, media_type = item.viewable
         asset_id = attached_asset_id(item.sha256)
+        if asset_id in existing:
+            registered[item.sha256] = asset_id
+            continue
         try:
             cache.mkdir(parents=True, exist_ok=True)
             ingest = core.ingest_asset(

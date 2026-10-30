@@ -158,3 +158,41 @@ def test_the_real_engine_registers_an_attached_png_and_svg(tmp_path, design_stor
     assert record["source"]["kind"] == "uploaded" and record["source"]["filename"] == "photo.png"
     assert ATTACHED_IN_CHAT_TAG in record["tags"]
     assert record["provenance"]["source_label"] == "chat_attachment"
+
+
+def test_an_image_already_in_the_library_is_not_registered_again(tmp_path, design_storage) -> None:
+    """Review M-4: every turn re-registered every image of the thread, which re-ran the engine and
+    overwrote a label the person may have changed in the library."""
+
+    blobs = make_blob_store(create_app(tmp_path / "engine-cache", storage=design_storage))
+    core, invocations = _Core(), _Invocations()
+    photo = _image("photo.png", PNG, "image/png")
+    registered = register_attached_images(
+        core=core, blobs=blobs, cache_dir=tmp_path / "cache", invocations=invocations,
+        run_id="run_2", files=[photo], known=lambda asset_ids: set(asset_ids),
+    )
+    assert registered == {photo.sha256: f"asset_att_{photo.sha256[:32]}"}
+    assert core.calls == [] and invocations.records == []
+
+
+def test_a_turn_whose_image_setup_fails_still_runs_with_its_files(monkeypatch) -> None:
+    """Review M-7: attached images are a capability, never a precondition: a helper that cannot be
+    built leaves the turn its files and no library images, never a failed turn."""
+
+    from types import SimpleNamespace
+
+    from lumen_api import main
+
+    photo = _image("photo.png", PNG, "image/png")
+
+    class _Reads:
+        def thread_attachments(self):
+            return (photo,)
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("engine helper missing")
+
+    monkeypatch.setattr(main, "_turn_core", broken)
+    envelope = SimpleNamespace(run_id="run_1", workspace_id="ws")
+    files, registered = main._attached_images(None, envelope, None, _Reads())
+    assert files == (photo,) and registered == {}

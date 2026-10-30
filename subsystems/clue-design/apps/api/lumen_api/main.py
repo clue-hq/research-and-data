@@ -10588,15 +10588,23 @@ def _attached_images(
         return (), {}
     if not files:
         return (), {}
-    with _setup_step(envelope.run_id, "attached_images"):
-        registered = register_attached_images(
-            core=_turn_core(host),
-            blobs=_turn_blob_store(host, envelope.workspace_id),
-            cache_dir=_host_engine_cache_root(host, envelope.workspace_id),
-            invocations=_turn_design_tools(host, run_subject),
-            run_id=envelope.run_id,
-            files=files,
-        )
+    # Review M-7: building the turn's helpers is part of the step, so a failure there leaves the
+    # turn running with its files in attachments/, never failed.
+    try:
+        with _setup_step(envelope.run_id, "attached_images"):
+            repo = HybridRepository(envelope.workspace_id, ensure_workspace=False)
+            registered = register_attached_images(
+                core=_turn_core(host),
+                blobs=_turn_blob_store(host, envelope.workspace_id),
+                cache_dir=_host_engine_cache_root(host, envelope.workspace_id),
+                invocations=_turn_design_tools(host, run_subject),
+                run_id=envelope.run_id,
+                files=files,
+                known=lambda asset_ids: set(repo.get_asset_records(asset_ids)),
+            )
+    except Exception:  # noqa: BLE001 - attached images are a capability, never a precondition
+        api_logger.warning("design_turn.attached_images_failed", run_id=envelope.run_id, exc_info=True)
+        return files, {}
     return files, registered
 
 
