@@ -33,6 +33,26 @@ PROJECT_CONTEXT_DIR = "project-context"
 ATTACHMENTS_DIR = "attachments"
 #: How many bytes of the chat's files one turn's folder holds: the current message's files first.
 DESIGN_ATTACHMENTS_MAX_BYTES = 157_286_400
+#: Founder-approved wording (2026-10-30): every design agent's system prompt carries this.
+ATTACHMENTS_GUIDANCE = (
+    "**Files sent in this chat.** When the person attaches files, they are in `attachments/`, "
+    "and your message lists the ones sent with it. They are the person's files: read them, copy "
+    "them, use them, but never change them; anything you make from them is new work. Read text, "
+    "Markdown, CSV and JSON with read_file. Open PDFs, Word documents, slide decks and "
+    "spreadsheets with run_python. An SVG is a drawing written as text: read it with read_file. "
+    "When a message names a file, use that exact file. If a file cannot be opened, or is listed "
+    "as not available, say so plainly. Never use a similar-looking library image in its place."
+)
+#: The site agent's own line after the paragraph (approved with it).
+SITE_ATTACHED_IMAGES_LINE = (
+    "Images sent in the chat are listed in brand/brand.md and can be placed like any library image."
+)
+#: Added to the turn's file list when this request has no sandbox (approved with it).
+NO_SANDBOX_LINE = (
+    "You cannot open PDFs, Word documents, slide decks or spreadsheets on this request. "
+    "Say so if the person needs one read."
+)
+_UNAVAILABLE_WORDS = {"erased": "its file was deleted", "missing": "its file could not be found"}
 _PIN_FILE = ".pin"
 _REFUSED_PREFIX = "refused:"
 
@@ -296,11 +316,16 @@ def _attachment_name(name: str, taken: set[str]) -> str:
     return candidate
 
 
-def with_attachments_note(prompt: str, note: str) -> str:
+def with_attachments_note(prompt: str, note: str, *, can_run_python: bool = True) -> str:
     """The turn's message with the lines naming the chat's files after it; unchanged when there
-    are none, so a turn without files sends exactly what it sent before."""
+    are none, so a turn without files sends exactly what it sent before. Without a sandbox the
+    agent is told documents cannot be opened on this request."""
 
-    return f"{prompt}\n\n{note}" if note else prompt
+    if not note:
+        return prompt
+    if not can_run_python:
+        note = f"{note}\n{NO_SANDBOX_LINE}"
+    return f"{prompt}\n\n{note}"
 
 
 def write_thread_attachments(workspace: Path, files: Sequence[Any]) -> str:
@@ -329,7 +354,9 @@ def write_thread_attachments(workspace: Path, files: Sequence[Any]) -> str:
     over: list[str] = []
     for item in ordered:
         if item.unavailable:
-            missing.append(f"{item.filename} ({item.unavailable})")
+            missing.append(
+                f"{item.filename} ({_UNAVAILABLE_WORDS.get(item.unavailable, item.unavailable)})"
+            )
             continue
         if used + len(item.data) > DESIGN_ATTACHMENTS_MAX_BYTES:
             over.append(item.filename)
@@ -354,6 +381,9 @@ def write_thread_attachments(workspace: Path, files: Sequence[Any]) -> str:
 
 __all__ = [
     "ATTACHMENTS_DIR",
+    "ATTACHMENTS_GUIDANCE",
+    "NO_SANDBOX_LINE",
+    "SITE_ATTACHED_IMAGES_LINE",
     "DESIGN_ATTACHMENTS_MAX_BYTES",
     "PROJECT_CONTEXT_DIR",
     "SELLER_DIR",

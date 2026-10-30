@@ -1166,7 +1166,11 @@ def run_deepagent_turn(
         initial_state = {
             "messages": [
                 HumanMessage(
-                    content=with_attachments_note(prompt, tools.attachments_note),
+                    content=with_attachments_note(
+                        prompt,
+                        tools.attachments_note,
+                        can_run_python=getattr(tools, "run_python_available", False),
+                    ),
                     additional_kwargs={RUN_ID_KEY: tools.run_id},
                 )
             ],

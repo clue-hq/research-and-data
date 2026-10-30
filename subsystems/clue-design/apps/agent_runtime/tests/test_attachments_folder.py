@@ -63,7 +63,7 @@ def test_an_unavailable_file_is_named_with_its_reason_and_not_written(tmp_path: 
         [_File("kept.pdf", b"%PDF"), _File("gone.png", b"", unavailable="erased")],
     )
     assert _names(tmp_path) == ["kept.pdf"]
-    assert "gone.png" in note and "erased" in note
+    assert "gone.png (its file was deleted)" in note
 
 
 def test_a_name_that_climbs_lands_inside_the_folder(tmp_path: Path) -> None:
@@ -180,3 +180,48 @@ def test_the_site_agent_can_look_at_and_place_an_attached_image(tmp_path: Path) 
     assert blocks[0]["text"].startswith(attached.file) and blocks[1]["type"] != "text"
     brand = turn_brand(garner_brand(), [], [attached])
     assert brand["assets"]["asset_att_x"]["file"] == attached.file
+
+
+# --- Task 10: what the agents are told (wording approved by the founder, 2026-10-30) ------------
+
+
+def test_every_design_prompt_carries_the_attachments_paragraph(tmp_path: Path) -> None:
+    from lumen_agent.platform_reads import ATTACHMENTS_GUIDANCE, SITE_ATTACHED_IMAGES_LINE
+    from lumen_agent.prompts import build_scene_solo_prompt
+    from lumen_agent.prompts_web import build_web_solo_prompt
+    from lumen_agent.site.harness import site_system_prompt
+
+    assert ATTACHMENTS_GUIDANCE.startswith("**Files sent in this chat.**")
+    assert "Never use a similar-looking library image in its place." in ATTACHMENTS_GUIDANCE
+    scene = build_scene_solo_prompt("/run_x/workspace")
+    web = build_web_solo_prompt(
+        doc_title="Page", has_existing_content=False, brand_card="{}", theme_token_names="ink"
+    )
+    site = site_system_prompt(tmp_path)
+    for prompt in (scene, web, site):
+        assert ATTACHMENTS_GUIDANCE in prompt
+    assert SITE_ATTACHED_IMAGES_LINE in site
+    assert SITE_ATTACHED_IMAGES_LINE not in scene and SITE_ATTACHED_IMAGES_LINE not in web
+    # The founder refused an ad-only line about reference images (2026-10-30).
+    assert "also your reference images" not in scene
+
+
+def test_the_turn_says_documents_cannot_be_opened_without_the_sandbox() -> None:
+    from lumen_agent.platform_reads import NO_SANDBOX_LINE, with_attachments_note
+
+    note = "Attached with this message: attachments/brief.pdf"
+    assert with_attachments_note("Build it.", note, can_run_python=True) == f"Build it.\n\n{note}"
+    assert with_attachments_note("Build it.", note, can_run_python=False).endswith(NO_SANDBOX_LINE)
+    assert with_attachments_note("Build it.", "", can_run_python=False) == "Build it."
+
+
+def test_an_unavailable_file_reads_in_plain_words(tmp_path: Path) -> None:
+    note = write_thread_attachments(
+        tmp_path,
+        [
+            _File("old.png", b"", unavailable="erased"),
+            _File("lost.png", b"", unavailable="missing"),
+        ],
+    )
+    assert "old.png (its file was deleted)" in note
+    assert "lost.png (its file could not be found)" in note

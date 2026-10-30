@@ -31,7 +31,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from py_lumen_obs import get_logger
 
 from ..config import AgentRuntimeConfig
-from ..platform_reads import with_attachments_note
+from ..platform_reads import ATTACHMENTS_GUIDANCE, SITE_ATTACHED_IMAGES_LINE, with_attachments_note
 from ..sandbox_tool import design_run_python
 from .inputs import SiteSection, SiteTurnInputs
 from .tools import SiteTools, site_tool_set
@@ -430,7 +430,8 @@ def site_system_prompt(workspace: Path, *, live: bool = False) -> str:
     (ruling S2). ``live``: the workspace publishes live sites, so the render line names
     render_page's hydration notes."""
 
-    return _base_prompt(workspace, live=live)
+    # Spec 2026-10-30 §3.7: the chat's files (founder-approved wording), and where its images are.
+    return f"{_base_prompt(workspace, live=live)}\n\n{ATTACHMENTS_GUIDANCE} {SITE_ATTACHED_IMAGES_LINE}\n"
 
 
 # --- the working copy (site-turn durability, 2026-10-16) -----------------------------------------
@@ -787,7 +788,12 @@ def run_site_turn(
     note = materialized.get("attachments_note", "") if tools is not None else ""
     initial = {
         "messages": [
-            HumanMessage(content=with_attachments_note(prompt, note), additional_kwargs={RUN_ID_KEY: run_id})
+            HumanMessage(
+                content=with_attachments_note(
+                    prompt, note, can_run_python=getattr(tools, "run_python_available", False)
+                ),
+                additional_kwargs={RUN_ID_KEY: run_id},
+            )
         ]
     }
 
