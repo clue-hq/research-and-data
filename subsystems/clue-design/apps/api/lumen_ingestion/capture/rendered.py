@@ -273,21 +273,31 @@ _VIEWPORT = {"width": 1440, "height": 2000}
 
 
 # Inline logos often inherit all their paint from page CSS. A bare outerHTML
-# export silently turns these into black shapes. Bake the OBSERVED styles into
-# a detached copy, keeping the live page and screenshot untouched. The bound is
-# independent of HTML bytes so a pathological SVG cannot monopolize capture.
+# export silently turns these into black shapes. Record what the browser SHOWED
+# on every SVG element of a detached copy — as data, never as a style, so the
+# live page and screenshot stay untouched and the site's own rules keep working
+# in a clone (see `svg_looks`: a logo file bakes the record back inline, a clone
+# turns it into fallback rules). An inherited property is written only where it
+# differs from the parent's, so inherited values keep flowing from the site's
+# rules (a hover that recolours an icon through `currentColor`); the root also
+# records what it took from the page (`CONTEXT`), which only a logo file needs.
+# Artwork hidden at this width is kept: a clone's phone rules may show it. The
+# bound is independent of HTML bytes so a pathological SVG cannot monopolize capture.
 _SERIALIZE_HTML_JS = r"""
 () => {
+  const LOOK = 'data-clue-svg-look', CONTEXT = 'data-clue-svg-context';
   const copy = document.documentElement.cloneNode(true);
   const source = Array.from(document.querySelectorAll('svg')).filter(n => !n.parentElement.closest('svg'));
   const targets = Array.from(copy.querySelectorAll('svg')).filter(n => !n.parentElement.closest('svg'));
-  const common = ['display', 'visibility', 'opacity', 'transform', 'transform-origin',
-                  'filter', 'clip-path', 'mask', 'mix-blend-mode'];
-  const paint = ['fill', 'fill-opacity', 'fill-rule', 'stroke', 'stroke-opacity',
-                 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-miterlimit',
-                 'stroke-dasharray', 'stroke-dashoffset', 'vector-effect'];
-  const typography = ['font-family', 'font-size', 'font-weight', 'font-style',
-                      'letter-spacing', 'text-anchor', 'dominant-baseline'];
+  const inherited = ['color', 'visibility', 'fill', 'fill-opacity', 'fill-rule', 'stroke',
+                     'stroke-opacity', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
+                     'stroke-miterlimit', 'stroke-dasharray', 'stroke-dashoffset', 'font-family',
+                     'font-size', 'font-weight', 'font-style', 'letter-spacing', 'text-anchor',
+                     'dominant-baseline'];
+  // The element's own properties, each with its initial value (which needs no record).
+  const own = [['display', 'inline'], ['opacity', '1'], ['transform', 'none'], ['filter', 'none'],
+               ['clip-path', 'none'], ['mask', 'none'], ['mix-blend-mode', 'normal']];
+  const shapes = 'path,rect,circle,ellipse,line,polyline,polygon,text,tspan,use';
   let count = 0;
   const localPaint = value => value.replace(/url\(["']?([^"')]+)["']?\)/g, (match, ref) => {
     try {
@@ -298,24 +308,33 @@ _SERIALIZE_HTML_JS = r"""
     } catch (_) {}
     return match;
   });
+  const written = pairs => pairs.map(([name, value]) => `${name}: ${localPaint(value)}`).join('; ');
   source.forEach((svg, i) => {
     const originals = [svg, ...svg.querySelectorAll('*')];
     const clones = [targets[i], ...targets[i].querySelectorAll('*')];
     originals.forEach((node, j) => {
       if (++count > 20000) throw new Error('SVG style capture exceeds 20000 elements');
       const cs = getComputedStyle(node);
-      const target = clones[j];
-      // Invisible alternate artwork must not become visible when detached.
-      if (cs.display === 'none') { target.remove(); return; }
-      const properties = [...common];
-      if (node.matches('path,rect,circle,ellipse,line,polyline,polygon,text,tspan,use'))
-        properties.push(...paint);
-      if (node.matches('text,tspan')) properties.push(...typography);
-      if (node.matches('stop')) properties.push('stop-color', 'stop-opacity');
-      for (const name of properties) {
+      const parent = node.parentElement ? getComputedStyle(node.parentElement) : null;
+      const look = [], context = [];
+      for (const name of inherited) {
         const value = cs.getPropertyValue(name);
-        if (value) target.style.setProperty(name, localPaint(value), 'important');
+        if (!value) continue;
+        if (parent && parent.getPropertyValue(name) === value) { if (j === 0) context.push([name, value]); }
+        else look.push([name, value]);
       }
+      for (const [name, initial] of own) {
+        const value = cs.getPropertyValue(name);
+        if (value && value !== initial) look.push([name, value]);
+      }
+      if (cs.getPropertyValue('transform') !== 'none')
+        look.push(['transform-origin', cs.getPropertyValue('transform-origin')]);
+      if (node.matches(shapes) && cs.getPropertyValue('vector-effect') !== 'none')
+        look.push(['vector-effect', cs.getPropertyValue('vector-effect')]);
+      if (node.matches('stop'))
+        look.push(['stop-color', cs.getPropertyValue('stop-color')], ['stop-opacity', cs.getPropertyValue('stop-opacity')]);
+      if (look.length) clones[j].setAttribute(LOOK, written(look));
+      if (context.length) clones[j].setAttribute(CONTEXT, written(context));
     });
   });
   const doctype = document.doctype ? new XMLSerializer().serializeToString(document.doctype) : '';
