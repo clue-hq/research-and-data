@@ -153,3 +153,30 @@ def test_the_site_workspace_writes_the_threads_files(tmp_path: Path) -> None:
     summary = materialize_workspace(tmp_path, inputs, site=garner_site())
     assert (tmp_path / ATTACHMENTS_DIR / "brief.md").read_bytes() == b"# Hero brief"
     assert "brief.md" in summary["attachments_note"]
+
+
+def test_the_site_agent_can_look_at_and_place_an_attached_image(tmp_path: Path) -> None:
+    from site_fixtures import garner_brand, inputs_for, png
+
+    from lumen_agent.site.inputs import AttachedImage
+    from lumen_agent.site.tools import SiteTools
+    from lumen_agent.site.workspace import turn_brand
+
+    image = png("red")
+    digest = "a" * 64
+
+    class _Assets:
+        def read(self, wanted: str) -> tuple[str, bytes]:
+            assert wanted == digest
+            return "image/png", image
+
+    attached = AttachedImage(
+        asset_id="asset_att_x", file=f"/asset-store/{digest}", filename="photo.png",
+        content_type="image/png", current=True,
+    )
+    inputs = inputs_for(attached_images=[attached], assets=_Assets())
+    tools = SiteTools(workspace=tmp_path, inputs=inputs, base_site={"pages": {}})
+    blocks = tools.view_asset([attached.file])
+    assert blocks[0]["text"].startswith(attached.file) and blocks[1]["type"] != "text"
+    brand = turn_brand(garner_brand(), [], [attached])
+    assert brand["assets"]["asset_att_x"]["file"] == attached.file
