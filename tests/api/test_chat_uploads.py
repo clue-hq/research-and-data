@@ -146,3 +146,15 @@ def test_more_image_formats_are_accepted_by_their_bytes() -> None:
     with pytest.raises(UploadRefused) as refused:
         validate_upload_bytes(data=b"<html></html>", media_type="image/svg+xml", settings=settings)
     assert refused.value.code == "UPLOAD_NOT_AN_IMAGE"
+
+
+def test_an_svg_whose_tag_follows_a_long_comment_is_accepted() -> None:
+    """Review M-8: the check read only the first 4 KB, refusing a valid SVG whose <svg> tag comes
+    after a long comment or DOCTYPE (design tools write both)."""
+
+    svg = (
+        b'<?xml version="1.0"?>\n<!-- '
+        + b"x" * 6000
+        + b' -->\n<svg xmlns="http://www.w3.org/2000/svg"/>'
+    )
+    validate_upload_bytes(data=svg, media_type="image/svg+xml", settings=Settings(_env_file=None))

@@ -206,10 +206,12 @@ def validate_upload_bytes(*, data: bytes, media_type: str, settings: Settings) -
         return
     if media_type == "image/svg+xml":
         try:
-            head = data[:4096].decode("utf-8-sig")
+            # The whole document, not a head: design tools put long comments and DOCTYPEs before
+            # the <svg> tag, and an image is at most the image limit, checked above.
+            document = data.decode("utf-8-sig")
         except UnicodeDecodeError as exc:
             raise UploadRefused("UPLOAD_NOT_AN_IMAGE", "the file is not an SVG image") from exc
-        if "<svg" not in head:
+        if "<svg" not in document:
             raise UploadRefused("UPLOAD_NOT_AN_IMAGE", "the file is not an SVG image")
         return
     if not data.startswith(_MAGIC[media_type]):
