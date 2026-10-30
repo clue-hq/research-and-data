@@ -118,6 +118,13 @@ class AgentRuntimeConfig:
     # Naming them is the entire fix — the list is advisory, nothing requires their use, and
     # None (no lane, no card, no imagery) composes byte-identically to a pre-W4 turn.
     ad_pregenerated_assets: list | None = None
+    # Spec 2026-10-30 (reference ads §5.5): every ad of the brand this turn can open — the
+    # harvested ones with their headline and post copy, and every library asset a person marked
+    # "Ad" — as a list of {"asset_id", "from", "headline", "commentary", "title", "description",
+    # "width", "height", "created_at"}, newest first. Resolved by the API and passed BY VALUE;
+    # the runtime lists it at the top of ad-assets.md. None → no ads, and the turn composes as
+    # before.
+    brand_ads: list | None = None
     # OpenRouter unified reasoning effort ("low" | "medium" | "high") applied to
     # every deep-agent LLM call via the one gateway constructor (init_model).
     # None → the request carries no reasoning field (provider default, i.e.

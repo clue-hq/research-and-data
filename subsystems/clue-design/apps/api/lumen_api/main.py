@@ -9756,6 +9756,12 @@ def run_agent_turn_preview(
             # ids — not the asset index, which is kit-only, and not `view`, which lists library
             # ids only once the author has already guessed one wrong.
             config = replace(config, ad_pregenerated_assets=ad_pregenerated)
+        brand_ads = ad_runtime.context_brand_ads(ad_lane, asset_library)
+        if brand_ads:
+            # Spec 2026-10-30 (reference ads §5.5): the whole list of the brand's ads, BY VALUE,
+            # so the agent opens the ones it wants. Independent of the lane flag: a person's own
+            # "Ad" assets are listed with the harvest lane off.
+            config = replace(config, brand_ads=brand_ads)
         # Slice 2 D4: the loop is mandatory-multimodal (Director + reviewer attach
         # images every turn). Fail LOUDLY here, before the run authors, if the
         # configured model is text-only — otherwise the run dies mid-turn at the

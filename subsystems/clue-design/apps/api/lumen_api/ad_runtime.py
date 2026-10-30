@@ -47,6 +47,7 @@ __all__ = [
     "FROZEN_LANE_ABSENT",
     "PREGENERATED_CONTEXT_MAX",
     "AdLane",
+    "context_brand_ads",
     "context_card",
     "context_pregenerated",
     "frozen_lane_payload",
@@ -298,3 +299,57 @@ def context_card(lane: Optional[AdLane]) -> Optional[JsonObject]:
         return None
     prose = str(lane.card.get("prose") or "").strip()
     return lane.card if prose else None
+
+
+# ---------------------------------------------------------------------------------------------
+# The brand's ads, listed for the agent (spec 2026-10-30, reference ads §5.5)
+# ---------------------------------------------------------------------------------------------
+
+
+def context_brand_ads(
+    lane: Optional[AdLane], asset_library: Optional[JsonObject]
+) -> Optional[list[JsonObject]]:
+    """Every ad of the brand the agent can open this turn, newest first, or ``None``.
+
+    Two sources, one list: the harvested creatives (with their headline and post copy), and
+    every other library asset whose shown type is ``ad`` — which, since only code and people
+    may call an asset an ad, means a person marked it. A harvested ad is listed while its
+    library entry is in this turn's library and its type is ``ad`` or not yet known (no
+    description); a person who retyped it removes it. Needs no lane: a person's own ads are
+    listed when the harvest lane is off.
+    """
+    from lumen_agent.engine_mirror import record_pixel_dims
+
+    library = asset_library or {}
+    ads: list[JsonObject] = []
+
+    def row(asset_id: str, entry: JsonObject, source: str, creative: JsonObject) -> JsonObject:
+        dims = record_pixel_dims(entry.get("record") or {}) or (None, None)
+        return {
+            "asset_id": asset_id,
+            "from": source,
+            "headline": creative.get("headline"),
+            "commentary": creative.get("commentary"),
+            "title": entry.get("title"),
+            "description": entry.get("description"),
+            "width": dims[0],
+            "height": dims[1],
+            "created_at": creative.get("created_at") or entry.get("created_at"),
+        }
+
+    harvested: set[str] = set()
+    for creative in (lane.creatives if lane is not None else ()):
+        asset_id = str(creative.get("asset_id") or "")
+        entry = library.get(asset_id)
+        if not isinstance(entry, dict) or asset_id in harvested:
+            continue
+        harvested.add(asset_id)
+        if entry.get("creative_type") in (None, "ad"):
+            ads.append(row(asset_id, entry, "linkedin_ad", creative))
+    for asset_id, entry in library.items():
+        if asset_id not in harvested and isinstance(entry, dict) and entry.get("creative_type") == "ad":
+            ads.append(row(asset_id, entry, "marked_by_person", {}))
+    if not ads:
+        return None
+    dated = sorted((ad for ad in ads if ad["created_at"]), key=lambda ad: str(ad["created_at"]), reverse=True)
+    return dated + [ad for ad in ads if not ad["created_at"]]

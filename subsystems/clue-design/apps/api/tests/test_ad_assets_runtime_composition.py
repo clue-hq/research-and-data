@@ -499,3 +499,96 @@ def test_a_legs_own_attachments_survive_the_key_less_envelope_and_beat_auto_atta
     assert list(captured["config"].reference_assets) == [chosen]
     for auto in harvested:
         assert auto not in captured["config"].reference_assets
+
+
+# --- the brand's ad list (spec 2026-10-30, reference ads §5.5) -------------------------------
+
+
+def _entry(asset_id: str, creative_type: Optional[str], *, created_at: str = "2026-09-01",
+           title: str = "", width: int = 0, height: int = 0) -> dict:
+    record: dict = {"id": asset_id, "kind": "raster_image", "status": "ready"}
+    if width:
+        record["raster"] = {"pixel_width": width, "pixel_height": height}
+    entry: dict = {"record": record, "created_at": created_at, "title": title,
+                   "description": f"About {asset_id}."}
+    if creative_type is not None:
+        entry["creative_type"] = creative_type
+    return entry
+
+
+def _ads_lane() -> ad_runtime.AdLane:
+    return ad_runtime.AdLane(
+        card=None,
+        creative_assets={"c1": "a1", "c2": "a2"},
+        creatives=(
+            {"creative_id": "c1", "asset_id": "a1", "headline": "H1", "commentary": "Copy 1",
+             "created_at": "2026-10-02"},
+            {"creative_id": "c2", "asset_id": "a2", "headline": None, "commentary": None,
+             "created_at": "2026-10-01"},
+        ),
+    )
+
+
+def test_the_list_holds_harvested_ads_and_person_marked_ones_newest_first() -> None:
+    library = {
+        "a1": _entry("a1", "ad", title="T1", width=1200, height=628),
+        "a2": _entry("a2", "ad"),
+        "a3": _entry("a3", "ad", created_at="2026-10-03"),
+        "a4": _entry("a4", "photo"),
+    }
+    ads = ad_runtime.context_brand_ads(_ads_lane(), library)
+    assert [ad["asset_id"] for ad in ads] == ["a3", "a1", "a2"]
+    assert ads[0]["from"] == "marked_by_person" and ads[1]["from"] == "linkedin_ad"
+    assert ads[1]["headline"] == "H1" and ads[1]["commentary"] == "Copy 1"
+    assert ads[1]["title"] == "T1" and ads[1]["description"] == "About a1."
+    assert (ads[1]["width"], ads[1]["height"]) == (1200, 628)
+    assert (ads[2]["width"], ads[2]["height"]) == (None, None)
+
+
+def test_a_harvested_ad_the_person_retyped_leaves_the_list() -> None:
+    library = {"a1": _entry("a1", "photo"), "a2": _entry("a2", "ad")}
+    assert [ad["asset_id"] for ad in ad_runtime.context_brand_ads(_ads_lane(), library)] == ["a2"]
+
+
+def test_a_harvested_ad_with_no_description_is_still_listed() -> None:
+    library = {"a1": _entry("a1", None), "a2": _entry("a2", "ad")}
+    assert [ad["asset_id"] for ad in ad_runtime.context_brand_ads(_ads_lane(), library)] == ["a1", "a2"]
+
+
+def test_a_harvested_ad_missing_from_the_library_is_left_out() -> None:
+    assert [ad["asset_id"] for ad in ad_runtime.context_brand_ads(_ads_lane(), {"a2": _entry("a2", "ad")})] == ["a2"]
+
+
+def test_person_marked_ads_are_listed_with_no_lane() -> None:
+    assert [ad["asset_id"] for ad in ad_runtime.context_brand_ads(None, {"a3": _entry("a3", "ad")})] == ["a3"]
+
+
+def test_no_ads_is_none() -> None:
+    assert ad_runtime.context_brand_ads(None, {"a4": _entry("a4", "photo")}) is None
+    assert ad_runtime.context_brand_ads(_ads_lane(), None) is None
+
+
+def test_a_turn_carries_the_list_even_with_the_lane_off(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The flag gates the harvest lane, not the person's own "Ad" choice (spec §5.5)."""
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
+    monkeypatch.setattr(settings, "lumen_brand_ad_assets", False, raising=False)
+    marked = upload_logo(client, label="Our print ad").json()["asset"]["id"]
+    captured = _stub_scene_turn_runtime(monkeypatch)
+    from lumen_api import main as main_module
+
+    real = main_module.resolve_scene_turn_asset_library
+
+    def library_with_marked_ad(*args: Any, **kwargs: Any):
+        library = real(*args, **kwargs) or {}
+        library[marked] = {**library.get(marked, {}), "creative_type": "ad"}
+        return library
+
+    monkeypatch.setattr(main_module, "resolve_scene_turn_asset_library", library_with_marked_ad)
+
+    run_agent_turn_preview(
+        _turn(), repo_root(), workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    )
+
+    assert [ad["asset_id"] for ad in captured["config"].brand_ads] == [marked]
