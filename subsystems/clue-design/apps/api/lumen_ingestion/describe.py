@@ -91,10 +91,13 @@ class DescriptionStore:
         self.workspace_id = workspace_id or default_workspace_id()
         self._bridge = DesignStoreBridge(self.workspace_id)
 
-    def get_many(self, asset_ids: list[str]) -> dict[str, dict]:
+    def get_many(self, asset_ids: list[str], *, harvested_stubs: bool = False) -> dict[str, dict]:
         return self._bridge._run(
             lambda conn: design_descriptions.get_many(
-                conn, workspace_id=self.workspace_id, asset_ids=list(asset_ids)
+                conn,
+                workspace_id=self.workspace_id,
+                asset_ids=list(asset_ids),
+                harvested_stubs=harvested_stubs,
             )
         )
 

@@ -7952,7 +7952,9 @@ def create_app(
         store = DescriptionStore(workspace_id=repo.workspace_id)
         return {
             "schema_version": 1,
-            "descriptions": store.get_many(ids),
+            # A harvested ad with no description yet still reads as an ad, so the Assets
+            # page's "Ad" filter shows it (spec 2026-10-30, reference ads §5.2).
+            "descriptions": store.get_many(ids, harvested_stubs=True),
         }
 
     @app.put("/assets/{asset_id}/description")
