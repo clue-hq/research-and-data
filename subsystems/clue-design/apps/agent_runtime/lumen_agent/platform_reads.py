@@ -305,11 +305,19 @@ def read_thread_attachments(reads: Any, *, record: Callable[..., Any]) -> tuple[
         return ()
 
 
+_NAME_MAX_BYTES = 240
+
+
 def _attachment_name(name: str, taken: set[str]) -> str:
     """One path segment, never a climb, never a clash with a file already written."""
 
     segment = PurePosixPath(name.replace("\\", "/")).name.strip().lstrip(".") or "attachment"
-    candidate, stem, suffix, n = segment, Path(segment).stem, Path(segment).suffix, 2
+    # Disks allow 255 BYTES per name, uploads allow 255 characters: keep the extension and cut the
+    # stem on a character boundary, with room left for a "-2" clash suffix.
+    stem, suffix = Path(segment).stem, Path(segment).suffix
+    budget = _NAME_MAX_BYTES - len(suffix.encode("utf-8"))
+    stem = stem.encode("utf-8")[:budget].decode("utf-8", errors="ignore") or "attachment"
+    candidate, n = stem + suffix, 2
     while candidate in taken:
         candidate, n = f"{stem}-{n}{suffix}", n + 1
     taken.add(candidate)
@@ -365,7 +373,12 @@ def write_thread_attachments(workspace: Path, files: Sequence[Any]) -> str:
             over.append(item.filename)
             continue
         name = _attachment_name(item.filename, taken)
-        (root / name).write_bytes(item.data)
+        try:
+            (root / name).write_bytes(item.data)
+        except OSError:
+            # A file the disk will not take is one unavailable file, never a failed turn.
+            missing.append(f"{item.filename} (its file could not be written)")
+            continue
         used += len(item.data)
         (current if item.current else earlier).append(f"{ATTACHMENTS_DIR}/{name}")
     lines = []

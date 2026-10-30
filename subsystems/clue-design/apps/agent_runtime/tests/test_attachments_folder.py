@@ -233,3 +233,15 @@ def test_a_file_the_platform_left_out_for_the_budget_is_named_not_included(tmp_p
     )
     assert _names(tmp_path) == ["now.pdf"]
     assert "Not included: old.pdf (this chat's files pass 150 MB)" in note
+
+
+def test_a_filename_too_long_for_the_disk_is_shortened_not_a_crash(tmp_path: Path) -> None:
+    """Review M-1: uploads allow 255 characters; disks allow 255 bytes. 120 CJK characters are
+    360 bytes in UTF-8 and used to fail the turn, and every later turn in the thread."""
+
+    name = "報" * 120 + ".pdf"
+    note = write_thread_attachments(tmp_path, [_File(name, b"%PDF")])
+    [written] = list((tmp_path / ATTACHMENTS_DIR).iterdir())
+    assert len(written.name.encode("utf-8")) <= 255 and written.name.endswith(".pdf")
+    assert written.read_bytes() == b"%PDF"
+    assert f"attachments/{written.name}" in note
