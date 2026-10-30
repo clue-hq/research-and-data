@@ -52,7 +52,7 @@ from .models.scene_tool_inputs import (
 )
 from .models.schemas import ClarificationRequest, SceneVisualCritique, VisualCritique
 from .models.state import CONSTITUTION_FIELDS, LumenTurnState
-from .platform_reads import make_platform_read_tools
+from .platform_reads import make_platform_read_tools, with_attachments_note
 from .prompts import (
     SCENE_LOGO_SELECTION_GUIDANCE,
     SCENE_LS_DESCRIPTION,
@@ -1159,7 +1159,12 @@ def run_deepagent_turn(
         # continued. It survives the checkpoint round trip on `additional_kwargs`; a plain dict
         # message would not.
         initial_state = {
-            "messages": [HumanMessage(content=prompt, additional_kwargs={RUN_ID_KEY: tools.run_id})],
+            "messages": [
+                HumanMessage(
+                    content=with_attachments_note(prompt, tools.attachments_note),
+                    additional_kwargs={RUN_ID_KEY: tools.run_id},
+                )
+            ],
             **initial_turn_state(tools, prompt),
         }
         # D5: the durable thread is the DESIGN RUN, not the runtime's private run id. When no

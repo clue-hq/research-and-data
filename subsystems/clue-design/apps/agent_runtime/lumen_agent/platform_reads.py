@@ -19,8 +19,8 @@ from __future__ import annotations
 
 import json
 import shutil
-from collections.abc import Callable
-from pathlib import Path
+from collections.abc import Callable, Sequence
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from py_lumen_obs import get_logger
@@ -29,6 +29,10 @@ logger = get_logger("lumen_agent.platform_reads")
 
 SELLER_DIR = "seller"
 PROJECT_CONTEXT_DIR = "project-context"
+#: The files sent in this chat thread (spec 2026-10-30 §3.3): rebuilt every turn, read-only.
+ATTACHMENTS_DIR = "attachments"
+#: How many bytes of the chat's files one turn's folder holds: the current message's files first.
+DESIGN_ATTACHMENTS_MAX_BYTES = 157_286_400
 _PIN_FILE = ".pin"
 _REFUSED_PREFIX = "refused:"
 
@@ -266,10 +270,97 @@ def write_project_design_context(
     )
 
 
+def read_thread_attachments(reads: Any, *, record: Callable[..., Any]) -> tuple[Any, ...]:
+    """The thread's files from the injected reads, or none. A read that fails is recorded and
+    designed around, like every other platform read."""
+
+    if reads is None or not hasattr(reads, "thread_attachments"):
+        return ()
+    try:
+        return tuple(reads.thread_attachments())
+    except Exception as error:  # noqa: BLE001 - unavailable files are a fact, never a crash
+        code = str(error) or error.__class__.__name__
+        record("orchestrator", "thread_attachments_unavailable", payload={"code": code})
+        logger.info("thread_attachments_unavailable", code=code)
+        return ()
+
+
+def _attachment_name(name: str, taken: set[str]) -> str:
+    """One path segment, never a climb, never a clash with a file already written."""
+
+    segment = PurePosixPath(name.replace("\\", "/")).name.strip().lstrip(".") or "attachment"
+    candidate, stem, suffix, n = segment, Path(segment).stem, Path(segment).suffix, 2
+    while candidate in taken:
+        candidate, n = f"{stem}-{n}{suffix}", n + 1
+    taken.add(candidate)
+    return candidate
+
+
+def with_attachments_note(prompt: str, note: str) -> str:
+    """The turn's message with the lines naming the chat's files after it; unchanged when there
+    are none, so a turn without files sends exactly what it sent before."""
+
+    return f"{prompt}\n\n{note}" if note else prompt
+
+
+def write_thread_attachments(workspace: Path, files: Sequence[Any]) -> str:
+    """Rebuild ``attachments/`` from ``files`` and return the lines that name them for the turn.
+
+    The folder is emptied first, so a file from another turn is never left behind. This message's
+    files are written first; a file whose bytes could not be read, or that would take the folder
+    past :data:`DESIGN_ATTACHMENTS_MAX_BYTES`, is not written but is still named, with the reason.
+    Returns ``""`` when the chat has no files.
+    """
+
+    root = workspace / ATTACHMENTS_DIR
+    if root.exists():
+        shutil.rmtree(root)
+    if not files:
+        return ""
+    root.mkdir(parents=True, exist_ok=True)
+    ordered = [item for item in files if item.current] + [
+        item for item in files if not item.current
+    ]
+    taken: set[str] = set()
+    used = 0
+    current: list[str] = []
+    earlier: list[str] = []
+    missing: list[str] = []
+    over: list[str] = []
+    for item in ordered:
+        if item.unavailable:
+            missing.append(f"{item.filename} ({item.unavailable})")
+            continue
+        if used + len(item.data) > DESIGN_ATTACHMENTS_MAX_BYTES:
+            over.append(item.filename)
+            continue
+        name = _attachment_name(item.filename, taken)
+        (root / name).write_bytes(item.data)
+        used += len(item.data)
+        (current if item.current else earlier).append(f"{ATTACHMENTS_DIR}/{name}")
+    lines = []
+    if current:
+        lines.append("Attached with this message: " + ", ".join(current))
+    if earlier:
+        lines.append("Also sent earlier in this chat: " + ", ".join(earlier))
+    if missing:
+        lines.append("Not available: " + ", ".join(missing))
+    if over:
+        lines.append(
+            "Not included: " + ", ".join(over) + " (this chat's files pass 150 MB)"
+        )
+    return "\n".join(lines)
+
+
 __all__ = [
+    "ATTACHMENTS_DIR",
+    "DESIGN_ATTACHMENTS_MAX_BYTES",
     "PROJECT_CONTEXT_DIR",
     "SELLER_DIR",
     "make_platform_read_tools",
+    "read_thread_attachments",
     "write_project_design_context",
     "write_seller_knowledge",
+    "with_attachments_note",
+    "write_thread_attachments",
 ]

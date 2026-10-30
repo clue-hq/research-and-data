@@ -1106,6 +1106,8 @@ class LumenWebTools:
         # review-relevant subset the harness hands the visual reviewer, so
         # review-website's brief checks do not depend on the director quoting
         # the brief into its delegation.
+        #: Spec 2026-10-30 §3.3: the lines naming the chat's files, added to the turn's message.
+        self.attachments_note = ""
         self.brand_card: Optional[JsonObject] = build_brand_card(
             config.brand_kit,
             source=config.brand_kit_source,

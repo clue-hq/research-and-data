@@ -37,8 +37,11 @@ from .models.schemas import VisualCritique
 from .platform_reads import (
     PROJECT_CONTEXT_DIR,
     make_platform_read_tools,
+    read_thread_attachments,
+    with_attachments_note,
     write_project_design_context,
     write_seller_knowledge,
+    write_thread_attachments,
 )
 from .prompts_web import (
     build_web_author_prompt,
@@ -231,6 +234,10 @@ def _scaffold_web_workspace(tools: LumenWebTools, prompt: str) -> str:
         write_seller_knowledge(workspace, tools.config.platform_reads, record=tools.record)
     if tools.config.platform_reads is not None or (workspace / PROJECT_CONTEXT_DIR).exists():
         write_project_design_context(workspace, tools.config.platform_reads, record=tools.record)
+    # Spec 2026-10-30 §3.3: the chat's files, rebuilt every turn, read-only to the agent.
+    tools.attachments_note = write_thread_attachments(
+        workspace, read_thread_attachments(tools.config.platform_reads, record=tools.record)
+    )
     logger.debug("web_workspace_scaffolded", run_id=tools.run_id, workspace=str(workspace))
     return f"/{tools.workspace_scope_id}/workspace"
 
@@ -681,7 +688,12 @@ def run_deepagent_web_turn(
         # Design session continuity: the run id rides the human message so a retry of the SAME
         # run resumes its thread and a new run continues it — see `harness.run_deepagent_turn`.
         initial_state = {
-            "messages": [HumanMessage(content=prompt, additional_kwargs={RUN_ID_KEY: tools.run_id})]
+            "messages": [
+                HumanMessage(
+                    content=with_attachments_note(prompt, tools.attachments_note),
+                    additional_kwargs={RUN_ID_KEY: tools.run_id},
+                )
+            ]
         }
         # Lane 3 slice 5: the turn's receipts and the platform's injected handlers ride the
         # INVOKE CONFIG — see `harness.run_deepagent_turn` for why config-level, not

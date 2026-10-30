@@ -36,7 +36,7 @@ SITE_DIR = Path(__file__).resolve().parent
 #: Rebuilt from the database at the start of every request.
 REGENERATED = (
     "brief.md", "site.md", "research", "catalog", "brand", "project-context", "skills",
-    "skills-e5", "skills-live", "page.json", "pages", "shell.json",
+    "skills-e5", "skills-live", "page.json", "pages", "shell.json", "attachments",
 )
 #: Left out of the session snapshot: everything rebuilt per request, plus `seller/` (rewritten per
 #: pin by `write_seller_knowledge`), `work/` (one request's compaction offloads) and
@@ -913,7 +913,11 @@ def materialize_workspace(
     plan.md, history.md and fetched/ (the agent's memory). Returns a summary for the run record.
     """
 
-    from lumen_agent.platform_reads import write_seller_knowledge
+    from lumen_agent.platform_reads import (
+        read_thread_attachments,
+        write_seller_knowledge,
+        write_thread_attachments,
+    )
 
     workspace.mkdir(parents=True, exist_ok=True)
     for name in REGENERATED:
@@ -938,6 +942,11 @@ def materialize_workspace(
 
     if inputs.platform_reads is not None:
         write_seller_knowledge(workspace, inputs.platform_reads, record=record or (lambda *a, **k: None))
+    # Spec 2026-10-30 §3.3: the chat's files, rebuilt every request, read-only (READ_ONLY).
+    attachments_note = write_thread_attachments(
+        workspace,
+        read_thread_attachments(inputs.platform_reads, record=record or (lambda *a, **k: None)),
+    )
     if inputs.project_files:
         context = workspace / "project-context"
         context.mkdir()
@@ -978,4 +987,5 @@ def materialize_workspace(
         "claims_labelled": len(labels),
         "people_in_research": len(research_people(inputs.overview + inputs.insights)),
         "clones": len(list((workspace / "catalog" / "clones").glob("*.md"))),
+        "attachments_note": attachments_note,
     }

@@ -31,6 +31,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from py_lumen_obs import get_logger
 
 from ..config import AgentRuntimeConfig
+from ..platform_reads import with_attachments_note
 from .inputs import SiteSection, SiteTurnInputs
 from .tools import SiteTools, site_tool_set
 from .workspace import (
@@ -51,6 +52,7 @@ FINISH_REMINDERS = 2
 READ_ONLY = [
     "/brief.md", "/site.md", "/history.md", "/skills/**", "/skills-e5/**", "/skills-live/**", "/catalog/**",
     "/brand/**", "/research/**", "/seller/**", "/fetched/**", "/project-context/**", "/work/**",
+    "/attachments/**",
 ]
 #: T12a–T12f (founder-approved, Task 0).
 ROUND_LIMIT_NOTE = "Stopped: this request reached its limit of {limit} model calls."
@@ -748,7 +750,7 @@ def run_site_turn(
 
     tools: SiteTools | None = None
     try:
-        materialize_workspace(workspace, inputs, site=site)
+        materialized = materialize_workspace(workspace, inputs, site=site)
         # The baseline of "did this turn change anything" is the STORED site, taken before any
         # working copy is laid over the folder.
         tools = SiteTools(workspace=workspace, inputs=inputs, base_site=site, event_sink=event_sink)
@@ -777,7 +779,12 @@ def run_site_turn(
         "configurable": {"thread_id": thread_id or run_id},
         "callbacks": handlers,
     }
-    initial = {"messages": [HumanMessage(content=prompt, additional_kwargs={RUN_ID_KEY: run_id})]}
+    note = materialized.get("attachments_note", "") if tools is not None else ""
+    initial = {
+        "messages": [
+            HumanMessage(content=with_attachments_note(prompt, note), additional_kwargs={RUN_ID_KEY: run_id})
+        ]
+    }
 
     def calls() -> list[dict]:
         return [item.as_json() for item in collector.calls]
