@@ -409,3 +409,36 @@ def test_the_exit_check_sees_the_messages_files(tmp_path: Path) -> None:
             assert [call.get("files") for call in seen] == [('"q3.xlsx" (spreadsheet)',)]
 
     run_async(scenario())
+
+
+def test_a_turn_lists_only_the_files_sent_up_to_its_own_message(tmp_path: Path) -> None:
+    """Review I-1: a message queued after this one already has its rows; its files are not this
+    turn's, and its same-named file must not push this message's own file out."""
+
+    from tests.api.test_p34_design_leg_engine_db import _FakeLane
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="att-asof")
+            first = await attach(conn, seeds, (("logo.png", "image/png", b"\x89PNGfirst"),))
+            submission = await _submit_message(
+                conn, seeds, label="att-asof-1", message="Use this logo.", attachment_refs=first
+            )
+            later = await attach(
+                conn,
+                seeds,
+                (("logo.png", "image/png", b"\x89PNGlater"), ("later.md", "text/markdown", b"l")),
+            )
+            await _submit_message(
+                conn, seeds, label="att-asof-2", message="Actually this one.", attachment_refs=later
+            )
+            lane = _FakeLane(conn_factory=seeds["conn_factory"])
+            await _worker(seeds, tmp_path, lane).run(
+                turn_id=submission.turn_id, workspace_id=seeds["workspace_id"]
+            )
+            listed = lane.envelopes[0].config["attachments"]
+            assert [(item["filename"], item["sha256"], item["current"]) for item in listed] == [
+                ("logo.png", first[0].ref.sha256, True)
+            ]
+
+    run_async(scenario())

@@ -472,12 +472,14 @@ async def thread_attachment_refs(
     *,
     workspace_id: str,
     thread_id: str,
+    as_of_turn_id: UUID | None = None,
 ) -> tuple[SubmissionAttachmentRow, ...]:
     """Every file attached in one chat thread: oldest message first, attach order within one.
 
     A derived submission (a design session's first turn, an out-of-scope hand-back) copies its
     source message's rows, so it is left out: each file is listed once, under the message that
-    sent it.
+    sent it. ``as_of_turn_id`` stops the list at that message: a message queued after it already
+    has its rows, but its files are not that turn's.
     """
 
     rows = (
@@ -489,9 +491,16 @@ async def thread_attachment_refs(
                 "JOIN agent_turn_submission s "
                 "ON s.turn_id = a.turn_id AND s.workspace_id = a.workspace_id "
                 "WHERE s.workspace_id = :ws AND s.thread_id = :thread AND s.derivation IS NULL "
+                "AND (CAST(:as_of AS uuid) IS NULL OR (s.requested_at, s.turn_id) <= "
+                " (SELECT o.requested_at, o.turn_id FROM agent_turn_submission o "
+                "  WHERE o.workspace_id = :ws AND o.turn_id = CAST(:as_of AS uuid))) "
                 "ORDER BY s.requested_at, s.turn_id, a.ordinal"
             ),
-            {"ws": workspace_id, "thread": thread_id},
+            {
+                "ws": workspace_id,
+                "thread": thread_id,
+                "as_of": None if as_of_turn_id is None else str(as_of_turn_id),
+            },
         )
     ).mappings()
     return tuple(

@@ -2977,8 +2977,13 @@ class DesignLegTurnRunner:
         """
 
         async with self._conn_factory() as conn:
+            # The thread as it stood at this message (review I-1). A derived submission is stamped
+            # after its source message, so it reads as of that source.
             thread = await thread_attachment_refs(
-                conn, workspace_id=submission.workspace_id, thread_id=submission.thread_id
+                conn,
+                workspace_id=submission.workspace_id,
+                thread_id=submission.thread_id,
+                as_of_turn_id=submission.derived_from_turn_id or submission.turn_id,
             )
             own = await submission_attachment_refs(
                 conn, workspace_id=submission.workspace_id, turn_id=submission.turn_id
