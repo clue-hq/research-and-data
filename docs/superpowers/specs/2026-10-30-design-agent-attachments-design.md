@@ -100,16 +100,33 @@ cases above and a "here is the brief" message that carries only a PDF.
   and post-run sweep. Design jobs run on the `chat` and `design` workers, which already mount the
   Docker socket.
 
-### 3.6 Read-only originals, honest answers
+### 3.6 How each kind of file is read
 
-- A person's file is never modified. What an agent makes from it is new work: crops and generated
-  images go to the library, page and ad changes are new versions, anything else goes to the agent's
-  outputs.
+| Attached | How a design agent reads it | Sandbox |
+|---|---|---|
+| PNG, JPEG, WebP, GIF | a library image, seen with the agent's view tool (ads: `view("reference:<n>")`); crop, place, generate from it. An animated image is seen at its first frame, and the agent is told so. | no |
+| HEIC/HEIF, AVIF, TIFF, BMP, ICO | the same, through a PNG copy made when the image is registered (vision models and the design library take none of these); the original stays in `attachments/` under its own name. HEIC needs the `pillow-heif` dependency; the rest Pillow already reads. | no |
+| SVG | a library vector image (the design engine already renders a preview of every SVG it stores), placeable as a vector; its markup is also readable as text. | no |
+| `.md`, `.txt`, CSV, JSON | `read_file` | no |
+| PDF, Word, PowerPoint, Excel | `run_python`: extract text and tables, compute; a visual PDF or deck can be rendered to page images in `outputs/` and then viewed. | yes |
+| PSD, AI, EPS | a file, not an image: in `attachments/`, openable with `run_python` if it can; if not, the agent says so. | yes |
+
+The composer's accepted list and the Head of ABM's image handling gain the same formats (the Head
+of ABM sees the PNG copy), so one rule covers every agent. SVG reaches the Head of ABM as a file.
+
+### 3.7 Read-only originals, honest answers
+
+- A person's file is never modified: the agent may open, read, analyse and copy it, but what it
+  makes from it is new work in its own places — a script's results in its `outputs/`, crops and
+  generated images as new library images, page and ad changes as new versions. So the chips keep
+  pointing at what was sent, the next turn (or the Head of ABM after a hand-back) sees the same
+  file, and a mistake can always be redone from the original. An edited copy of a document is a new
+  file the agent offers, never a replacement.
 - Prompt guidance for every design agent: when a message names an attachment, use that exact file;
   if a file cannot be opened, say so in plain words; never stand in a similar-looking library image
   for an attached one.
 
-### 3.7 The composer stops guessing
+### 3.8 The composer stops guessing
 
 Every file goes up as a chat attachment, whatever the panel shows; the server decides how it
 reaches the agent. The design-reference route in the composer (`attachment-routing.ts`,
@@ -118,13 +135,13 @@ reaches the agent. The design-reference route in the composer (`attachment-routi
 
 ## 4. Open points for the founder
 
-1. **SVG.** The design-reference route accepted SVG; chat attachments do not (PNG, JPEG, WebP,
-   GIF). Removing the route drops SVG references. Add `image/svg+xml` to chat attachments (it would
-   reach the Head of ABM as a file, not a picture), or accept the loss?
-2. **"Response failed".** A design run that stops because it needs something (a file it cannot open)
+Decided 2026-10-30: SVG is added to chat attachments (§3.6); HEIC/HEIF, AVIF, TIFF, BMP and ICO are
+in scope with a PNG copy (§3.6).
+
+1. **"Response failed".** A design run that stops because it needs something (a file it cannot open)
    ends `failed`, and the chat shows only "Response failed". Show the agent's own reason instead —
    in this change or separately?
-3. **Wording.** The new prompt and tool text (exit judgement v5, the attachments paragraph and the
+2. **Wording.** The new prompt and tool text (exit judgement v5, the attachments paragraph and the
    `run_python` description for the three design agents) will be shown to you before it is written
    into any skill or prompt.
 
