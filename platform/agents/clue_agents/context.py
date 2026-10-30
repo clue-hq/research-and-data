@@ -23,6 +23,7 @@ from uuid import UUID, uuid5
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from clue_agents.attachment_images import is_shown_as_picture, viewable_image
 from clue_agents.contracts import (
     AgentProfile,
     AgentTurnRequest,
@@ -538,7 +539,7 @@ class HistoryLayerSource:
         kept: dict[int, tuple[ArtifactRef, ...]] = {}
         for item in reversed(ordered):
             images = tuple(
-                ref for ref in item.attachment_refs if ref.media_type.lower().startswith("image/")
+                ref for ref in item.attachment_refs if is_shown_as_picture(ref.media_type)
             )
             if item.role != "user" or not images:
                 continue
@@ -679,7 +680,10 @@ class TurnLayerSource:
             else:
                 # One sentence per file: what it is, where its one copy sits, and how to open it.
                 # An image is named too — the model sees it here, but code reads it from the path.
-                if info.family == "text":
+                # An SVG is a drawing written as text: it is read, never shown (spec 2026-10-30).
+                if info.family == "text" or (
+                    info.family == "image" and not is_shown_as_picture(ref.media_type)
+                ):
                     opener = "open it with read_file."
                 elif info.family == "image":
                     opener = "it is also shown to you as an image in this message."
@@ -766,9 +770,7 @@ class TurnLayerSource:
                 # beside the words it was sent with, so the turn's images ride this message.
                 # Everything else on the turn stays a pointer the agent opens deliberately.
                 image_refs=tuple(
-                    ref
-                    for ref in request.attachment_refs
-                    if ref.media_type.lower().startswith("image/")
+                    ref for ref in request.attachment_refs if is_shown_as_picture(ref.media_type)
                 ),
             )
         )
@@ -789,11 +791,17 @@ def _message(candidate: ContextCandidate, images: Mapping[str, bytes] | None = N
         read = images or {}
         parts: list[str | dict[Any, Any]] = [{"type": "text", "text": candidate.body}]
         for ref in candidate.image_refs:
-            encoded = base64.b64encode(read[ref.artifact_key]).decode("ascii")
+            # A format the model does not take is shown as a PNG copy; bytes that do not decode
+            # are not shown at all (the file is still in the agent's folder).
+            shown = viewable_image(read[ref.artifact_key], ref.media_type)
+            if shown is None:
+                continue
+            data, media_type = shown
+            encoded = base64.b64encode(data).decode("ascii")
             parts.append(
                 {
                     "type": "image_url",
-                    "image_url": {"url": f"data:{ref.media_type};base64,{encoded}"},
+                    "image_url": {"url": f"data:{media_type};base64,{encoded}"},
                 }
             )
         return HumanMessage(content=parts)

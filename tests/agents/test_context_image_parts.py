@@ -137,3 +137,28 @@ def test_an_image_candidate_without_a_reader_fails_composition() -> None:
 
     with pytest.raises(ValueError, match="image candidates need an artifact reader"):
         asyncio.run(assembler.assemble(request=request(), profile=profile(), history=()))
+
+
+def test_a_tiff_is_sent_to_the_model_as_a_png_copy() -> None:
+    """Spec 2026-10-30 §3.6: vision models take no TIFF; the model is shown a PNG copy."""
+
+    import io
+
+    from PIL import Image
+
+    tiff = io.BytesIO()
+    Image.new("RGB", (4, 2), (1, 2, 3)).save(tiff, format="TIFF")
+    scan = _ref("a", "image/tiff")
+    candidate = ContextCandidate(
+        stable_key="999-user-message",
+        ref=_ref("b", "text/plain"),
+        body="read this scan",
+        role="user",
+        origin="current_user_instruction",
+        image_refs=(scan,),
+    )
+    message = _message(candidate, {scan.artifact_key: tiff.getvalue()})
+    url = message.content[1]["image_url"]["url"]
+    assert url.startswith("data:image/png;base64,")
+    shown = Image.open(io.BytesIO(base64.b64decode(url.split(",", 1)[1])))
+    assert (shown.format, shown.size) == ("PNG", (4, 2))

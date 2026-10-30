@@ -54,13 +54,23 @@ test("documents are their own family, by type or by extension", () => {
   assert.equal(attachmentFamily({ name: "x.docx", type: DOCX }), "document");
   assert.equal(attachmentFamily({ name: "x.pptx", type: PPTX }), "document");
   assert.equal(attachmentFamily({ name: "x.xlsx", type: XLSX }), "document");
-  assert.equal(attachmentFamily({ name: "x.csv", type: "text/csv" }), "document");
+  assert.equal(
+    attachmentFamily({ name: "x.csv", type: "text/csv" }),
+    "document",
+  );
   assert.equal(
     attachmentFamily({ name: "x.json", type: "application/json" }),
     "document",
   );
   // Browsers frequently report a generic, empty or plain wrong type for these.
-  for (const name of ["x.pdf", "x.docx", "x.pptx", "x.xlsx", "x.csv", "x.json"]) {
+  for (const name of [
+    "x.pdf",
+    "x.docx",
+    "x.pptx",
+    "x.xlsx",
+    "x.csv",
+    "x.json",
+  ]) {
     assert.equal(attachmentFamily({ name, type: "" }), "document", name);
     assert.equal(
       attachmentFamily({ name, type: "application/octet-stream" }),
@@ -107,7 +117,10 @@ test("a document may be 25 MB but not a byte more", () => {
     null,
   );
   assert.equal(
-    attachmentLimitError([], [pdf(CHAT_ATTACHMENT_LIMITS.documentMaxBytes + 1)]),
+    attachmentLimitError(
+      [],
+      [pdf(CHAT_ATTACHMENT_LIMITS.documentMaxBytes + 1)],
+    ),
     "deck.pdf is over 25 MB.",
   );
 });
@@ -125,7 +138,10 @@ test("limits: count, per-file size, total size", () => {
   );
   assert.match(attachmentLimitError([], many) ?? "", /ten files/);
   assert.equal(
-    attachmentLimitError([], [{ name: "ok.md", type: "text/markdown", size: 1 } as File]),
+    attachmentLimitError(
+      [],
+      [{ name: "ok.md", type: "text/markdown", size: 1 } as File],
+    ),
     null,
   );
 });
@@ -146,4 +162,31 @@ test("snapshot is null until every attachment is ready", () => {
       filename: "f1.md",
     },
   ]);
+});
+
+test("SVG, HEIC, AVIF, TIFF, BMP and ICO are chat images (spec 2026-10-30)", () => {
+  for (const [name, type] of [
+    ["logo.svg", "image/svg+xml"],
+    ["photo.heic", ""],
+    ["photo.HEIF", ""],
+    ["hero.avif", "image/avif"],
+    ["scan.tif", ""],
+    ["scan.tiff", "image/tiff"],
+    ["old.bmp", "image/bmp"],
+    ["favicon.ico", "image/x-icon"],
+  ] as const) {
+    assert.equal(attachmentFamily({ name, type }), "image", name);
+  }
+  for (const accepted of [
+    ".svg",
+    ".heic",
+    ".heif",
+    ".avif",
+    ".tif",
+    ".tiff",
+    ".bmp",
+    ".ico",
+  ]) {
+    assert.ok(CHAT_ATTACHMENT_ACCEPT.split(",").includes(accepted), accepted);
+  }
 });
