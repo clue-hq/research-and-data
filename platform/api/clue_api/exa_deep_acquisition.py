@@ -11,8 +11,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from collections.abc import Awaitable, Callable, Mapping, Sequence
-from contextlib import AbstractAsyncContextManager
+from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
+from contextlib import AbstractAsyncContextManager, contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
@@ -82,7 +83,137 @@ from clue_research.resolvers.http import (
     resolve_credential,
 )
 from clue_research.resolvers.live import HttpFetcher
+from clue_obs import get_logger
+from clue_spend import (
+    BufferedLedger,
+    BufferedRawSink,
+    CallSpec,
+    HttpxTransport,
+    LedgerStamp,
+    ProviderCaller,
+    SpendEstimate,
+    Transport,
+    drain_provider_calls,
+)
+from clue_spend import HttpRequest as SpendRequest
 from clue_storage import StorageBackend, artifact_key, content_address
+
+log = get_logger("clue_api.exa_deep_acquisition")
+
+#: The spend caller the coordinator opens around one threaded dispatch (design 2026-10-31). The
+#: HTTP transport reads it, so the request lands on ``provider_call_ledger`` and a refusal opens a
+#: provider incident when the coordinator drains — without changing the transport protocol.
+_SPEND_CALLER: ContextVar[ProviderCaller | None] = ContextVar(
+    "exa_deep_spend_caller", default=None
+)
+
+
+@contextmanager
+def spend_caller(caller: ProviderCaller) -> Iterator[ProviderCaller]:
+    """Route this context's Exa deep requests through ``caller``."""
+    token = _SPEND_CALLER.set(caller)
+    try:
+        yield caller
+    finally:
+        _SPEND_CALLER.reset(token)
+
+
+def _ledgered_fetcher(caller: ProviderCaller) -> HttpFetcher:
+    """A :data:`HttpFetcher` that sends through the spend caller and keeps ``get_json``'s fault
+    taxonomy: transient statuses and transport errors are retryable, hard 4xx are provider
+    errors, a non-JSON body is a provider error."""
+
+    def fetch(
+        url: str,
+        *,
+        source_key: str,
+        headers: dict[str, str] | None = None,
+        params: dict[str, str] | None = None,
+        json_body: dict[str, Any] | None = None,
+        method: str = "GET",
+        timeout: float = 120.0,
+        retries: int = 0,
+    ) -> Any:
+        from urllib.parse import urlencode
+
+        from clue_research.resolvers.http import (
+            PROVIDER_ERROR_BODY_EXCERPT_CHARS,
+            classify_status,
+        )
+
+        del retries  # the durable operation owns replay; the caller makes exactly one attempt
+        target = f"{url}?{urlencode(params)}" if params else url
+        request = SpendRequest(
+            method=method,
+            url=target,
+            headers={**(headers or {}), "Content-Type": "application/json"},
+            body=None if json_body is None else json.dumps(json_body).encode("utf-8"),
+            timeout_s=timeout,
+        )
+        try:
+            response = caller.call(
+                CallSpec(
+                    provider="exa",
+                    operation="research.exa_deep.search",
+                    label="exa_deep:search",
+                    request=request,
+                    estimate=SpendEstimate(),
+                    max_attempts=1,
+                    binary=False,
+                )
+            ).response
+        except Exception as exc:  # noqa: BLE001 - a transport fault after dispatch is ambiguous
+            raise RetryableResolverError(f"{source_key}: transport error for {url}: {exc}") from exc
+        body = response.body.decode("utf-8", "replace")
+        classify_status(
+            response.status,
+            source_key=source_key,
+            url=url,
+            body=body[:PROVIDER_ERROR_BODY_EXCERPT_CHARS],
+        )
+        try:
+            return json.loads(body)
+        except ValueError as exc:
+            raise ProviderResponseError(f"{source_key}: non-JSON response from {url}: {exc}") from exc
+
+    return fetch
+
+
+async def dispatch_ledgered(
+    transport: ExaDeepAcquisitionTransport,
+    request: ExaDeepSearchRequest,
+    *,
+    conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]],
+    workspace_id: str,
+    spend_transport: Transport | None = None,
+) -> Mapping[str, Any]:
+    """Run one threaded dispatch inside a spend caller and drain its rows afterwards.
+
+    The drain records a provider incident when Exa refused. It never changes the dispatch's own
+    outcome: a drain that fails is logged and dropped.
+    """
+    raw, ledger = BufferedRawSink(), BufferedLedger()
+    caller = ProviderCaller(
+        transport=spend_transport or HttpxTransport(),
+        raw_sink=raw,
+        ledger=ledger,
+        now=lambda: datetime.now(UTC),
+    )
+    with spend_caller(caller):
+        try:
+            return await asyncio.to_thread(transport.search, request)
+        finally:
+            try:
+                async with conn_factory() as conn:
+                    await drain_provider_calls(
+                        conn,
+                        raw=raw,
+                        ledger=ledger,
+                        artifacts=None,
+                        stamp=LedgerStamp(workspace_id=workspace_id),
+                    )
+            except Exception:
+                log.exception("provider_incident.recorder_failed", provider="exa", reason="drain")
 
 
 class ExaDeepAcquisitionTransport(Protocol):
@@ -104,7 +235,7 @@ class ExaDeepHttpAcquisitionTransport:
         *,
         config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
         secrets: Secrets | None = None,
-        http: HttpFetcher = get_json,
+        http: HttpFetcher | None = None,
     ) -> None:
         self._config = config
         self._secrets = secrets
@@ -120,8 +251,13 @@ class ExaDeepHttpAcquisitionTransport:
                 failure_class=ExaDeepFailureClass.HARD,
                 dispatched=False,
             ) from exc
+        if self._http is not None:
+            http = self._http
+        else:
+            caller = _SPEND_CALLER.get()
+            http = get_json if caller is None else _ledgered_fetcher(caller)
         try:
-            payload = self._http(
+            payload = http(
                 wire.url,
                 source_key=SOURCE_KEY,
                 method=wire.method,
@@ -283,7 +419,12 @@ class ExaDeepAcquisitionCoordinator:
             )
         assert claim.attempt_ordinal is not None
         try:
-            payload = await asyncio.to_thread(self._transport.search, preflight.exa_request)
+            payload = await dispatch_ledgered(
+                self._transport,
+                preflight.exa_request,
+                conn_factory=self._conn_factory,
+                workspace_id=operation.workspace_id,
+            )
         except ExaDeepRequestFailure as exc:
             definitively_not_charged = not exc.dispatched or (
                 exc.failure_class in {ExaDeepFailureClass.HARD, ExaDeepFailureClass.BUDGET}
