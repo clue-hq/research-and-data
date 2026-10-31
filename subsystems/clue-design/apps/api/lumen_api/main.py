@@ -13340,7 +13340,12 @@ def brand_kit_asset_manifest(
             record = repo.require_asset_record(asset_id)
         except Exception:
             continue
-        entry: JsonObject = {"record": record.get("asset") or record}
+        asset = record.get("asset") or record
+        if asset.get("status") == "archived":
+            # Deleted on the Assets page (which archives): the kit still names it by id, but
+            # the agent must not find it — the same rule the workspace library applies.
+            continue
+        entry: JsonObject = {"record": asset}
         described = descriptions.get(asset_id) or {}
         entry.update(asset_metadata_entry(described))
         manifest[asset_id] = entry
