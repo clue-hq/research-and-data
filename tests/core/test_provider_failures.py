@@ -140,8 +140,15 @@ def test_the_runtime_reason_set_is_exactly_the_type_alias() -> None:
 @pytest.mark.parametrize(
     ("status", "body"),
     [
-        (429, '{"error": {"status": "RESOURCE_EXHAUSTED", "message": "Quota exceeded for metric"}}'),
-        (403, '{"error": {"errors": [{"reason": "quotaExceeded"}], "message": "The request cannot be completed"}}'),
+        (
+            429,
+            '{"error": {"status": "RESOURCE_EXHAUSTED", "message": "Quota exceeded for metric"}}',
+        ),
+        (
+            403,
+            '{"error": {"errors": [{"reason": "quotaExceeded"}], '
+            '"message": "The request cannot be completed"}}',
+        ),
         (429, "monthly usage limit reached"),
     ],
 )
@@ -165,3 +172,24 @@ def test_402_stays_credits_exhausted() -> None:
 def test_new_refusals_round_trip_through_the_failure_code(reason: str) -> None:
     code = failure_code(ProviderFailure("pdl", "refusal", reason, "x"))  # type: ignore[arg-type]
     assert parse_failure_code(code) == ("pdl", "refusal", reason)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '{"error": {"status": "RESOURCE_EXHAUSTED", "message": "Quota exceeded for quota metric '
+        "'Generate requests' and limit 'GenerateRequestsPerMinutePerProjectPerModel'\"}}",
+        "Quota exceeded: requests per minute",
+        "rate limit: 60 per_second quota",
+    ],
+)
+def test_a_per_minute_quota_is_a_rate_limit_not_a_refusal(body: str) -> None:
+    """Final review #3: Gemini answers ordinary throttling with a per-minute 'quota' 429. Read as a
+    refusal it would open and close an incident — and email — on every burst."""
+    failure = classify_http("gemini", 429, body)
+    assert failure is not None and (failure.kind, failure.reason) == ("failure", "rate_limited")
+
+
+def test_a_daily_quota_is_still_a_quota_refusal() -> None:
+    failure = classify_http("youtube_data", 403, '{"error": {"message": "quota exceeded per day"}}')
+    assert failure is not None and failure.reason == "quota_exhausted"

@@ -60,6 +60,10 @@ _CREDIT_WORDS = re.compile(
 #: A quota or usage limit used up, said on a 429 or a 403 (Gemini's ``RESOURCE_EXHAUSTED``,
 #: YouTube's ``quotaExceeded``). A 429 without these words is an ordinary rate limit.
 _QUOTA_WORDS = re.compile(r"quota|resource_exhausted|usage limit", re.IGNORECASE)
+#: A quota counted per second or per minute is throttling, not an exhausted allowance: Gemini says
+#: "Quota exceeded … PerMinute" on an ordinary burst. It stays a rate limit (3 in 5 minutes), so a
+#: busy minute never opens — and emails — an incident (final review 2026-10-31).
+_SHORT_WINDOW_WORDS = re.compile(r"per.?(minute|second)|perminute|persecond", re.IGNORECASE)
 _KEY_LIMIT_WORDS = re.compile(r"key limit|spend limit|limit exceeded", re.IGNORECASE)
 _SUSPENDED_WORDS = re.compile(r"suspended|disabled|banned", re.IGNORECASE)
 _TIMEOUT_CLASS_WORDS = re.compile(r"timeout|timed out|connection", re.IGNORECASE)
@@ -96,6 +100,8 @@ def _reason_for(status: int | None, body: str) -> tuple[FailureKind, FailureReas
     if status == 402 or (status in (401, 403) and _CREDIT_WORDS.search(body)):
         return "refusal", "credits_exhausted"
     if status in (403, 429) and _QUOTA_WORDS.search(body):
+        if _SHORT_WINDOW_WORDS.search(body):
+            return "failure", "rate_limited"
         return "refusal", "quota_exhausted"
     if status == 403 and _KEY_LIMIT_WORDS.search(body):
         return "refusal", "key_limit"
