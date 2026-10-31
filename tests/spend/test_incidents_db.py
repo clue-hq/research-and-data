@@ -8,6 +8,7 @@ override on a stamped ledger row, and how a missing-key incident names itself.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -151,3 +152,52 @@ def test_design_side_throttling_reaches_its_own_threshold(
 
     opened = run_async(scenario())
     assert opened is not None and opened.provider == "openrouter_design"
+
+
+def test_two_processes_recording_at_once_open_one_incident_and_one_event(
+    require_claimstore_db: None, sentry: StubTransport
+) -> None:
+    """Two writers on two connections (two worker processes) record the same refusal at the same
+    moment: the partial unique index lets exactly one insert win, the other counts onto it, and
+    exactly one Sentry event goes out."""
+    import asyncio
+
+    from sqlalchemy import text as sql
+
+    from clue_db import create_engine
+
+    provider = f"race_{uuid4().hex[:8]}"
+    failure = ProviderFailure(provider, "refusal", "credits_exhausted", "Payment Required")
+
+    async def scenario() -> tuple[int, int]:
+        engine = create_engine()
+        try:
+            gate = asyncio.Barrier(2)
+
+            async def writer() -> None:
+                async with engine.begin() as conn:
+                    await gate.wait()
+                    await record_failure(
+                        conn, failure, surface="research_job", workspace_id=None, now=NOW
+                    )
+
+            await asyncio.gather(writer(), writer())
+            async with engine.begin() as conn:
+                rows = (
+                    await conn.execute(
+                        sql(
+                            "SELECT failure_count FROM provider_incident "
+                            "WHERE provider = :p AND closed_at IS NULL"
+                        ),
+                        {"p": provider},
+                    )
+                ).all()
+                await conn.execute(
+                    sql("DELETE FROM provider_incident WHERE provider = :p"), {"p": provider}
+                )
+            return len(rows), rows[0].failure_count if rows else 0
+        finally:
+            await engine.dispose()
+
+    assert run_async(scenario()) == (1, 2)
+    assert [e["level"] for e in sentry.events if provider in json.dumps(e)] == ["error"]
