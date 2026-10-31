@@ -59,9 +59,9 @@ onboarding where PDL answered 402 and nobody was told.
 
 ## Production read-only check (2026-10-31, before the PR)
 - Every production ad-assets harvest is unverified: PDL answered `company_identity.http_error` on all
-  11 jobs (the prod PDL key needs checking). Pallet kept a person's posts (advertiser "Sushanth Raman",
-  18) and Conduit AI too ("Cole Rubin", 26): both need the ad-assets onboarding re-run once PDL answers.
-  Illumio, Kaseya, Proxon guessed their company right.
+  11 jobs (the prod PDL key needs checking). Two workspaces (Pallet and Conduit AI) kept an
+  individual's promoted posts as the brand's ads and need the ad-assets onboarding re-run once PDL
+  answers; the other harvested workspaces resolved their company correctly.
 - Open prod incident: gemini credits_exhausted since 2026-10-28.
 - public_media opens a refusal incident most weeks (14 in 30 days). Founder ruling 2026-10-31: keep
   keyless providers (public_media, live_http) IN scope — their refusals and repeated failures email too.

@@ -11,7 +11,7 @@ On 2026-10-31 a Pallet ad-assets onboarding (trenton lane) asked People Data Lab
 `pallet.com` is. PDL answered `402 PAYMENT REQUIRED`. The only trace was an `httpx` info line in
 an ingestion child's log file. The job carried on unverified, guessed the founder's name as the
 brand's advertiser name, kept his 11 personal posts as "the brand's ads", dropped 36 likely company
-ads, and wrote "Sushanth Raman's advertising" into four image prompts. Nobody was told PDL had
+ads, and wrote that person's name into four image prompts as the advertiser. Nobody was told PDL had
 stopped serving.
 
 The platform already has a mechanism for exactly this — provider incidents, which send one Sentry
