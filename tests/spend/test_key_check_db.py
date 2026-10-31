@@ -136,3 +136,26 @@ def test_every_requirement_names_a_known_role_and_a_provider() -> None:
     for requirement in PROVIDER_KEYS:
         assert requirement.roles <= key_check.ROLES and requirement.roles
         assert provider_for_env(requirement.env_names[0]) == requirement.provider
+
+
+def test_a_failed_check_logs_no_traceback_that_could_carry_keys() -> None:
+    """Final review: the check holds every secret in ``environ``; a traceback rendered with its
+    locals (the dev console's renderer does that) would print them. The failure is logged by type
+    only."""
+    from structlog.testing import capture_logs
+
+    @asynccontextmanager
+    async def broken():
+        raise RuntimeError("database went away")
+        yield  # pragma: no cover
+
+    with capture_logs() as logs:
+        run_async(
+            check_provider_keys(
+                broken, role="worker", environ={"PDL_API_KEY": "secret-value-123"}, now=NOW
+            )
+        )
+    (entry,) = [e for e in logs if e["event"] == "provider_keys.check_failed"]
+    assert "exc_info" not in entry
+    assert entry["error"] == "RuntimeError"
+    assert "secret-value-123" not in json.dumps(entry, default=str)

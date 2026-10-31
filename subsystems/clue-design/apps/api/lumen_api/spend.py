@@ -401,8 +401,9 @@ def check_provider_keys_sync(*, role: str = "design-api") -> None:
 
     try:
         run_isolated(run())
-    except Exception:
-        log.exception("provider_keys.check_failed role=%s", role)
+    except Exception as error:  # noqa: BLE001 - the check must never stop a start-up
+        # By type only: no traceback whose frames could hold the environment's keys.
+        log.error("provider_keys.check_failed role=%s error=%s", role, type(error).__name__)
 
 
 __all__ = [

@@ -140,5 +140,7 @@ async def check_provider_keys(
                     workspace_id=None,
                     now=at,
                 )
-    except Exception:
-        log.exception("provider_keys.check_failed", role=role)
+    except Exception as error:  # noqa: BLE001 - the check must never stop a start-up
+        # By type only, never with a traceback: ``environ`` holds every key, and a renderer that
+        # prints a frame's locals (the dev console's) would print them.
+        log.error("provider_keys.check_failed", role=role, error=type(error).__name__)
