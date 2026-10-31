@@ -1113,6 +1113,8 @@ dependencies = [
     { name = "clue-obs" },
     { name = "clue-storage" },
     { name = "httpx" },
+    { name = "python-dotenv" },
+    { name = "sentry-sdk" },
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
 
@@ -1122,6 +1124,8 @@ requires-dist = [
     { name = "clue-obs", editable = "libs/clue-obs" },
     { name = "clue-storage", editable = "libs/clue-storage" },
     { name = "httpx", specifier = ">=0.28" },
+    { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "sentry-sdk", specifier = ">=2.30" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
 ]
 

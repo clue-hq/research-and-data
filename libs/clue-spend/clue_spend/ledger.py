@@ -25,7 +25,7 @@ from __future__ import annotations
 import base64
 import json
 import threading
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -48,7 +48,6 @@ __all__ = [
     "BufferedLedger",
     "BufferedRawSink",
     "DrainReport",
-    "FailureHook",
     "LedgerStamp",
     "artifact_payload",
     "drain_provider_calls",
@@ -99,7 +98,6 @@ class ArtifactSink(Protocol):
 #: ``(conn, row, stamp, surface)``. It exists so a platform can hang its own follow-up — the
 #: platform's provider-incident recorder — off a drain the library performs, without this module
 #: knowing that recorder exists. ``None`` (the default) means the drain only writes rows.
-FailureHook = Callable[[AsyncConnection, LedgerRow, "LedgerStamp", str], Awaitable[None]]
 
 
 class BufferedRawSink:
