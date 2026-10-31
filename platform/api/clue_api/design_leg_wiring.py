@@ -40,7 +40,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -1187,6 +1188,62 @@ def receipts_from_design_run(
             )
         )
     return tuple(receipts)
+
+
+async def record_design_run_incidents(
+    run_result: Mapping[str, Any],
+    *,
+    workspace_id: str,
+    conn_factory: Callable[[], AbstractAsyncContextManager[AsyncConnection]] | None = None,
+) -> None:
+    """Record the design run's model refusals as provider incidents (design 2026-10-31 §5.1).
+
+    The scene, site and web agents' calls land as turn receipts, not spend-ledger rows, so the
+    drain never sees them; the collector stamped each failed call's classified ``provider_failure``
+    (``openrouter_design``) and this records it. A provider closes only when its last word in the
+    run was an answered call — the drain's own rule. Never raises.
+    """
+    from clue_core.provider_failures import ProviderFailure
+    from clue_db import transaction
+    from clue_spend.incidents import record_failure, record_success
+
+    calls = list(run_result.get("model_calls") or ())
+    failures: list[tuple[datetime, ProviderFailure]] = []
+    last_ok: dict[str, datetime] = {}
+    for item in calls:
+        at = datetime.fromisoformat(str(item.get("completed_at")))
+        stamped = item.get("provider_failure")
+        if isinstance(stamped, Mapping):
+            failures.append(
+                (
+                    at,
+                    ProviderFailure(
+                        str(stamped["provider"]),
+                        stamped["kind"],
+                        stamped["reason"],
+                        str(stamped.get("message", "")),
+                    ),
+                )
+            )
+        elif item.get("status") == "completed":
+            provider = "openrouter_design"
+            last_ok[provider] = max(last_ok.get(provider, at), at)
+    if not failures and not last_ok:
+        return
+    try:
+        async with (conn_factory or transaction)() as conn:
+            last_failure: dict[str, datetime] = {}
+            for at, failure in failures:
+                last_failure[failure.provider] = max(last_failure.get(failure.provider, at), at)
+                await record_failure(
+                    conn, failure, surface="design_turn", workspace_id=workspace_id, now=at
+                )
+            for provider, ok_at in last_ok.items():
+                failed_at = last_failure.get(provider)
+                if failed_at is None or ok_at > failed_at:
+                    await record_success(conn, provider, now=ok_at)
+    except Exception:
+        log.exception("provider_incident.recorder_failed", reason="design_run")
 
 
 class DesignLegTurnRunner:
@@ -2408,6 +2465,7 @@ class DesignLegTurnRunner:
         )
         for call in receipts:
             await self._turns.record_model_call(receipt=call)
+        await record_design_run_incidents(run.get("result") or {}, workspace_id=workspace_id)
         return max((call.sequence for call in receipts), default=sequence_offset)
 
     async def _dispatch_batch(
