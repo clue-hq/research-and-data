@@ -213,3 +213,39 @@ def test_a_failing_observer_never_breaks_the_call() -> None:
         await http.aclose()
 
     asyncio.run(_run())
+
+
+def test_a_retried_lookup_reports_only_its_last_answer() -> None:
+    """A lookup the client retries reports only the answer it ends on, so retries never count
+    toward a rate-limit incident."""
+
+    async def _run() -> None:
+        observed: list[int] = []
+
+        async def observe(**call: object) -> None:
+            observed.append(int(call["status"]))  # type: ignore[call-overload]
+
+        answers = iter(
+            [
+                httpx.Response(429, json={"error": "slow down"}),
+                httpx.Response(503, json={"error": "busy"}),
+                httpx.Response(200, content=(_FIXTURES / "webset-running.json").read_bytes()),
+            ]
+        )
+        http = httpx.AsyncClient(transport=httpx.MockTransport(lambda _: next(answers)))
+
+        async def no_sleep(_: float) -> None:
+            return None
+
+        client = ExaWebsetsClient(
+            api_key=SecretStr("test-key"),
+            client=http,
+            lookup_attempts=3,
+            observe=observe,
+            sleep=no_sleep,
+        )
+        await client.get_webset("ws_fixture_running")
+        assert observed == [200]
+        await http.aclose()
+
+    asyncio.run(_run())

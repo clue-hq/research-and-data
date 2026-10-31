@@ -1196,6 +1196,7 @@ class ExaWebsetsClient:
                         body=None,
                         expected_status=200,
                         create=False,
+                        final_attempt=attempt == self._lookup_attempts,
                     )
                     apply_attributes(
                         span,
@@ -1343,6 +1344,7 @@ class ExaWebsetsClient:
         body: bytes | None,
         expected_status: int,
         create: bool,
+        final_attempt: bool = True,
     ) -> ExaWebsetExchange:
         status_code, request_id, response_body = await self._raw_request(
             method=method,
@@ -1350,6 +1352,7 @@ class ExaWebsetsClient:
             body=body,
             expected_status=expected_status,
             create=create,
+            final_attempt=final_attempt,
         )
         try:
             webset = ExaWebset.model_validate_json(response_body)
@@ -1393,6 +1396,7 @@ class ExaWebsetsClient:
         expected_status: int,
         create: bool,
         params: dict[str, str | int] | None = None,
+        final_attempt: bool = True,
     ) -> tuple[int, str | None, bytes]:
         headers = {
             "accept": "application/json",
@@ -1417,7 +1421,13 @@ class ExaWebsetsClient:
             raise error_type("Exa Websets transport outcome is indeterminate") from exc
 
         response_body = await response.aread()
-        await self._report(method, url, response.status_code, response_body, started)
+        # An attempt the lookup loop will retry (a 429 or a 5xx before its last attempt) is not
+        # reported: only the answer a call ends on counts toward an incident.
+        retried = not final_attempt and (
+            response.status_code == 429 or response.status_code >= 500
+        )
+        if not retried:
+            await self._report(method, url, response.status_code, response_body, started)
         request_id = response.headers.get("x-request-id")
         if response.status_code != expected_status:
             raise _provider_error(

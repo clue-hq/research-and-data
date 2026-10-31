@@ -179,4 +179,25 @@ def test_every_cloudflare_answer_is_reported_including_retried_ones() -> None:
         await client.create("go.acme.com")
         return observed
 
-    assert run_async(scenario()) == [503, 201]
+    assert run_async(scenario()) == [201]
+
+
+def test_a_retried_cloudflare_attempt_is_not_reported_only_its_final_answer() -> None:
+    async def scenario() -> list[int]:
+        observed: list[int] = []
+
+        async def observe(**call: object) -> None:
+            observed.append(int(call["status"]))  # type: ignore[call-overload]
+
+        answers = iter([httpx.Response(503, text="busy"), httpx.Response(503, text="busy")])
+        client = CloudflareCustomHostnames(
+            zone_id=ZONE,
+            api_token="t0k",
+            client=httpx.AsyncClient(transport=httpx.MockTransport(lambda _: next(answers))),
+            observe=observe,
+        )
+        with pytest.raises(CloudflareError):
+            await client.create("go.acme.com")
+        return observed
+
+    assert run_async(scenario()) == [503]

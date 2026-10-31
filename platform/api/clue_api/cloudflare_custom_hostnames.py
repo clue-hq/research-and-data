@@ -96,7 +96,7 @@ class CloudflareCustomHostnames:
         self, method: str, path: str, *, json: dict[str, Any] | None = None
     ) -> httpx.Response:
         last: CloudflareError | None = None
-        for _attempt in (1, 2):
+        for attempt in (1, 2):
             started = time.monotonic()
             try:
                 response = await self._client.request(
@@ -111,7 +111,9 @@ class CloudflareCustomHostnames:
                     f"Cloudflare unreachable: {error}", status=None, retryable=True
                 )
                 continue
-            await self._report(method, response, started)
+            # A 5xx the loop retries is not reported; only the answer the call ends on counts.
+            if response.status_code < 500 or attempt == 2:
+                await self._report(method, response, started)
             if response.status_code >= 500:
                 last = CloudflareError(
                     f"Cloudflare {response.status_code}: {response.text[:200]}",
