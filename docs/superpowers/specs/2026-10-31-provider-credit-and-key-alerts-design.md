@@ -270,3 +270,24 @@ code:
    records it.
 3. **RESOLVED 2026-10-31 — leave them out.** **BuiltWith and Dun & Bradstreet**: like ZoomInfo/Clay/Apollo they have no production caller
    today. Leave them out of the key check too, or keep them in?
+
+## 10. The Sentry alert rule (set up by the founder in Sentry, not in code)
+
+Built 2026-10-31. The code sends one Sentry **error** event when a provider incident opens, tagged
+`alert: provider` (plus `provider`, `reason`, `kind`), and one **info** event when it closes (no
+`alert` tag). Lanes send events too, under `environment = lane-<name>`; only production emails.
+
+Create one **issue alert** in the Sentry project the production DSN points at:
+
+- **When:** a new issue is created, or an issue changes state from resolved to unresolved.
+- **If (filters, all must match):** the event's tag `alert` equals `provider`, **and** the event's
+  `environment` equals `production`.
+- **Then:** send an email to `akeshri516@gmail.com` (that address must be a member of the Sentry
+  organisation; Sentry emails only members).
+- **Action interval:** 5 minutes is fine — each incident is its own issue (the fingerprint carries
+  the provider, the reason and the open time), so one outage is one email.
+
+Titles read like `People Data Labs refused: credits exhausted`, `Media model provider refused: quota
+used up`, or `People Data Labs key PDL_API_KEY (worker) refused: API key missing`. The recovery
+event (`… recovered after 2h 10m — 14 calls failed (…)`) is info-level and does not match the
+filter; add a second rule on `level = info` with the same tag if recovery emails are wanted too.
