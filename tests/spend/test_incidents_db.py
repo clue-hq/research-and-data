@@ -102,3 +102,52 @@ def test_stamped_failure_prefers_the_override_provider() -> None:
 def test_a_missing_key_incident_names_its_env_and_role() -> None:
     shown = provider_display("worker:ADYNTEL_API_KEY")
     assert "ADYNTEL_API_KEY" in shown and "(worker)" in shown
+
+
+def test_design_side_throttling_reaches_its_own_threshold(
+    require_claimstore_db: None,
+) -> None:
+    """Final-review minor: design rows stay provider='openrouter' in the ledger, so the 3-in-5
+    count must read the incident provider they name, or design throttling never opens."""
+    from clue_api.arv2.provider_ledger import _INSERT_LEDGER, LedgerStamp, _ledger_params
+
+    throttled = ProviderFailure("openrouter_design", "failure", "rate_limited", "slow down")
+
+    async def scenario():
+        async with rollback_conn(seed_pack=False) as conn:
+            for i in range(3):
+                row = LedgerRow(
+                    row_id=str(uuid4()),
+                    call_id=str(uuid4()),
+                    phase="result",
+                    provider="openrouter",
+                    operation="design.ingestion.describe",
+                    label="describe",
+                    recorded_at=NOW + timedelta(seconds=i),
+                    http_status=429,
+                    attempts=4,
+                    outcome="retry_exhausted",
+                    extras={
+                        "incident_provider": "openrouter_design",
+                        "provider_failure": {
+                            "kind": "failure",
+                            "reason": "rate_limited",
+                            "message": "slow down",
+                            "provider": "openrouter_design",
+                        },
+                    },
+                )
+                await conn.execute(
+                    _INSERT_LEDGER,
+                    _ledger_params(row, stamp=LedgerStamp(workspace_id="ws_d"), keys={}),
+                )
+            return await record_failure(
+                conn,
+                throttled,
+                surface="design",
+                workspace_id="ws_d",
+                now=NOW + timedelta(seconds=5),
+            )
+
+    opened = run_async(scenario())
+    assert opened is not None and opened.provider == "openrouter_design"

@@ -188,7 +188,11 @@ _STAMP_EVENT = text(
 _RECENT_FAILURES = text(
     """
     SELECT (SELECT count(*) FROM provider_call_ledger
-             WHERE phase = 'result' AND provider = :provider AND recorded_at > :since
+             WHERE phase = 'result' AND recorded_at > :since
+               -- A row may name the incident it belongs to (design rows stay 'openrouter' for
+               -- the cost views but belong to 'openrouter_design').
+               AND COALESCE(extras_json -> 'provider_failure' ->> 'provider',
+                            extras_json ->> 'incident_provider', provider) = :provider
                AND extras_json -> 'provider_failure' ->> 'kind' = 'failure')
          + (SELECT count(*) FROM agent_model_call
              WHERE status = 'failed' AND started_at > :since

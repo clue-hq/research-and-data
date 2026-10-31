@@ -1129,6 +1129,24 @@ def _account_card(account: dict[str, Any]) -> dict[str, JsonValue]:
     }
 
 
+def _receipt_error_code(item: Mapping[str, Any]) -> str | None:
+    """A failed call's error code. A call the collector classified as a provider failure gets the
+    platform's own ``provider_failed:``/``provider_refused:`` code — the one the chat turn writes —
+    so the incident threshold counts design throttling too (design 2026-10-31)."""
+    from clue_core.provider_failures import ProviderFailure, failure_code
+
+    stamped = item.get("provider_failure")
+    if isinstance(stamped, Mapping):
+        try:
+            return failure_code(
+                ProviderFailure(str(stamped["provider"]), stamped["kind"], stamped["reason"], "")
+            )
+        except KeyError:
+            pass
+    code = item.get("error_code")
+    return None if code is None else str(code)
+
+
 def receipts_from_design_run(
     run_result: Mapping[str, Any],
     *,
@@ -1181,7 +1199,7 @@ def receipts_from_design_run(
                 langfuse_trace_id=item.get("langfuse_trace_id"),
                 langfuse_observation_id=item.get("langfuse_observation_id"),
                 latency_ms=float(item.get("latency_ms") or 0.0),
-                error_code=item.get("error_code"),
+                error_code=_receipt_error_code(item),
                 role=AgentRole.DESIGN,
                 started_at=datetime.fromisoformat(item["started_at"]),
                 completed_at=datetime.fromisoformat(item["completed_at"]),

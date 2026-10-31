@@ -72,3 +72,27 @@ def test_a_later_answered_call_closes_it_and_an_earlier_one_does_not() -> None:
 
 def test_a_run_with_no_model_calls_records_nothing() -> None:
     assert _record([]) == ()
+
+
+def test_a_design_receipt_carries_the_failure_code_the_threshold_counts() -> None:
+    from clue_api.design_leg_wiring import receipts_from_design_run
+
+    call = {
+        "run_id": str(uuid4()),
+        "sequence": 1,
+        "requested_model": "m",
+        "status": "failed",
+        "error_code": "rate_limit_error",
+        "started_at": NOW.isoformat(),
+        "completed_at": NOW.isoformat(),
+        "provider_failure": {
+            "kind": "failure",
+            "reason": "rate_limited",
+            "message": "slow down",
+            "provider": "openrouter_design",
+        },
+    }
+    (receipt,) = receipts_from_design_run(
+        {"model_calls": [call]}, turn_id=uuid4(), workspace_id="ws_design"
+    )
+    assert receipt.error_code == "provider_failed:openrouter_design:rate_limited"
