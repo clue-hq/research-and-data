@@ -763,6 +763,21 @@ def create_app(
         # uvicorn has configured its own logging by the time lifespan startup
         # runs; fold its loggers into the shared bridge so there is one stream.
         _bridge_uvicorn_loggers()
+        # Design 2026-10-31: a missing provider key opens a provider incident (one Sentry event),
+        # checked once per start-up on a daemon thread so the app never waits on it. Only where
+        # Sentry is installed: the check exists to tell the founders.
+        from clue_obs.sentry import sentry_is_installed
+
+        if sentry_is_installed():
+            import threading
+
+            from .spend import check_provider_keys_sync
+
+            threading.Thread(
+                target=check_provider_keys_sync,
+                name="provider-key-check",
+                daemon=True,
+            ).start()
         # D5 Round B (R-D5-B5): the embedded design fleet worker. Turns are leased fleet work
         # now, so without a drain an offered turn would sit `queued` forever. In production the
         # detached clue_api.fleet_main worker drains it; in development (and under this suite)
@@ -7952,7 +7967,9 @@ def create_app(
         store = DescriptionStore(workspace_id=repo.workspace_id)
         return {
             "schema_version": 1,
-            "descriptions": store.get_many(ids),
+            # A harvested ad with no description yet still reads as an ad, so the Assets
+            # page's "Ad" filter shows it (spec 2026-10-30, reference ads §5.2).
+            "descriptions": store.get_many(ids, harvested_stubs=True),
         }
 
     @app.put("/assets/{asset_id}/description")
@@ -9612,23 +9629,17 @@ def run_agent_turn_preview(
     else:
         reference_assets = resolved_reference_assets
 
-    # W4 (Brand Ad Assets v1 §5): the lane the turn runs with, resolved ONCE, here, for both
-    # of the things a turn takes out of it — the auto-attached references below and the
-    # described card that rides the frame payload further down. Since the Wave-C offer-time
+    # W4 (Brand Ad Assets v1 §5): the lane the turn runs with, resolved ONCE, here, for what a
+    # turn takes out of it — the brand's ads (listed for the agent) and the described card that
+    # rides the frame payload further down. Nothing is auto-attached as a reference any more
+    # (spec 2026-10-30, reference ads §5.4): only the person's own attachments are references,
+    # and the agent opens whichever listed ads it wants. Since the Wave-C offer-time
     # freeze, a fleet-claimed turn arrives with the lane FROZEN in its envelope and this line
     # consumes it verbatim (no flag check, no database read — the offering process decided);
     # only a legacy envelope, or a direct in-process caller like the sync preview route,
     # composes at claim time — and a flag-off process doing that now says so loudly instead
     # of silently declining (the Wave-B W-B2 failure shape).
     ad_lane = ad_runtime.resolve_turn_ad_lane(frozen_ad_lane, workspace_id=turn_workspace_id)
-    if ad_lane is not None and not reference_assets:
-        # MANUAL REFERENCES ALWAYS WIN. The platform suggests; the human decides (the
-        # minimum-input / client-has-the-wheel rule). A turn that already carries attachments
-        # is left exactly as the human composed it — no top-up to the cap, no reordering.
-        with _setup_step(run_id or "preview", "auto_ad_references"):
-            reference_assets = resolve_auto_ad_references(
-                payload, turn_blobs, turn_cache_root, ad_lane
-            )
 
     try:
         config = AgentRuntimeConfig.from_env(root)
@@ -9747,9 +9758,8 @@ def run_agent_turn_preview(
             # W4: the brand's published-ad styles, DESCRIBED, ride the run BY VALUE next to
             # the brand card — the same rule as brand_kit and reference_assets. It is advisory
             # context and nothing more: no gate, no required structure, no refusal (D5). It
-            # rides whether or not this turn's references were auto-attached, because a human
-            # who attached their own references still benefits from knowing what this brand's
-            # published ads look like.
+            # rides whether or not the human attached references, because they still benefit
+            # from knowing what this brand's published ads look like.
             config = replace(config, ad_dna_card=ad_dna_card)
         ad_pregenerated = ad_runtime.context_pregenerated(ad_lane)
         if ad_pregenerated:
@@ -9760,6 +9770,16 @@ def run_agent_turn_preview(
             # ids — not the asset index, which is kit-only, and not `view`, which lists library
             # ids only once the author has already guessed one wrong.
             config = replace(config, ad_pregenerated_assets=ad_pregenerated)
+        try:
+            brand_ads = ad_runtime.context_brand_ads(ad_lane, asset_library)
+        except Exception:  # noqa: BLE001 - the list is advisory; it may never fail a turn
+            api_logger.warning("brand_ads_unreadable")
+            brand_ads = None
+        if brand_ads:
+            # Spec 2026-10-30 (reference ads §5.5): the whole list of the brand's ads, BY VALUE,
+            # so the agent opens the ones it wants. Independent of the lane flag: a person's own
+            # "Ad" assets are listed with the harvest lane off.
+            config = replace(config, brand_ads=brand_ads)
         # Slice 2 D4: the loop is mandatory-multimodal (Director + reviewer attach
         # images every turn). Fail LOUDLY here, before the run authors, if the
         # configured model is text-only — otherwise the run dies mid-turn at the
@@ -10965,7 +10985,7 @@ def execute_agent_turn_job(
     ``lease_worker_id`` is accepted for the fleet's one call shape and ignored: only the site
     turn's save is fenced by the attempt's worker (site-turn durability, 2026-10-16).
 
-    Every paid call the turn makes (image generation, the ad style-group tie-break) runs through
+    Every paid call the turn makes (image generation, for one) runs through
     this scope's ``ProviderCaller`` and lands on ``provider_call_ledger`` when the turn ends.
     ``spend_drain`` is the injected drain (PRE-1b): the platform passes one that also records a
     provider incident, so that bookkeeping lives once on its side.
@@ -13320,7 +13340,12 @@ def brand_kit_asset_manifest(
             record = repo.require_asset_record(asset_id)
         except Exception:
             continue
-        entry: JsonObject = {"record": record.get("asset") or record}
+        asset = record.get("asset") or record
+        if asset.get("status") == "archived":
+            # Deleted on the Assets page (which archives): the kit still names it by id, but
+            # the agent must not find it — the same rule the workspace library applies.
+            continue
+        entry: JsonObject = {"record": asset}
         described = descriptions.get(asset_id) or {}
         entry.update(asset_metadata_entry(described))
         manifest[asset_id] = entry
@@ -13386,49 +13411,6 @@ def resolve_reference_images_for_generate(
         images.append((blobs.read(digest), entry.get("mime_type") or "image/png"))
         digests.append(digest)
     return images, digests
-
-
-def resolve_auto_ad_references(
-    payload: AgentTurnPreviewRequest,
-    blobs: DesignBlobStore,
-    cache_dir: Path,
-    lane: Any,
-) -> Optional[JsonObject]:
-    """W4: the brand's OWN published ads, attached when the human attached none.
-
-    Brand Ad Assets v1 §4 ("the platform auto-attaches the ≤4 most relevant harvested
-    references"). Selection lives in `lumen_api.ad_runtime` and states its own reasoning; this
-    function is only the bridge from selected asset ids to the by-value manifest, built by the
-    SAME `reference_asset_manifest` the manual path uses — one definition of what a reference
-    is, so an auto-attached one and a hand-attached one are indistinguishable to the runtime.
-
-    THE ONE DELIBERATE ASYMMETRY AGAINST THE MANUAL PATH: this never raises. A bad manual
-    attachment is a loud 422 because it is explicit user intent (D2) and a reference the user
-    picked but the loop never saw is worse than a rejected request. An AUTO attachment is the
-    platform's own suggestion — a stale creative row or an unreadable preview must cost the
-    turn its references, never the turn itself. Hence the bare except around a resolver whose
-    whole contract is to throw.
-
-    Consequence worth stating rather than discovering: attaching references makes this a
-    REFERENCE turn, so the runtime's existing reference machinery switches on (the author
-    views `reference:<n>`, the typed `reference_fidelity` is stamped, and a finalize-accept
-    needs a fidelity judgment). That is the intended behaviour for an ad turn on a brand whose
-    ads we harvested — it is why W1.5 exists — and it is exactly what W5 measures.
-    """
-    # The brief the selector matches against is `payload.prompt` as it stands HERE. On a leg
-    # turn that is already the composed prompt (the leg's frozen brief, then the history, then
-    # the user's message, in that order), so the truncation inside the selector keeps the
-    # brief — which is the part that actually describes the ad — and drops the tail.
-    asset_ids = ad_runtime.select_reference_asset_ids(payload.prompt or "", lane)
-    if not asset_ids:
-        return None
-    try:
-        return reference_asset_manifest(
-            HybridRepository(blobs.workspace_id), blobs, str(cache_dir), asset_ids
-        )
-    except Exception:  # noqa: BLE001 - an auto-attachment may never fail a turn
-        api_logger.warning("auto_ad_references_unresolvable")
-        return None
 
 
 def resolve_agent_turn_references(

@@ -134,3 +134,26 @@ def test_unverified_or_missing_primary_address_is_not_accepted(addresses: object
         assert await api.primary_email("user_test") is None
 
     run_async(scenario())
+
+
+def test_every_clerk_answer_is_reported_and_errors_are_unchanged() -> None:
+    """Design 2026-10-31: Clerk's answers reach the spend layer so a refusal opens a provider
+    incident; the client's own error codes are unchanged and the secret is never reported."""
+    observed: list[dict] = []
+
+    async def observe(**call: object) -> None:
+        observed.append(call)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, json={"errors": [{"code": "too_many_requests"}]})
+
+    async def scenario() -> None:
+        api = ClerkApi("test-only-secret", transport=httpx.MockTransport(handler), observe=observe)
+        with pytest.raises(ClerkApiError) as caught:
+            await api.revoke_invitation("inv_test")
+        assert caught.value.code == "rate_limited"
+
+    run_async(scenario())
+    (call,) = observed
+    assert call["status"] == 429 and call["operation"] == "auth.clerk.post_invitations"
+    assert "test-only-secret" not in json.dumps({k: str(v) for k, v in call.items()})

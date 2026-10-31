@@ -308,3 +308,13 @@ def test_creative_ids_are_content_addressed_on_the_url_so_a_re_run_converges() -
     assert creative_id_for(url) == creative_id_for(url)
     assert creative_id_for(url) != creative_id_for(url + "?v=2")
     assert creative_id_for(url).startswith("adcre_")
+
+
+def test_the_route_and_the_harvest_default_to_fifty_ads_over_eight_pages() -> None:
+    """Founder 2026-10-30: 50 ads, matching automatic onboarding (CLUE_BRAND_AD_ASSETS_AUTO_*)."""
+    from lumen_api.models import OnboardAdAssetsRequest
+    from lumen_ingestion.ad_library.harvest import DEFAULT_MAX_CREATIVES, DEFAULT_MAX_PAGES
+
+    request = OnboardAdAssetsRequest(company_domain="example.com")
+    assert (DEFAULT_MAX_CREATIVES, DEFAULT_MAX_PAGES) == (50, 8)
+    assert (request.max_creatives, request.max_pages) == (50, 8)

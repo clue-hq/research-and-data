@@ -78,6 +78,12 @@ export function useAssetLibrary(assets: BrandAsset[], scopeKey: string, writable
     if (!canWrite) {setError("You do not have permission to edit assets."); return false;}
     return edits.save(id, patch);
   }
+  async function remove(id: string) {
+    if (!canWrite) {setError("You do not have permission to delete assets."); return false;}
+    setError(null);
+    try { await repository.archive(id); router.refresh(); return true; }
+    catch (err) {setError(err instanceof Error ? err.message : "Could not delete the asset"); return false;}
+  }
   async function retry(id: string) {
     if (!canWrite) {setError("You do not have permission to analyze assets."); return;}
     setError(null);
@@ -94,5 +100,5 @@ export function useAssetLibrary(assets: BrandAsset[], scopeKey: string, writable
     return {...asset, context, name: context.title ?? asset.name, description: context.description ?? asset.description,
       sources: context.source_occurrences.length ? [...new Set(context.source_occurrences.map(occurrence => occurrence.source))] : asset.sources};
   });
-  return {assets: enriched, queue, uploads, open, setOpen, error, saving, save, retry, limits, canWrite, edits, editStates};
+  return {assets: enriched, queue, uploads, open, setOpen, error, saving, save, retry, remove, limits, canWrite, edits, editStates};
 }

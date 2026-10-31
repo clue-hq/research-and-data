@@ -137,3 +137,92 @@ def test_http_transport_preserves_post_dispatch_spend_classification(
     assert caught.value.failure_class is expected_class
     assert caught.value.dispatched
     assert caught.value.status_code == status_code
+
+
+# --- the request goes through the spend layer (design 2026-10-31) ------------------------------
+
+
+class _SpendTransport:
+    def __init__(self, status: int, body: bytes) -> None:
+        from clue_spend import HttpResponse
+
+        self.response = HttpResponse(status=status, body=body)
+        self.sent: list[Any] = []
+
+    def send(self, request: Any) -> Any:
+        self.sent.append(request)
+        return self.response
+
+
+def _caller(transport: _SpendTransport):
+    from datetime import UTC, datetime
+
+    from clue_spend import BufferedLedger, BufferedRawSink, ProviderCaller
+
+    ledger = BufferedLedger()
+    caller = ProviderCaller(
+        transport=transport, raw_sink=BufferedRawSink(), ledger=ledger,
+        now=lambda: datetime.now(UTC),
+    )
+    return caller, ledger
+
+
+def test_an_exa_deep_402_through_the_spend_layer_is_ledgered_and_still_budget() -> None:
+    from clue_api.exa_deep_acquisition import spend_caller
+
+    spend = _SpendTransport(402, b'{"error":"You have exceeded your credits limit"}')
+    caller, ledger = _caller(spend)
+    transport = ExaDeepHttpAcquisitionTransport(secrets=_secrets())
+    with spend_caller(caller), pytest.raises(ExaDeepRequestFailure) as caught:
+        transport.search(_request())
+    assert caught.value.failure_class is ExaDeepFailureClass.BUDGET
+    assert caught.value.status_code == 402 and caught.value.dispatched
+    (request,) = spend.sent
+    assert request.method == "POST" and request.headers["x-api-key"] == "test"
+    (row,) = [row for row in ledger.rows if row.phase == "result"]
+    assert row.provider == "exa"
+    assert row.extras["provider_failure"]["reason"] == "credits_exhausted"
+
+
+def test_an_exa_deep_success_through_the_spend_layer_returns_the_payload() -> None:
+    from clue_api.exa_deep_acquisition import spend_caller
+
+    spend = _SpendTransport(200, b'{"requestId": "exa-ledgered", "output": {}}')
+    caller, ledger = _caller(spend)
+    with spend_caller(caller):
+        payload = ExaDeepHttpAcquisitionTransport(secrets=_secrets()).search(_request())
+    assert payload["requestId"] == "exa-ledgered"
+    assert [row.outcome for row in ledger.rows if row.phase == "result"] == ["ok"]
+
+
+def test_the_coordinator_drains_the_dispatch_it_ledgered() -> None:
+    """The coordinator opens the caller around the threaded dispatch and drains it afterwards."""
+    import asyncio
+    from contextlib import asynccontextmanager
+
+    from clue_api import exa_deep_acquisition as module
+
+    drained: list[Any] = []
+
+    async def fake_drain(conn: Any, *, raw: Any, ledger: Any, artifacts: Any, stamp: Any) -> None:
+        drained.append((conn, [row.provider for row in ledger.rows], stamp.workspace_id))
+
+    @asynccontextmanager
+    async def conn_factory():
+        yield "conn"
+
+    spend = _SpendTransport(200, b'{"requestId": "x", "output": {}}')
+    transport = ExaDeepHttpAcquisitionTransport(secrets=_secrets())
+    original = module.drain_provider_calls
+    module.drain_provider_calls = fake_drain  # type: ignore[assignment]
+    try:
+        payload = asyncio.run(
+            module.dispatch_ledgered(
+                transport, _request(), conn_factory=conn_factory, workspace_id="ws-e1-http",
+                spend_transport=spend,
+            )
+        )
+    finally:
+        module.drain_provider_calls = original  # type: ignore[assignment]
+    assert payload["requestId"] == "x"
+    assert drained == [("conn", ["exa", "exa"], "ws-e1-http")]

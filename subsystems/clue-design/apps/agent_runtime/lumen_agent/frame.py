@@ -34,6 +34,7 @@ rather than per call.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Optional
 
@@ -454,9 +455,8 @@ def render_ad_dna_card_text(card: JsonObject) -> str:
     OBSERVATION about ads the brand already published, and if that difference is not visible in
     the text the author will read a description as a specification.
 
-    The card is free prose by ruling (2026-08-26), so this renders the prose as prose. The only
-    structured part it surfaces is the list of named looks, and only because naming them makes
-    the attached references legible as "the brand's own ads" rather than as loose images.
+    The card is free prose by ruling (2026-08-26), so this renders the prose as prose. No group
+    names are shown (founder ruling 2026-10-30), even from an older card that still holds them.
     """
     lines = [
         "This is how the ads this brand has already published look, described from the "
@@ -468,13 +468,6 @@ def render_ad_dna_card_text(card: JsonObject) -> str:
         "",
         str(card.get("prose") or "").strip(),
     ]
-    names = [
-        str(group.get("name") or "").strip()
-        for group in (card.get("style_groups") or [])
-        if isinstance(group, dict) and str(group.get("name") or "").strip()
-    ]
-    if names:
-        lines.extend(["", "The looks named in that description: " + ", ".join(names) + "."])
     return "\n".join(lines)
 
 
@@ -507,14 +500,7 @@ def render_pregenerated_assets_text(
             continue
         if library is not None and asset_id not in library:
             continue
-        described = " — ".join(
-            part
-            for part in (
-                str(entry.get("style_group") or "").strip(),
-                str(entry.get("shape") or "").strip(),
-            )
-            if part
-        )
+        described = str(entry.get("shape") or "").strip()
         rows.append(f"- `{asset_id}`" + (f" — {described}" if described else ""))
     if not rows:
         return ""
@@ -532,6 +518,70 @@ def render_pregenerated_assets_text(
         *rows,
     ]
     return "\n".join(lines)
+
+
+def short_description(text: str | None, limit: int = 300) -> str:
+    """The first two sentences of an asset's description, capped at ``limit``; ``""`` for none."""
+    words = " ".join(str(text or "").split())
+    if not words:
+        return ""
+    sentences = re.split(r"(?<=[.!?])\s+", words)
+    return " ".join(sentences[:2])[:limit]
+
+
+def _cell(value: Any, limit: int | None = None) -> str:
+    text = " ".join(str(value or "").split())
+    if limit is not None:
+        text = text[:limit]
+    return text.replace("|", "\\|") or "—"
+
+
+#: Founder-approved wording (2026-10-30, reference ads spec §5.6). ``{count}`` = rows listed.
+BRAND_ADS_HEADING = (
+    "## The brand's ads\n"
+    "These are the brand's own published ads and any images the team marked as ads — {count} in all.\n"
+    "Open any of them with `view(\"asset:<id>\")` to see the picture and its full description\n"
+    "(layout, text, typography, hierarchy). Look through several before you design, and pick\n"
+    "ones that fit this request; you don't need to use the same ones as last time.\n"
+)
+
+_BRAND_AD_SOURCES = {"linkedin_ad": "LinkedIn ad", "marked_by_person": "marked as an ad"}
+
+
+def render_brand_ads_text(ads: list[Any], library: JsonObject | None) -> str:
+    """Every ad of the brand this turn can open, as a table under the approved heading.
+
+    Spec 2026-10-30 (reference ads §5.5). Only ids in this turn's library are listed — the same
+    rule as the backgrounds below, because the library is what ``view`` resolves against. An
+    empty result renders nothing at all.
+    """
+    rows = []
+    for ad in ads or ():
+        if not isinstance(ad, dict):
+            continue
+        asset_id = str(ad.get("asset_id") or "").strip()
+        if not asset_id or library is None or asset_id not in library:
+            continue
+        width, height = ad.get("width"), ad.get("height")
+        cells = [
+            f"`{asset_id}`",
+            _BRAND_AD_SOURCES.get(str(ad.get("from")), "—"),
+            _cell(ad.get("headline")),
+            _cell(ad.get("commentary"), 200),
+            _cell(ad.get("title")),
+            _cell(short_description(ad.get("description")) or "no description yet"),
+            f"{width}×{height}" if width and height else "—",
+        ]
+        rows.append("| " + " | ".join(cells) + " |")
+    if not rows:
+        return ""
+    return (
+        BRAND_ADS_HEADING.format(count=len(rows))
+        + "\n| asset id | from | headline | post copy | title | short description | size |\n"
+        + "|---|---|---|---|---|---|---|\n"
+        + "\n".join(rows)
+        + "\n"
+    )
 
 
 def build_frame_payload(tools: Any) -> str:

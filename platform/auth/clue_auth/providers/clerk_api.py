@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
@@ -25,13 +27,23 @@ class VerifiedClerkProfile:
 
 
 class ClerkApi:
-    def __init__(self, secret: str, *, transport: httpx.AsyncBaseTransport | None = None) -> None:
+    def __init__(
+        self,
+        secret: str,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+        observe: Callable[..., Awaitable[None]] | None = None,
+    ) -> None:
         self._secret = secret
         self._transport = transport
+        # Every answer is reported to the spend layer so a refusal opens a provider incident
+        # (design 2026-10-31); the client keeps its own transport and error codes.
+        self._observe = observe
 
     async def _request(
         self, method: str, path: str, *, body: dict[str, Any] | None = None
     ) -> dict[str, Any]:
+        started = time.monotonic()
         try:
             async with httpx.AsyncClient(
                 base_url="https://api.clerk.com/v1/",
@@ -42,6 +54,7 @@ class ClerkApi:
                 response = await client.request(method, path, json=body)
         except httpx.HTTPError:
             raise ClerkApiError("unavailable", "Invitation service is unavailable.") from None
+        await self._report(method, path, response, started)
         if response.status_code == 429:
             raise ClerkApiError("rate_limited", "Invitation limit reached. Try again later.")
         try:
@@ -67,6 +80,23 @@ class ClerkApi:
         if not isinstance(payload, dict):
             raise ClerkApiError("unavailable", "Invitation service returned an invalid response.")
         return payload
+
+    async def _report(
+        self, method: str, path: str, response: httpx.Response, started: float
+    ) -> None:
+        if self._observe is None:
+            return
+        segment = path.strip("/").split("/", 1)[0] or "root"
+        try:
+            await self._observe(
+                operation=f"auth.clerk.{method.lower()}_{segment}",
+                label=f"clerk:{method} {segment}",
+                status=response.status_code,
+                body=response.content,
+                latency_ms=int((time.monotonic() - started) * 1000),
+            )
+        except Exception:  # noqa: BLE001 - reporting must never break the call it observes
+            return
 
     async def create_invitation(self, *, email: str, redirect_url: str, invitation_id: str) -> str:
         payload = await self._request(

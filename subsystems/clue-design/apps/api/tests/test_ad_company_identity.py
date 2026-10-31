@@ -484,3 +484,93 @@ def test_the_fallback_label_does_not_name_the_fetch_vendor() -> None:
     """
     assert RESOLVER_AD_LIBRARY_DOMAIN == "ad_library_domain"
     assert "adyntel" not in RESOLVER_AD_LIBRARY_DOMAIN
+
+
+# --- the lookup goes through the spend layer (design 2026-10-31) -------------------------------
+
+
+class _SpendTransport:
+    """A ``clue_spend`` transport answering every request with one canned response."""
+
+    def __init__(self, status: int, body: bytes) -> None:
+        from clue_spend import HttpResponse
+
+        self.response = HttpResponse(status=status, body=body)
+        self.sent: list[Any] = []
+
+    def send(self, request: Any) -> Any:
+        self.sent.append(request)
+        return self.response
+
+
+def _scoped(transport: _SpendTransport):
+    from clue_spend import LedgerStamp
+    from lumen_api import spend
+
+    return spend.spend_scope(LedgerStamp(workspace_id="ws_pdl"), transport=transport)
+
+
+def test_a_pdl_402_is_ledgered_as_credits_exhausted(
+    resolver: PdlCompanyIdentityResolver, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Pallet onboarding of 2026-10-31: PDL answered 402 and nobody was told."""
+    from lumen_api import spend
+
+    written: list[Any] = []
+    monkeypatch.setattr(
+        spend, "drain_safely", lambda scope, **_: written.extend(scope.ledger.drain())
+    )
+    transport = _SpendTransport(402, b'{"status": 402, "error": {"type": "payment_required"}}')
+    with _scoped(transport):
+        with pytest.raises(CompanyIdentityError):
+            resolver.resolve("https://www.pallet.com/")
+    (request,) = transport.sent
+    assert request.method == "GET"
+    assert request.url == "https://api.example.com/v5/company/enrich?website=pallet.com"
+    (result,) = [row for row in written if row.phase == "result"]
+    assert result.provider == "pdl"
+    assert result.extras["provider_failure"]["reason"] == "credits_exhausted"
+    assert "test-key" not in json.dumps(result.extras)
+
+
+def test_a_pdl_404_through_the_spend_layer_is_still_an_absence(
+    resolver: PdlCompanyIdentityResolver,
+) -> None:
+    transport = _SpendTransport(404, json.dumps(load("pdl_not_found")).encode())
+    with _scoped(transport) as scope:
+        assert resolver.resolve("nobody.example") is None
+    (result,) = [row for row in scope.ledger.rows if row.phase == "result"]
+    assert "provider_failure" not in result.extras
+
+
+def test_a_pdl_refusal_is_written_at_once_not_at_the_end_of_the_job(
+    resolver: PdlCompanyIdentityResolver, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Final-review minor: the job drains at its end, and a killed job never does. A refusal is
+    written the moment it happens so its incident opens even if the job then dies."""
+    from lumen_api import spend
+
+    flushed: list[list[str]] = []
+    monkeypatch.setattr(
+        spend,
+        "drain_safely",
+        lambda scope, **_: flushed.append([row.provider for row in scope.ledger.drain()]),
+    )
+    transport = _SpendTransport(402, b'{"status": 402}')
+    with _scoped(transport):
+        with pytest.raises(CompanyIdentityError):
+            resolver.resolve("pallet.com")
+    assert flushed and "pdl" in flushed[0]
+
+
+def test_a_pdl_answer_waits_for_the_jobs_own_drain(
+    resolver: PdlCompanyIdentityResolver, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lumen_api import spend
+
+    flushed: list[object] = []
+    monkeypatch.setattr(spend, "drain_safely", lambda scope, **_: flushed.append(scope))
+    transport = _SpendTransport(404, json.dumps(load("pdl_not_found")).encode())
+    with _scoped(transport):
+        resolver.resolve("nobody.example")
+    assert flushed == []

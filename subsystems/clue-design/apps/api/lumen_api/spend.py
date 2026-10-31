@@ -54,6 +54,9 @@ DrainFn = Callable[
     ["object", BufferedRawSink, BufferedLedger, LedgerStamp], Awaitable[DrainReport]
 ]
 
+#: Every design-side OpenRouter call's incident provider; its ledger rows keep ``openrouter``.
+DESIGN_MODEL_PROVIDER = "openrouter_design"
+
 _SCOPE: ContextVar["SpendScope | None"] = ContextVar("lumen_spend_scope", default=None)
 
 
@@ -208,7 +211,9 @@ def openrouter_call(
         max_attempts=max_attempts,
         halt_rule=openrouter_halt_rule,
         cost_reader=cost_reader,
-        extras=dict(extras or {}),
+        # The row stays provider='openrouter' (the cost views group by it); the incident a refusal
+        # opens is the design provider's (design 2026-10-31).
+        extras={"incident_provider": DESIGN_MODEL_PROVIDER, **(extras or {})},
     )
     return caller().call(spec).response
 
@@ -331,6 +336,12 @@ def record_collected_model_call(
                 "cost_source": cost_source,
                 "langfuse_trace_id": call.langfuse_trace_id,
                 "langfuse_observation_id": call.langfuse_observation_id,
+                "incident_provider": DESIGN_MODEL_PROVIDER,
+                **(
+                    {"provider_failure": call.provider_failure}
+                    if getattr(call, "provider_failure", None)
+                    else {}
+                ),
             },
         )
     )
@@ -369,8 +380,57 @@ def drain_sync(scope: SpendScope) -> DrainReport:
     return run_isolated(run())
 
 
+def flush_if_refused(provider: str, status: int, body: bytes | str) -> None:
+    """Write this scope's rows now when ``provider`` just refused us (design 2026-10-31).
+
+    A unit of work drains when it ends, and a killed job never does — so a vendor refusing for
+    credits or a rejected key would open its incident late, or never. A refusal is written the
+    moment it happens; an ordinary answer still waits for the unit's own drain.
+    """
+    from clue_core.provider_failures import classify_http
+
+    text = body.decode("utf-8", "replace") if isinstance(body, bytes) else body
+    failure = classify_http(provider, status, text)
+    scope = current_scope()
+    if failure is None or failure.kind != "refusal" or scope is None:
+        return
+    drain_safely(scope)
+
+
+def check_provider_keys_sync(*, role: str = "design-api") -> None:
+    """The start-up key check for the design API (design 2026-10-31 §6.3).
+
+    The design API holds no process-global engine, so — like :func:`drain_sync` — the check owns
+    a private engine on its own loop and disposes of it. Run from a daemon thread at start-up so
+    the app never waits on it; never raises.
+    """
+    from clue_db import create_engine
+    from clue_spend.key_check import check_provider_keys, startup_environ
+
+    from .design_store import run_isolated
+
+    async def run() -> None:
+        engine = create_engine()
+        try:
+            # The design settings read the design tree's own .env and .env.local.
+            from py_lumen_config.config import _ENV_FILES
+
+            environ = startup_environ([str(path) for path in _ENV_FILES if path.exists()])
+            await check_provider_keys(engine.begin, role=role, environ=environ)
+        finally:
+            await engine.dispose()
+
+    try:
+        run_isolated(run())
+    except Exception as error:  # noqa: BLE001 - the check must never stop a start-up
+        # By type only: no traceback whose frames could hold the environment's keys.
+        log.error("provider_keys.check_failed role=%s error=%s", role, type(error).__name__)
+
+
 __all__ = [
     "DrainFn",
+    "check_provider_keys_sync",
+    "flush_if_refused",
     "SpendScope",
     "caller",
     "current_scope",

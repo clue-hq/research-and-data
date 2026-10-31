@@ -444,29 +444,58 @@ async def list_pregenerated_assets(
 #: and the read exists to resolve creative ids to asset ids — a lookup, not a scan.
 CREATIVE_SCAN = 200
 
-#: How many pre-generated grounds one turn's opening context names. Pre-generation writes 2
-#: per style group and a card carries at most 6 groups, so twelve is the whole of a
-#: well-formed lane rather than an arbitrary slice.
+#: How many pre-generated grounds one turn's opening context names. Pre-generation writes one
+#: per ad from up to four different ads, so twelve covers the latest few runs (older lanes
+#: made two per style group, at most six groups).
 PREGENERATED_CONTEXT_MAX = 12
 
 #: ``aspect_ratio`` → the words pre-generation itself used for that shape. Mirrored rather
 #: than imported to keep this substrate module free of an ingestion-side import; a ratio with
 #: no entry renders as the bare ratio, which is still true.
-SHAPE_WORDS = {"16:9": "wide ground", "1:1": "square ground", "4:5": "portrait ground"}
+SHAPE_WORDS = {"16:9": "wide background", "1:1": "square background", "4:5": "portrait background"}
 
 
 def reduce_creative_assets(creatives: list[JsonObject]) -> dict[str, str]:
     """Creative id → the design asset id holding its bytes, in the rows' given order.
 
-    Rows arrive newest-harvested-first from :func:`list_ad_creatives`, which is also the
-    deterministic fallback order the selector uses. A row missing either id contributes
-    nothing — there are no bytes to reference.
+    Rows arrive newest-harvested-first from :func:`list_ad_creatives`. A row missing either id
+    contributes nothing — there are no bytes to reference.
     """
     return {
         str(row["creative_id"]): str(row["asset_id"])
         for row in creatives
         if row.get("creative_id") and row.get("asset_id")
     }
+
+
+#: How much of an ad's post copy the agent's ad list shows (and so how much a lane carries).
+POST_COPY_CHARS = 200
+
+
+def _post_copy(value: Any) -> str | None:
+    if value is None:
+        return None
+    return " ".join(str(value).split())[:POST_COPY_CHARS]
+
+
+def reduce_creatives(rows: list[JsonObject]) -> list[JsonObject]:
+    """Each harvested creative reduced to what the agent's ad list needs, in the rows' order.
+
+    Spec 2026-10-30 (reference ads §5.5): the agent sees every ad with its headline and post
+    copy — the first ``POST_COPY_CHARS`` of it, which is all its list shows, so a frozen lane
+    carries no more. A row missing either id contributes nothing — there are no bytes to open.
+    """
+    return [
+        {
+            "creative_id": str(row["creative_id"]),
+            "asset_id": str(row["asset_id"]),
+            "headline": row.get("headline"),
+            "commentary": _post_copy(row.get("commentary")),
+            "created_at": row.get("created_at"),
+        }
+        for row in rows
+        if row.get("creative_id") and row.get("asset_id")
+    ]
 
 
 def reduce_card_payload(card_row: Any) -> JsonObject | None:
@@ -480,7 +509,7 @@ def reduce_card_payload(card_row: Any) -> JsonObject | None:
 def reduce_pregenerated(
     rows: list[JsonObject] | None, *, limit: int = PREGENERATED_CONTEXT_MAX
 ) -> list[JsonObject]:
-    """Each pre-generated ground reduced to the three facts a turn's context needs."""
+    """Each pre-generated background reduced to the two facts a turn's context needs."""
     listed: list[JsonObject] = []
     for row in rows or ():
         if len(listed) >= limit:
@@ -490,13 +519,7 @@ def reduce_pregenerated(
             continue
         generation = row.get("generation")
         ratio = str((generation or {}).get("aspect_ratio") or "").strip()
-        listed.append(
-            {
-                "asset_id": asset_id,
-                "style_group": str(row.get("visual_system") or "").strip(),
-                "shape": SHAPE_WORDS.get(ratio, ratio),
-            }
-        )
+        listed.append({"asset_id": asset_id, "shape": SHAPE_WORDS.get(ratio, ratio)})
     return listed
 
 
@@ -533,4 +556,5 @@ async def frozen_ad_lane(conn: AsyncConnection, *, workspace_id: str) -> JsonObj
         "card": reduce_card_payload(card_row),
         "creative_assets": creative_assets,
         "pregenerated": pregenerated,
+        "creatives": reduce_creatives(creatives),
     }

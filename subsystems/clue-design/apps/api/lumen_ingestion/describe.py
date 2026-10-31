@@ -91,10 +91,13 @@ class DescriptionStore:
         self.workspace_id = workspace_id or default_workspace_id()
         self._bridge = DesignStoreBridge(self.workspace_id)
 
-    def get_many(self, asset_ids: list[str]) -> dict[str, dict]:
+    def get_many(self, asset_ids: list[str], *, harvested_stubs: bool = False) -> dict[str, dict]:
         return self._bridge._run(
             lambda conn: design_descriptions.get_many(
-                conn, workspace_id=self.workspace_id, asset_ids=list(asset_ids)
+                conn,
+                workspace_id=self.workspace_id,
+                asset_ids=list(asset_ids),
+                harvested_stubs=harvested_stubs,
             )
         )
 
@@ -702,9 +705,11 @@ field; use empty strings/lists or unknown for unsupported observations. Return o
 
 
 def _response_schema() -> dict:
-    from clue_design.asset_context import AssetAnalysis
+    from clue_design.asset_context import AI_CREATIVE_TYPES, AssetAnalysis
     analysis = AssetAnalysis.model_json_schema()
     definitions = analysis.pop("$defs", {})
+    # Only code calls an asset an ad (spec 2026-10-30, reference ads §5.2).
+    analysis["properties"]["creative_type"]["enum"] = list(AI_CREATIVE_TYPES)
     return {
         "type": "array", "$defs": definitions,
         "items": {

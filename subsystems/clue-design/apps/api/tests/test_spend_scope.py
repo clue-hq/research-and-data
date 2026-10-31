@@ -123,28 +123,6 @@ def test_max_attempts_is_forwarded_to_the_call_spec() -> None:
     assert rows[0].attempts == 1
 
 
-def test_the_style_group_tie_break_makes_exactly_one_attempt(monkeypatch) -> None:
-    """A design turn never waits on a retry backoff (ruling T3-2).
-
-    503 is a RETRYABLE status, so the default four attempts — or even two — would put law 2's
-    twelve-second backoff in the middle of a marketer's turn to re-ask a tie-break the turn is
-    happy to do without. One request on the wire, then the deterministic recency fallback.
-    """
-    from lumen_api import ad_runtime
-    from py_lumen_config import settings
-
-    monkeypatch.setattr(settings, "openrouter_api_key", "a-key", raising=False)
-    monkeypatch.setattr(settings, "openrouter_base_url", "https://or.example/api/v1", raising=False)
-    transport = _Transport([HttpResponse(status=503, body=b"upstream is down")])
-    with spend.spend_scope(LedgerStamp(workspace_id="ws_t"), transport=transport) as scope:
-        chosen = ad_runtime.choose_style_group("a calm clinic", ["Photo Poster", "Bold Type"])
-    assert chosen is None
-    assert len(transport.sent) == 1
-    rows = [row for row in scope.ledger.rows if row.phase == "result"]
-    assert len(rows) == 1 and rows[0].attempts == 1
-    assert rows[0].operation == "design.ad.style_group"
-
-
 def test_drain_awaits_the_scopes_own_drain_fn() -> None:
     """PRE-1b: the platform injects a whole drain function, so its bookkeeping is written once."""
     seen: dict[str, object] = {}
@@ -243,6 +221,7 @@ def test_a_collected_model_call_lands_one_result_row_in_usd() -> None:
         "cost_source": "metered",
         "langfuse_trace_id": "trace-1",
         "langfuse_observation_id": "obs-1",
+        "incident_provider": "openrouter_design",
     }
 
 
@@ -276,3 +255,51 @@ def test_a_failed_call_lands_a_client_error_row_with_its_code() -> None:
     (row,) = scope.ledger.rows
     assert row.outcome == "client_error" and row.error_code == "timeout_error"
     assert row.cost_usd is None and row.extras["cost_source"] == "estimate"
+
+
+# --- design-side refusals open the design provider's incident (design 2026-10-31) ------------
+
+
+def test_a_design_model_refusal_is_stamped_as_the_design_provider() -> None:
+    from clue_spend.ledger import _stamped_failure
+
+    transport = _Transport([HttpResponse(status=402, body=b'{"error":"insufficient credits"}')])
+    with spend.spend_scope(LedgerStamp(workspace_id="ws_t"), transport=transport) as scope:
+        with pytest.raises(ProviderHalted):
+            spend.openrouter_call(
+                operation="design.ingestion.assist",
+                body={"model": "m", "messages": []},
+                label="assist",
+                timeout_s=5.0,
+                api_key="k",
+                base_url="https://or.example/api/v1",
+            )
+    (result,) = [row for row in scope.ledger.rows if row.phase == "result"]
+    # The cost views group model spend by provider='openrouter'; only the incident is the design's.
+    assert result.provider == "openrouter"
+    failure = _stamped_failure(result)
+    assert failure is not None and failure.provider == "openrouter_design"
+    assert failure.reason == "credits_exhausted"
+
+
+def test_a_refused_collected_call_carries_its_failure_onto_the_row() -> None:
+    from clue_spend.ledger import _stamped_failure
+
+    refused = {
+        "kind": "refusal",
+        "reason": "credits_exhausted",
+        "message": "Insufficient credits",
+        "provider": "openrouter_design",
+    }
+    call = _collected_call(
+        status="failed", cost_cents=None, cost_source=None, error_code="api_status_error",
+        provider_failure=refused,
+    )
+    with spend.spend_scope(LedgerStamp(workspace_id="ws_t"), transport=_Transport([])) as scope:
+        spend.record_collected_model_call(
+            scope, call, operation="design.turn", label="scene agent"
+        )
+    (row,) = scope.ledger.rows
+    assert row.extras["provider_failure"] == refused
+    failure = _stamped_failure(row)
+    assert failure is not None and failure.provider == "openrouter_design"

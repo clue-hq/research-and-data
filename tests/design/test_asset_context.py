@@ -207,3 +207,40 @@ def test_human_projection_does_not_rewrite_observations_or_provenance():
     assert result["agent_context"]["guidance"]["usage"] == "Use as a reference only"
     assert result["agent_context"]["observed"] == generated["observed"]
     assert result["source_occurrences"] == []  # An ad classification proves no publication.
+
+
+# --- Only code calls an asset an ad (spec 2026-10-30 reference ads §5.2) ---------------------
+
+def _typed_row(ai_type: str | None = None, override: str | None = None) -> dict:
+    return {
+        "asset_id": "a1",
+        "analysis": {"creative_type": ai_type} if ai_type else {},
+        "overrides": {"creative_type": override} if override else {},
+    }
+
+
+def test_a_harvested_asset_is_an_ad_whatever_the_model_said():
+    assert effective_context(_typed_row("photo"), harvested=True)["creative_type"] == "ad"
+    assert effective_context(_typed_row(), harvested=True)["creative_type"] == "ad"
+
+
+def test_a_model_ad_that_was_not_harvested_shows_as_other():
+    assert effective_context(_typed_row("ad"))["creative_type"] == "other"
+
+
+def test_the_persons_type_always_wins():
+    assert effective_context(_typed_row("photo", override="ad"))["creative_type"] == "ad"
+    context = effective_context(_typed_row("ad", override="photo"), harvested=True)
+    assert context["creative_type"] == "photo"
+    assert context["classification_origin"] == "human"
+
+
+def test_other_model_types_are_unchanged():
+    assert effective_context(_typed_row("logo"))["creative_type"] == "logo"
+    assert effective_context(_typed_row())["creative_type"] == "unknown"
+
+
+def test_the_model_may_not_answer_ad():
+    from clue_design.asset_context import AI_CREATIVE_TYPES
+
+    assert "ad" not in AI_CREATIVE_TYPES and "other" in AI_CREATIVE_TYPES

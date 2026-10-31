@@ -11,7 +11,8 @@ write executor's, in Phase 2); reads surface ``rate_limited`` / ``unavailable`` 
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import time
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal, Protocol
@@ -121,11 +122,45 @@ class HttpComposioGateway:
     """:class:`ComposioGateway` over Composio's REST API v3.1."""
 
     def __init__(
-        self, *, api_key: str, base_url: str, client: httpx.AsyncClient | None = None
+        self,
+        *,
+        api_key: str,
+        base_url: str,
+        client: httpx.AsyncClient | None = None,
+        observe: Callable[..., Awaitable[None]] | None = None,
     ) -> None:
         self._headers = {"x-api-key": api_key}
         self._base_url = base_url.rstrip("/")
         self._client = client or httpx.AsyncClient(timeout=_TIMEOUT_S)
+        # Every answer is reported to the spend layer so a refusal opens a provider incident
+        # (design 2026-10-31); the gateway keeps its own transport and error kinds.
+        self._observe = observe
+
+    async def _report(
+        self, method: str, path: str, response: httpx.Response, started: float
+    ) -> None:
+        if self._observe is None:
+            return
+        segment = path.strip("/").split("/", 1)[0] or "root"
+        # A 4xx on a tool run or a connected account is about one customer's own CRM connection
+        # (an expired token, a revoked grant), not Composio refusing Clue — no provider incident.
+        # A 402 or 429 is still the account's.
+        customer_scoped = (
+            path.startswith(("/tools/execute", "/connected_accounts"))
+            and 400 <= response.status_code < 500
+            and response.status_code not in (402, 429)
+        )
+        try:
+            await self._observe(
+                operation=f"crm.composio.{method.lower()}_{segment}",
+                label=f"composio:{method} {segment}",
+                status=response.status_code,
+                body=response.content,
+                latency_ms=int((time.monotonic() - started) * 1000),
+                classify=not customer_scoped,
+            )
+        except Exception:  # noqa: BLE001 - reporting must never break the call it observes
+            return
 
     async def create_link(
         self,
@@ -162,6 +197,7 @@ class HttpComposioGateway:
     async def delete_account(self, connected_account_id: str) -> None:
         """Delete Clue's grant at Composio (a disconnect, R-15.3). An account Composio no longer
         has is already deleted, so a 404 is success; the body is not read (it may be empty)."""
+        started = time.monotonic()
         try:
             response = await self._client.request(
                 "DELETE",
@@ -170,6 +206,7 @@ class HttpComposioGateway:
             )
         except httpx.HTTPError as exc:
             raise ComposioError("unavailable", None, str(exc) or type(exc).__name__) from exc
+        await self._report("DELETE", "/connected_accounts", response, started)
         if response.status_code >= 400 and response.status_code != 404:
             raise _http_error(response)
 
@@ -214,12 +251,14 @@ class HttpComposioGateway:
         )
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+        started = time.monotonic()
         try:
             response = await self._client.request(
                 method, f"{self._base_url}{path}", headers=self._headers, **kwargs
             )
         except httpx.HTTPError as exc:  # timeouts, refused connections, protocol errors
             raise ComposioError("unavailable", None, str(exc) or type(exc).__name__) from exc
+        await self._report(method, path, response, started)
         if response.status_code >= 400:
             raise _http_error(response)
         try:
@@ -278,4 +317,10 @@ def build_composio_gateway(
     key = secrets.composio_api_key.get_secret_value().strip()
     if not key:
         return None
-    return HttpComposioGateway(api_key=key, base_url=settings.composio_base_url)
+    from clue_api.provider_observers import provider_observer
+
+    return HttpComposioGateway(
+        api_key=key,
+        base_url=settings.composio_base_url,
+        observe=provider_observer("composio"),
+    )

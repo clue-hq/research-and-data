@@ -14,9 +14,10 @@ A call in flight when the runtime cap fires drains at finalization (Task 5 waits
 in-flight hops); a lost lease can lose that hop's rows — recorded as the known residual.
 
 Lane 3 slice 5 moved this module out of ``clue_api.arv2`` so the design subsystem can drain into
-the same one ledger. What was platform-specific about it — recording a provider *incident* from a
-stamped failure — left with it: the drain now takes an optional :data:`FailureHook` and the
-platform binds its own recorder at the call site (``clue_api.arv2.provider_ledger``).
+the same one ledger. Since 2026-10-31 the drain also records provider incidents itself
+(:mod:`clue_spend.incidents`), so every spend scope in every subsystem — not only the platform's —
+tells the founders when a provider stops serving (design
+``docs/superpowers/specs/2026-10-31-provider-credit-and-key-alerts-design.md``).
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from __future__ import annotations
 import base64
 import json
 import threading
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -35,8 +36,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core.provider_failures import ProviderFailure
+from clue_obs import get_logger
 
 from .sinks import LedgerRow, RawRecord, sha256_hex
+
+log = get_logger("clue_spend.ledger")
 
 __all__ = [
     "ArtifactRefLike",
@@ -44,7 +48,6 @@ __all__ = [
     "BufferedLedger",
     "BufferedRawSink",
     "DrainReport",
-    "FailureHook",
     "LedgerStamp",
     "artifact_payload",
     "drain_provider_calls",
@@ -95,7 +98,6 @@ class ArtifactSink(Protocol):
 #: ``(conn, row, stamp, surface)``. It exists so a platform can hang its own follow-up — the
 #: platform's provider-incident recorder — off a drain the library performs, without this module
 #: knowing that recorder exists. ``None`` (the default) means the drain only writes rows.
-FailureHook = Callable[[AsyncConnection, LedgerRow, "LedgerStamp", str], Awaitable[None]]
 
 
 class BufferedRawSink:
@@ -282,7 +284,7 @@ async def record_drain(
     held: HeldDrain,
     *,
     stamp: LedgerStamp,
-    on_failure: FailureHook | None = None,
+    record_incidents: bool = True,
 ) -> DrainReport:
     """Write a held drain's ledger rows, citing the bodies it stored, and report its spend."""
     for row in held.rows:
@@ -291,10 +293,8 @@ async def record_drain(
         )
 
     results = held.result_rows
-    if on_failure is not None:
-        for row in results:
-            if _stamped_failure(row) is not None:
-                await on_failure(conn, row, stamp, _surface_for(row, stamp))
+    if record_incidents:
+        await _record_incidents(conn, results, stamp)
 
     return DrainReport(
         rows=len(held.rows),
@@ -315,8 +315,8 @@ async def drain_provider_calls(
     ledger: BufferedLedger,
     artifacts: ArtifactSink | None,
     stamp: LedgerStamp,
-    on_failure: FailureHook | None = None,
     held: HeldDrain | None = None,
+    record_incidents: bool = True,
 ) -> DrainReport:
     """Persist every buffered raw body and ledger row, and report what this drain cost.
 
@@ -328,15 +328,69 @@ async def drain_provider_calls(
     with ``response_artifact_key`` NULL. That is for a caller whose bodies already live somewhere
     durable of its own — the money trail is still complete, it just cites nothing here.
 
-    ``on_failure``, when given, is awaited once per failed result row after every row is inserted,
-    with the surface :func:`_surface_for` computed for it.
+    ``record_incidents`` (default on) records every stamped failure as a provider incident once
+    the rows are in, and closes a provider's incidents when its last word in this batch was a
+    success — see :func:`_record_incidents`.
 
     ``held`` is a :func:`hold_drain` the caller already ran (bodies stored, rows taken); only its
     rows are written here.
     """
     if held is None:
         held = await hold_drain(raw=raw, ledger=ledger, artifacts=artifacts, stamp=stamp)
-    return await record_drain(conn, held, stamp=stamp, on_failure=on_failure)
+    return await record_drain(conn, held, stamp=stamp, record_incidents=record_incidents)
+
+
+async def _record_incidents(
+    conn: AsyncConnection, results: tuple[LedgerRow, ...], stamp: LedgerStamp
+) -> None:
+    """Every stamped failure lands on an incident; a provider closes its incidents only when its
+    **last word in this batch** was a success.
+
+    A drain is not one call, it is a whole hop's worth — a discovery drain routinely holds two
+    hundred good rows and then the 402 that stopped it. Closing on the mere *presence* of an ``ok``
+    row would open that incident and shut it again inside the same drain, so the two are folded per
+    provider by time: ``last_ok_at`` has to exist and be later than ``last_failure_at`` before
+    :func:`~clue_spend.incidents.record_success` is called at all. Failures are recorded first and
+    one at a time (each counts toward the threshold and names its own surface); the close is one
+    indexed UPDATE per provider. Nothing here may fail the drain: the rows are already written.
+    """
+    from clue_spend import incidents  # the recorder imports sentry; only drains that record need it
+
+    last_failure_at: dict[str, datetime] = {}
+    last_ok_at: dict[str, datetime] = {}
+    try:
+        for row in results:
+            failure = _stamped_failure(row)
+            if failure is None:
+                if row.outcome == "ok":
+                    seen = last_ok_at.get(failure_provider(row), row.recorded_at)
+                    last_ok_at[failure_provider(row)] = max(seen, row.recorded_at)
+                continue
+            seen = last_failure_at.get(failure.provider, row.recorded_at)
+            last_failure_at[failure.provider] = max(seen, row.recorded_at)
+            await incidents.open_or_count(
+                conn,
+                failure,
+                surface=_surface_for(row, stamp),
+                workspace_id=stamp.workspace_id,
+                now=row.recorded_at,
+            )
+        for provider, ok_at in last_ok_at.items():
+            failed_at = last_failure_at.get(provider)
+            if failed_at is None or ok_at > failed_at:
+                await incidents.close_provider(conn, provider, now=ok_at)
+    except Exception:
+        # One line per drain: a database that refuses the first incident write refuses the rest,
+        # so the drain stops recording rather than logging once per row.
+        log.exception("provider_incident.recorder_failed", reason="drain")
+
+
+def failure_provider(row: LedgerRow) -> str:
+    """The incident provider a row belongs to: a stamped override (``openrouter_design``) or the
+    row's own provider. A successful design-side row carries the override too, so it closes the
+    design incident rather than the research one."""
+    named = row.extras.get("incident_provider")
+    return str(named) if named else row.provider
 
 
 def _surface_for(row: LedgerRow, stamp: LedgerStamp) -> str:
@@ -374,7 +428,9 @@ def _stamped_failure(row: LedgerRow) -> ProviderFailure | None:
         return None
     try:
         return ProviderFailure(
-            row.provider,
+            # A design-side row keeps ``provider='openrouter'`` for the cost views and names the
+            # incident it belongs to here (``openrouter_design``, design 2026-10-31).
+            str(stamped.get("provider") or failure_provider(row)),
             stamped["kind"],
             stamped["reason"],
             str(stamped.get("message", "")),

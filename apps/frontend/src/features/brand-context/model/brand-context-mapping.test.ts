@@ -578,3 +578,16 @@ test("a kit asset whose registry record has a thumbnail shows it in the grid", (
   if (asset?.visual.kind !== "image") return;
   assert.equal(asset.visual.thumbnailPath, `/api/clue/design/assets/${encodeURIComponent(first)}/thumbnail`);
 });
+
+test("a kit asset that was deleted (archived) is not on the page", () => {
+  const kit = BrandKitDetailSchema.parse(HARVESTED_BRAND_KIT);
+  const [first] = brandKitAssetIds(kit);
+  const raw = HARVESTED_ASSET_RECORDS[first] as { asset: Record<string, unknown> };
+  const archived = { ...raw, asset: { ...raw.asset, status: "archived" } };
+  const workspace = toBrandContextWorkspace(kit, {
+    assetRecords: parseAssetRecords({ ...HARVESTED_ASSET_RECORDS, [first]: archived }),
+    registryRecords: [],
+  });
+  assert.equal(workspace.assets.some(candidate => candidate.id === first), false);
+  assert.ok(workspace.assets.length > 0);
+});

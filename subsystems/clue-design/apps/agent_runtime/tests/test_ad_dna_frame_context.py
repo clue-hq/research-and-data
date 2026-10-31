@@ -51,7 +51,8 @@ def test_the_described_styles_ride_the_frame_payload_next_to_the_brand_card(
 
     assert "## THE BRAND'S PUBLISHED-AD STYLES, DESCRIBED (advisory)" in payload
     assert PROSE in payload
-    assert "The looks named in that description: Deep Field, Photo Poster." in payload
+    # Founder ruling 2026-10-30: no group names reach the agent, even from an older card.
+    assert "Deep Field" not in payload and "The looks named" not in payload
     # Next to, never instead of: the brand card is still the thing carrying the rules.
     assert payload.index("## BRAND CARD") < payload.index("## THE BRAND'S PUBLISHED-AD STYLES")
 
@@ -156,8 +157,9 @@ def test_the_pregenerated_grounds_are_named_in_the_opening_context(
         assert entry["asset_id"] in payload, "the id itself is the thing that was missing"
     # id, style-group name and shape, so the author can choose between them rather than
     # guessing which of three squares is which.
-    assert "`asset_gen_bbbb2222` — Deep Field — square ground" in payload
-    assert "`asset_gen_cccc3333` — Photo Poster — square ground" in payload
+    assert "`asset_gen_bbbb2222` — square ground" in payload
+    assert "`asset_gen_cccc3333` — square ground" in payload
+    assert "Photo Poster" not in payload
     # It sits with the description it was generated from, not in some new place.
     assert payload.index("## THE BRAND'S PUBLISHED-AD STYLES") < payload.index(
         "## BACKGROUNDS ALREADY MADE"
@@ -248,3 +250,59 @@ def test_the_default_config_carries_no_pregenerated_imagery(tmp_path) -> None:
         replace(config, ad_pregenerated_assets=PREGENERATED).ad_pregenerated_assets
         == PREGENERATED
     )
+
+
+# --- the brand's ad list (spec 2026-10-30, reference ads §5.5; founder-approved heading) ------
+
+AD_ROWS = [
+    {"asset_id": "a1", "from": "linkedin_ad", "headline": "Spend | less\nnow",
+     "commentary": "x" * 250, "title": "Teal card", "description": "One. Two. Three.",
+     "width": 1200, "height": 628, "created_at": "2026-10-02"},
+    {"asset_id": "a2", "from": "marked_by_person", "headline": None, "commentary": None,
+     "title": None, "description": None, "width": None, "height": None, "created_at": None},
+    {"asset_id": "a_missing", "from": "linkedin_ad", "headline": "H", "commentary": None,
+     "title": None, "description": None, "width": None, "height": None, "created_at": None},
+]
+AD_LIBRARY = {aid: {"record": {"id": aid, "status": "ready"}} for aid in ("a1", "a2")}
+
+
+def test_the_list_opens_with_the_approved_heading_and_counts_only_rendered_rows() -> None:
+    text = frame_mod.render_brand_ads_text(AD_ROWS, AD_LIBRARY)
+    assert text.startswith(
+        "## The brand's ads\n"
+        "These are the brand's own published ads and any images the team marked as ads — 2 in all.\n"
+        "Open any of them with `view(\"asset:<id>\")` to see the picture and its full description\n"
+        "(layout, text, typography, hierarchy). Look through several before you design, and pick\n"
+        "ones that fit this request; you don't need to use the same ones as last time.\n"
+    )
+    assert "| asset id | from | headline | post copy | title | short description | size |" in text
+    assert "a_missing" not in text
+
+
+def test_each_row_says_where_the_ad_came_from_and_what_it_looks_like() -> None:
+    text = frame_mod.render_brand_ads_text(AD_ROWS, AD_LIBRARY)
+    row = next(line for line in text.splitlines() if line.startswith("| `a1`"))
+    assert "| LinkedIn ad |" in row and "| One. Two. |" in row and "| 1200×628 |" in row
+    assert "x" * 200 in row and "x" * 201 not in row
+    other = next(line for line in text.splitlines() if line.startswith("| `a2`"))
+    assert "| marked as an ad |" in other and "no description yet" in other
+
+
+def test_pipes_and_newlines_cannot_break_the_table() -> None:
+    row = next(
+        line for line in frame_mod.render_brand_ads_text(AD_ROWS, AD_LIBRARY).splitlines()
+        if line.startswith("| `a1`")
+    )
+    assert "Spend \\| less now" in row
+    assert row.count(" | ") == 6  # seven cells, no extra columns
+
+
+def test_nothing_openable_renders_nothing() -> None:
+    assert frame_mod.render_brand_ads_text(AD_ROWS, {}) == ""
+    assert frame_mod.render_brand_ads_text([], AD_LIBRARY) == ""
+
+
+def test_short_description_keeps_two_sentences() -> None:
+    assert frame_mod.short_description("One. Two. Three.") == "One. Two."
+    assert frame_mod.short_description(None) == ""
+    assert len(frame_mod.short_description("y" * 500)) == 300

@@ -605,9 +605,11 @@ class OnboardAdAssetsRequest(BaseModel):
     #: verified path the resolver's name wins — a caller-supplied name compared against itself
     #: would verify nothing.
     advertiser_name: Optional[str] = None
-    #: Bounded spend: ~24–25 ads and ~1 vendor credit per page.
-    max_pages: int = 3
-    max_creatives: int = 15
+    #: Bounded spend: ~24–25 ads and ~1 vendor credit per page. Kept equal to
+    #: ``lumen_ingestion.ad_library.harvest``'s defaults and to automatic onboarding's
+    #: ``CLUE_BRAND_AD_ASSETS_AUTO_*`` (founder 2026-10-30: 50 ads).
+    max_pages: int = 8
+    max_creatives: int = 50
     #: Recover source ads without spending on style analysis or generated backgrounds.
     #: Persisted with the job so a worker re-drive honors the same requested scope.
     harvest_only: bool = False

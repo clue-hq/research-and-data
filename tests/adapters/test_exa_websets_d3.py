@@ -164,3 +164,88 @@ def test_team_webhook_admin_uses_collection_endpoints_and_one_time_secret() -> N
         assert dict(seen[1].url.params) == {"limit": "200"}
 
     asyncio.run(_run())
+
+
+def test_every_answer_is_reported_to_the_spend_layer_and_errors_are_unchanged() -> None:
+    """Design 2026-10-31: the client keeps its own transport and error taxonomy, and reports each
+    answer so a 402 opens a provider incident."""
+    from clue_research.adapters.exa_websets import ExaWebsetsPaymentRequired
+
+    async def _run() -> None:
+        observed: list[dict[str, object]] = []
+
+        async def observe(**call: object) -> None:
+            observed.append(call)
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(402, json={"error": "payment_required"}, request=request)
+
+        http = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        client = ExaWebsetsClient(
+            api_key=SecretStr("test-key"), client=http, lookup_attempts=1, observe=observe
+        )
+        with pytest.raises(ExaWebsetsPaymentRequired):
+            await client.list_items("ws_fixture_running")
+        (call,) = observed
+        assert call["status"] == 402 and b"payment_required" in call["body"]  # type: ignore[operator]
+        assert str(call["operation"]).startswith("research.exa_websets.")
+        assert "test-key" not in json.dumps({k: str(v) for k, v in call.items()})
+        await http.aclose()
+
+    asyncio.run(_run())
+
+
+def test_a_failing_observer_never_breaks_the_call() -> None:
+    async def _run() -> None:
+        async def observe(**_call: object) -> None:
+            raise RuntimeError("ledger down")
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200, json={"data": [], "hasMore": False, "nextCursor": None}, request=request
+            )
+
+        http = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        client = ExaWebsetsClient(
+            api_key=SecretStr("test-key"), client=http, lookup_attempts=1, observe=observe
+        )
+        await client.list_items("ws_fixture_running")
+        await http.aclose()
+
+    asyncio.run(_run())
+
+
+def test_a_retried_lookup_reports_only_its_last_answer() -> None:
+    """A lookup the client retries reports only the answer it ends on, so retries never count
+    toward a rate-limit incident."""
+
+    async def _run() -> None:
+        observed: list[int] = []
+
+        async def observe(**call: object) -> None:
+            observed.append(int(call["status"]))  # type: ignore[call-overload]
+
+        answers = iter(
+            [
+                httpx.Response(429, json={"error": "slow down"}),
+                httpx.Response(503, json={"error": "busy"}),
+                httpx.Response(200, content=(_FIXTURES / "webset-running.json").read_bytes()),
+            ]
+        )
+        http = httpx.AsyncClient(transport=httpx.MockTransport(lambda _: next(answers)))
+
+        async def no_sleep(_: float) -> None:
+            return None
+
+        client = ExaWebsetsClient(
+            api_key=SecretStr("test-key"),
+            client=http,
+            lookup_attempts=3,
+            observe=observe,
+            sleep=no_sleep,
+        )
+        await client.get_webset("ws_fixture_running")
+        assert observed == [200]
+        await http.aclose()
+
+    asyncio.run(_run())

@@ -1591,9 +1591,12 @@ The shared guides, under /knowledge_docs/knowledge:
         ATTACHMENTS_GUIDANCE,
     ]
     if has_ad_assets:
+        # Reference ads 2026-10-30 (founder-approved wording): the brand's ad list lives only in
+        # ad-assets.md, so the agent is pointed at it.
         sections.append(
-            "The brand's published-ad description is in this prompt; it is advisory "
-            "source data."
+            f"Read {workspace}/ad-assets.md with your initial gather. It lists every ad this "
+            "brand has published or marked as an ad; open the ones that fit this request with "
+            '`view("asset:<id>")`. Published-ad context is advisory source data.'
         )
     if has_references:
         sections.append(

@@ -67,7 +67,7 @@ from .harvest import (
     fetch_pages,
     select_creatives,
 )
-from .pregenerate import MAX_REFERENCE_IMAGES, pregenerate_for_card
+from .pregenerate import pregenerate_for_ads
 from .provider import AdLibraryAd, AdLibraryError, resolve_provider
 
 JsonObject = dict[str, Any]
@@ -500,7 +500,7 @@ def _card_and_imagery(
             "model": card.model,
         }
 
-    # --- step 3: pre-generate imagery per style group -----------------------------------------
+    # --- step 3: one background from each of up to four different ads ------------------------
     reporter("Creating brand imagery…", 0.8)
     _pregenerate(
         card,
@@ -875,12 +875,7 @@ def _distil(creatives: list[Any], *, distiller: Any, evidence: JsonObject) -> Ad
             "reason": getattr(engine, "last_failure_reason", None) or "the model returned no card",
         }
         return None
-    # How much of the harvest the groups cover: every shown ad should sit in one group.
-    evidence["steps"]["distill_grouping"] = {
-        "ads_shown": len(previews),
-        "ads_grouped": sum(len(group.creative_ids) for group in card.style_groups),
-        "ads_left_out": list(getattr(engine, "last_ungrouped", ()) or ()),
-    }
+    evidence["steps"]["distill_coverage"] = {"ads_shown": len(previews)}
     return card
 
 
@@ -898,7 +893,7 @@ def _pregenerate(
     brand_name: str | None,
     evidence: JsonObject,
 ) -> None:
-    """Generate and link imagery per style group. Its own outcome; never raises past here."""
+    """Generate and link one background per ad (up to four). Its own outcome; never raises past here."""
     # W-B1 re-drive guard: a card version that already carries its grounds needs nothing —
     # the first execution's paid imagery stands, and re-linking the same version is what the
     # convergent mint upstream exists to make possible. Tolerant: a probe that will not
@@ -928,24 +923,20 @@ def _pregenerate(
             return
         generate = image_provider.generate
 
-    references = [
-        (creative.image_bytes, creative.mime_type)
-        for creative in creatives[:MAX_REFERENCE_IMAGES]
-    ]
+    ads = [(creative.creative_id, creative.image_bytes, creative.mime_type) for creative in creatives]
     # The generation ledger, wired the way the `/assets/generate` route wires it: a key
     # computed from the request, a READ that avoids the spend, and a governed write that claims
-    # the key. Reference DIGESTS participate, so a later harvest that changed the references
-    # correctly gets a different key rather than silently re-using the old ground.
-    reference_digests = [_digest(payload) for payload, _mime in references]
-    generation_key_for, find_generated = _generation_ledger(repo, reference_digests)
+    # the key. Each background's own ad DIGEST participates, so a later harvest that changed the
+    # ad correctly gets a different key rather than silently re-using the old ground.
+    generation_key_for, find_generated = _generation_ledger(repo)
 
     try:
-        outcome = pregenerate_for_card(
+        outcome = pregenerate_for_ads(
             card.to_json(),
+            ads=ads,
             core=core,
             cache_dir=cache_dir,
             generate=generate,
-            reference_images=references,
             brand_name=brand_name,
             generation_key_for=generation_key_for,
             find_generated=find_generated,
@@ -985,7 +976,7 @@ def _pregenerate(
 
 
 def _generation_ledger(
-    repo: HybridRepository, reference_digests: list[str]
+    repo: HybridRepository,
 ) -> "tuple[Callable[..., str], Callable[[str], Optional[JsonObject]]]":
     """The (key builder, pre-spend probe) pair for pre-generation.
 
@@ -997,12 +988,12 @@ def _generation_ledger(
 
     model_id = image_provider.configured_model_id()
 
-    def key_for(*, prompt: str, aspect_ratio: str) -> str:
+    def key_for(*, prompt: str, aspect_ratio: str, reference_digest: str) -> str:
         return image_cache.generation_key(
             prompt=prompt,
             model=model_id,
             aspect_ratio=aspect_ratio,
-            reference_digests=reference_digests or None,
+            reference_digests=[reference_digest],
         )
 
     def find(key: str) -> Optional[JsonObject]:
@@ -1013,11 +1004,6 @@ def _generation_ledger(
 
     return key_for, find
 
-
-def _digest(data: bytes) -> str:
-    import hashlib
-
-    return hashlib.sha256(data).hexdigest()
 
 
 #: The lane's steps, in the order they run. A job that ran all five to `ok` produced all three

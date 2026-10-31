@@ -336,6 +336,8 @@ export const DesignAssetRecordSchema = z.object({
   asset: z.object({
     id: z.string().min(1),
     label: z.string().nullish(),
+    // "archived" once the asset is deleted on the Assets page; the page then leaves it out.
+    status: z.string().nullish(),
     media: z
       .object({
         mime_type: z.string().nullish(),

@@ -13,6 +13,10 @@ dependencies = [
     "clue-core",
     "clue-obs",
     "clue-storage",
+    # the incident recorder sends its open/close events itself (clue_spend.incidents)
+    "sentry-sdk>=2.30",
+    # the start-up key check reads the env files the settings loaders read (clue_spend.key_check)
+    "python-dotenv>=1.0",
 ]
 
 [build-system]

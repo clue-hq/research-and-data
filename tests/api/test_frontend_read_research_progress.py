@@ -199,3 +199,42 @@ def test_a_card_with_no_provider_incident_carries_none(tmp_path: Any) -> None:
             assert body["incident"] is None
 
     run_async(scenario())
+
+
+def test_alert_only_incidents_never_reach_the_card(tmp_path: Any) -> None:
+    """Design 2026-10-31: a design-side refusal and a missing key alert the founders but never
+    reach a customer's research card."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            fixture = await seed_icp_fixture(conn, storage)
+            path = f"{FRONTEND_READ_PREFIX}/projects/{fixture.project_id}/research/progress"
+            headers = {"X-Workspace-Id": fixture.workspace_id}
+            receipt = await _launch(conn, storage, _request(fixture), FakeQueue())
+            await conn.execute(
+                text(
+                    "UPDATE arv2_research_job SET status = 'needs_review', "
+                    "failure_code = 'model_error', failure_message = 'the model errored', "
+                    "finished_at = now() WHERE run_id = :run"
+                ),
+                {"run": receipt.run_id},
+            )
+            for failure in (
+                ProviderFailure("openrouter_design", "refusal", "credits_exhausted", "no credit"),
+                ProviderFailure(
+                    "platform-api:CLUE_OPENROUTER_API_KEY",
+                    "refusal",
+                    "key_missing",
+                    "CLUE_OPENROUTER_API_KEY is not set",
+                ),
+            ):
+                await record_failure(
+                    conn, failure, surface="startup", workspace_id=None, now=datetime.now(UTC)
+                )
+            async with _client(_app(conn)) as client:
+                body = (await client.get(path, headers=headers)).json()["data"]
+            assert body["attention"][0]["reason"] == "the model errored"
+            assert body["incident"] is None
+
+    run_async(scenario())

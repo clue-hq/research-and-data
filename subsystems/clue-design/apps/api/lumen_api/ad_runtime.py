@@ -1,21 +1,18 @@
 """W4 — the Brand Ad Assets lane at TURN time (spec ``brand-ad-assets-v1-spec.md`` §4, §5 W4).
 
 W2 populates the lane at onboarding: harvested creatives with durable bytes, one immutable
-prose ad-DNA card per harvest, and pre-generated imagery. This module is the other end — the
-two things a scene design turn takes out of that lane:
+prose ad-DNA card per harvest, and pre-generated imagery. This module is the other end — what a
+scene design turn takes out of that lane:
 
-1. **References.** When the lane holds harvested creatives and the human attached nothing, the
-   turn is conditioned on the brand's OWN published ads instead of on nothing. Up to four
-   (:data:`AUTO_REFERENCE_MAX`, the cap ruling), chosen by :func:`select_reference_asset_ids`.
+1. **The ads.** Every harvested creative with its headline and post copy, so the agent's ad
+   list (spec 2026-10-30, reference ads §5.5) can name them all. Nothing is auto-attached any
+   more (§5.4): the agent opens the ads it wants; only the person's own attachments are
+   references.
 2. **The description.** The card's prose rides the turn's opening context as advisory text,
    next to the brand card. It is context, never a gate and never a required structure — ruling
    D5 stands: no approval gates and no mechanical guards on the agent.
-3. **The pre-generated grounds** (W5/R2-D). The imagery pre-generation made for the active card
-   is NAMED in that same advisory block — id, style group, shape — so the agent knows it exists.
-   Placement plumbing for these ids already worked; discovery did not, and the W5 Ramp turn
-   proved it: zero ``asset_gen_*`` events in a run whose lane held twelve of them. Naming them
-   is all this does. Nothing requires the agent to use one, and an unused list costs a turn
-   about as much as one short paragraph.
+3. **The pre-generated backgrounds** (W5/R2-D). The imagery pre-generation made for the active
+   card is NAMED in that same advisory block — id and shape — so the agent knows it exists.
 
 **Everything here is off unless ``LUMEN_BRAND_AD_ASSETS`` is on.** :func:`read_ad_lane` returns
 ``None`` on a flag-off process before it touches a database, so a flag-off turn issues no query,
@@ -23,37 +20,19 @@ makes no model call, and composes byte-identically to a pre-W4 one.
 
 **Nothing here reaches the composition corpus.** That corpus is dormant by ruling: W4 does not
 load it, does not cite it and does not point the agent at it.
-
-SELECTION, STATED LOUDLY BECAUSE IT IS THE INTERESTING CHOICE. v1 is the simplest mechanism
-that is honest about what it knows:
-
-* If the card names style groups, ONE cheap bounded text call asks which group's name best fits
-  this turn's brief, and that group's creatives are attached. The names came from the vision
-  pass, so this is matching prose against prose — the thing a language model is actually good
-  at — rather than inventing a similarity metric over pixels.
-* One group means there is nothing to choose, so the call is skipped.
-* Anything else — no card, no groups, a call that fails, a group whose creatives are all
-  unresolvable — falls back DETERMINISTICALLY to the most recently harvested creatives. The
-  fallback is not an error path; a brand with one look genuinely has nothing to select between,
-  and the most recent harvest is the most current statement of what its ads look like.
-
-The selector never raises. A reference the human did not ask for must never be able to fail a
-turn — that asymmetry against the manual path (where an unresolvable attachment is a loud 422,
-because it is explicit user intent) is deliberate and is enforced at the call site in
-``main.resolve_auto_ad_references``.
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from clue_design.ad_assets import (
     CREATIVE_SCAN,
     PREGENERATED_CONTEXT_MAX,
     reduce_card_payload,
     reduce_creative_assets,
+    reduce_creatives,
     reduce_pregenerated,
 )
 from py_lumen_config import settings
@@ -64,12 +43,11 @@ JsonObject = dict[str, Any]
 logger = get_logger("lumen_api.ad_runtime")
 
 __all__ = [
-    "AUTO_REFERENCE_MAX",
     "CREATIVE_SCAN",
     "FROZEN_LANE_ABSENT",
     "PREGENERATED_CONTEXT_MAX",
     "AdLane",
-    "choose_style_group",
+    "context_brand_ads",
     "context_card",
     "context_pregenerated",
     "frozen_lane_payload",
@@ -77,45 +55,30 @@ __all__ = [
     "lane_to_frozen",
     "read_ad_lane",
     "resolve_turn_ad_lane",
-    "select_reference_asset_ids",
 ]
-
-#: How many harvested creatives one turn is conditioned on. Mirrors
-#: ``main.REFERENCE_ASSETS_MAX`` — the cap-4 ruling (2026-08-24) is one number for the manual
-#: and the automatic path alike, and a test pins the two constants together. Declared here
-#: rather than imported because ``main`` imports THIS module, not the other way round.
-AUTO_REFERENCE_MAX = 4
 
 # ``CREATIVE_SCAN`` and ``PREGENERATED_CONTEXT_MAX`` now live in
 # ``clue_design.ad_assets`` (the W4 offer-time-freeze home) and are re-exported
 # above so every existing importer keeps working; the reductions they bound are
 # the shared ones both offerers and this module call.
 
-#: The selection call's output bound. The answer is one group name.
-SELECT_MAX_TOKENS = 32
-SELECT_TIMEOUT_S = 20.0
-#: How much of the brief the selection call sees. It is choosing between a handful of short
-#: names; the first paragraph of the ask is more than enough to do that.
-SELECT_BRIEF_CHARS = 1200
-
-
 @dataclass(frozen=True)
 class AdLane:
     """What this workspace's ad-assets lane holds right now.
 
-    ``card`` is the card's PAYLOAD (the ``card_json`` column's contents — ``prose`` plus
-    ``style_groups``), not the row wrapper, because that payload is what both consumers want.
-    ``creative_assets`` maps creative id → the design asset id holding its bytes, in
-    newest-harvested-first order, which is also the deterministic fallback order.
+    ``card`` is the card's PAYLOAD (the ``card_json`` column's contents — ``prose``, plus an
+    always-empty ``style_groups`` since 2026-10-30), not the row wrapper. ``creative_assets``
+    maps creative id → the design asset id holding its bytes, newest harvested first.
 
-    ``pregenerated`` is the third thing the lane holds and the one W4 shipped without: the
-    grounds pre-generation made for the ACTIVE card, each already reduced to the three facts a
-    turn's opening context needs — its id, the style group it belongs to, and what shape it is.
+    ``pregenerated`` holds the backgrounds pre-generation made for the ACTIVE card, each reduced
+    to its id and shape. ``creatives`` holds every creative with its headline, post copy and
+    harvest time, for the agent's ad list (spec 2026-10-30, reference ads §5.5).
     """
 
     card: Optional[JsonObject]
     creative_assets: dict[str, str]
     pregenerated: tuple[JsonObject, ...] = ()
+    creatives: tuple[JsonObject, ...] = ()
 
     @property
     def has_creatives(self) -> bool:
@@ -157,13 +120,14 @@ def read_ad_lane(workspace_id: str, *, store: Any = None) -> Optional[AdLane]:
         card=reduce_card_payload(row),
         creative_assets=creative_assets,
         pregenerated=_read_pregenerated(store, row, workspace_id=workspace_id),
+        creatives=tuple(reduce_creatives(creatives)),
     )
 
 
 def _read_pregenerated(
     store: Any, card_row: Any, *, workspace_id: str
 ) -> tuple[JsonObject, ...]:
-    """The grounds pre-generation made for THIS card version, reduced to three facts each.
+    """The grounds pre-generation made for THIS card version, reduced to two facts each.
 
     W5/R2-D. Pre-generation writes these rows at onboarding and links them to the card version
     they were anchored on, and until now nothing at turn time ever read them: the whole of the
@@ -217,6 +181,7 @@ def lane_to_frozen(lane: Optional[AdLane]) -> Optional[JsonObject]:
         "card": dict(lane.card) if isinstance(lane.card, dict) else None,
         "creative_assets": dict(lane.creative_assets),
         "pregenerated": [dict(entry) for entry in lane.pregenerated],
+        "creatives": [dict(entry) for entry in lane.creatives],
     }
 
 
@@ -257,10 +222,21 @@ def lane_from_frozen(value: Any) -> Optional[AdLane]:
     pregenerated = tuple(
         dict(entry) for entry in raw_pregenerated if isinstance(entry, dict)
     ) if isinstance(raw_pregenerated, list) else ()
+    raw_creatives = value.get("creatives")
+    if isinstance(raw_creatives, list):
+        creatives = tuple(reduce_creatives([e for e in raw_creatives if isinstance(e, dict)]))
+    else:
+        # A lane frozen before 2026-10-30 carries no headline or copy: list the ads blank.
+        creatives = tuple(
+            {"creative_id": creative_id, "asset_id": asset_id, "headline": None,
+             "commentary": None, "created_at": None}
+            for creative_id, asset_id in creative_assets.items()
+        )
     return AdLane(
         card=card if isinstance(card, dict) else None,
         creative_assets=creative_assets,
         pregenerated=pregenerated,
+        creatives=creatives,
     )
 
 
@@ -288,7 +264,7 @@ def resolve_turn_ad_lane(
             detail=(
                 "legacy envelope carries no frozen ad_lane and this process's "
                 "LUMEN_BRAND_AD_ASSETS is off; if the offering deployment had the lane on, "
-                "this turn's auto-references were just silently lost (Wave-B W-B2 shape)"
+                "this turn's ad list and description were just silently lost (Wave-B W-B2 shape)"
             ),
         )
         return None
@@ -306,152 +282,6 @@ def context_pregenerated(lane: Optional[AdLane]) -> Optional[list[JsonObject]]:
     return [dict(entry) for entry in lane.pregenerated]
 
 
-def select_reference_asset_ids(
-    brief: str,
-    lane: AdLane,
-    *,
-    choose: Optional[Callable[[str, list[str]], Optional[str]]] = None,
-    limit: int = AUTO_REFERENCE_MAX,
-) -> list[str]:
-    """Up to ``limit`` asset ids from the lane, best-matched to this turn's brief.
-
-    ``choose`` is the group-picking seam (default :func:`choose_style_group`), injected so the
-    suites can drive both branches — the match and the fallback — without a model call.
-    """
-    if limit <= 0 or not lane.has_creatives:
-        return []
-    recency = list(lane.creative_assets.values())
-
-    groups = [
-        group
-        for group in ((lane.card or {}).get("style_groups") or [])
-        if isinstance(group, dict) and str(group.get("name") or "").strip()
-    ]
-    if not groups:
-        return recency[:limit]
-
-    if len(groups) == 1:
-        chosen: Optional[JsonObject] = groups[0]
-    else:
-        picker = choose if choose is not None else choose_style_group
-        try:
-            name = picker(brief, [str(group["name"]) for group in groups])
-        except Exception:  # noqa: BLE001 - a selection failure falls back, never fails the turn
-            logger.warning("ad_reference_selection_failed")
-            name = None
-        chosen = _group_named(groups, name)
-
-    if chosen is not None:
-        matched = [
-            lane.creative_assets[str(creative_id)]
-            for creative_id in (chosen.get("creative_ids") or [])
-            if str(creative_id) in lane.creative_assets
-        ]
-        if matched:
-            return matched[:limit]
-        # A named group whose creatives no longer resolve (a re-harvest replaced them) is a
-        # stale pointer, not a reason to attach nothing.
-        logger.warning("ad_style_group_creatives_unresolvable", group=str(chosen.get("name")))
-    return recency[:limit]
-
-
-def _group_named(groups: list[JsonObject], name: Optional[str]) -> Optional[JsonObject]:
-    """The group the model named, matched leniently — or ``None`` if it named none of them.
-
-    Lenient because the answer is free text: a model asked for a name out of a short list
-    routinely returns it quoted, trailing-stopped, or wrapped in a sentence. What it may NOT do
-    is invent a group, which is why the answer is matched against the known names rather than
-    trusted.
-    """
-    if not name:
-        return None
-    candidate = str(name).strip().strip('"\'.,: ').lower()
-    if not candidate:
-        return None
-    for group in groups:
-        if str(group["name"]).strip().lower() == candidate:
-            return group
-    for group in groups:
-        known = str(group["name"]).strip().lower()
-        if known and known in candidate:
-            return group
-    return None
-
-
-def choose_style_group(brief: str, names: list[str]) -> Optional[str]:
-    """One cheap, bounded text call: which of these looks fits this brief?
-
-    Deliberately the smallest thing that can do the job — no images, a truncated brief, a
-    handful of short names in, one name out, ``max_tokens`` in the tens. The creatives
-    themselves are what actually steer the design; this call only decides WHICH of the brand's
-    looks the turn starts from, so paying vision-model money to make it would be spending real
-    tokens on a tie-break.
-
-    Runs on the same OpenRouter gateway and the same model id the lane's distillation uses
-    (``LUMEN_AD_DNA_MODEL``), so W4 introduces no new credential and no new model to configure.
-    Never raises: an unkeyed process, a network failure or an unparseable answer all return
-    ``None``, and the caller falls back to recency.
-    """
-    api_key = settings.openrouter_api_key
-    if not names or not api_key.strip():
-        return None
-    from . import spend  # lazy: only the real network path needs it
-
-    listing = "\n".join(f"- {name}" for name in names)
-    body = {
-        "model": settings.lumen_ad_dna_model,
-        "max_tokens": SELECT_MAX_TOKENS,
-        # A reasoning model spends the whole tiny budget thinking and answers nothing
-        # (deepseek-v4.1-flash, 2026-10-05: content None, finish_reason "length"). Naming one
-        # look needs no reasoning.
-        "reasoning": {"enabled": False},
-        "messages": [
-            {"role": "system", "content": _SELECT_PROMPT},
-            {
-                "role": "user",
-                "content": (
-                    f"The brief:\n{str(brief or '').strip()[:SELECT_BRIEF_CHARS]}\n\n"
-                    f"The brand's looks:\n{listing}"
-                ),
-            },
-        ],
-    }
-    try:
-        # ONE attempt: a design turn never waits on a retry backoff; the fallback is recency.
-        # This has always been a single bounded call, and the caller's law-2 backoff would put
-        # twelve seconds of dead air in the middle of a marketer's turn to re-ask a tie-break
-        # whose answer the turn is happy to do without.
-        #
-        # A ``ProviderHalted`` is caught below like every other failure: this call's contract is
-        # "never fail a design turn". The halt still latched the provider on the turn's caller,
-        # so the next paid call in the same scope refuses loud.
-        response = spend.openrouter_call(
-            operation="design.ad.style_group",
-            body=body,
-            label=f"style_group:{len(names)} names",
-            timeout_s=SELECT_TIMEOUT_S,
-            api_key=api_key,
-            base_url=settings.openrouter_base_url,
-            max_attempts=1,
-        )
-        if response.status >= 400:
-            logger.warning("ad_style_group_call_failed", status=response.status)
-            return None
-        content = json.loads(response.body)["choices"][0]["message"]["content"]
-        return str(content or "").strip()
-    except Exception:  # noqa: BLE001 - a tie-break may never fail a design turn
-        logger.warning("ad_style_group_call_errored")
-        return None
-
-
-_SELECT_PROMPT = (
-    "A brand runs several different-looking ads. You are given the names of those looks and "
-    "the brief for a new ad. Pick the one look the new ad should start from. "
-    "Answer with that name and nothing else. "
-    "If none of them fits the brief better than the others, answer with the first name."
-)
-
-
 # ---------------------------------------------------------------------------------------------
 # The description, on its way into the turn's opening context
 # ---------------------------------------------------------------------------------------------
@@ -460,12 +290,69 @@ _SELECT_PROMPT = (
 def context_card(lane: Optional[AdLane]) -> Optional[JsonObject]:
     """The card payload a turn carries BY VALUE, or ``None`` when there is nothing to carry.
 
-    Already bounded at distillation (``MAX_PROSE_CHARS`` / ``MAX_STYLE_GROUPS``), so this is a
+    Already bounded at distillation (``MAX_PROSE_CHARS``), so this is a
     presence check rather than a second truncation — one bound in one place. A lane with
-    creatives but no card returns ``None``: the references still ride, and the turn simply gets
+    creatives but no card returns ``None``: the ads are still listed, and the turn simply gets
     no description, which is honest.
     """
     if lane is None or not isinstance(lane.card, dict):
         return None
     prose = str(lane.card.get("prose") or "").strip()
     return lane.card if prose else None
+
+
+# ---------------------------------------------------------------------------------------------
+# The brand's ads, listed for the agent (spec 2026-10-30, reference ads §5.5)
+# ---------------------------------------------------------------------------------------------
+
+
+def context_brand_ads(
+    lane: Optional[AdLane], asset_library: Optional[JsonObject]
+) -> Optional[list[JsonObject]]:
+    """Every ad of the brand the agent can open this turn, newest first, or ``None``.
+
+    Two sources, one list: the harvested creatives (with their headline and post copy), and
+    every other library asset whose shown type is ``ad``. Only code and people may call an
+    asset an ad, so such an asset is a person's mark when a person set its type, and otherwise
+    a harvested ad the lane does not carry (listed without copy). A harvested ad is listed
+    while its library entry is in this turn's library and its type is ``ad`` or not yet known
+    (no description); a person who retyped it removes it. Needs no lane.
+    """
+    from lumen_agent.engine_mirror import record_pixel_dims
+
+    library = asset_library or {}
+    ads: list[JsonObject] = []
+
+    def row(asset_id: str, entry: JsonObject, source: str, creative: JsonObject) -> JsonObject:
+        dims = record_pixel_dims(entry.get("record") or {}) or (None, None)
+        return {
+            "asset_id": asset_id,
+            "from": source,
+            "headline": creative.get("headline"),
+            "commentary": creative.get("commentary"),
+            "title": entry.get("title"),
+            "description": entry.get("description"),
+            "width": dims[0],
+            "height": dims[1],
+            "created_at": creative.get("created_at") or entry.get("created_at"),
+        }
+
+    harvested: set[str] = set()
+    for creative in (lane.creatives if lane is not None else ()):
+        asset_id = str(creative.get("asset_id") or "")
+        entry = library.get(asset_id)
+        if not isinstance(entry, dict) or asset_id in harvested:
+            continue
+        harvested.add(asset_id)
+        if entry.get("creative_type") in (None, "ad"):
+            ads.append(row(asset_id, entry, "linkedin_ad", creative))
+    for asset_id, entry in library.items():
+        if asset_id not in harvested and isinstance(entry, dict) and entry.get("creative_type") == "ad":
+            # Only code and people call an asset an ad: one no person typed is a harvested ad
+            # this turn's lane does not carry (lane off, or past its creative cap).
+            marked = (entry.get("asset_context") or {}).get("classification_origin") == "human"
+            ads.append(row(asset_id, entry, "marked_by_person" if marked else "linkedin_ad", {}))
+    if not ads:
+        return None
+    dated = sorted((ad for ad in ads if ad["created_at"]), key=lambda ad: str(ad["created_at"]), reverse=True)
+    return dated + [ad for ad in ads if not ad["created_at"]]

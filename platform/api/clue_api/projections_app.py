@@ -63,6 +63,7 @@ from clue_api.onboarding_routes import (
 )
 from clue_api.production_metrics import production_metrics_lifespan
 from clue_api.production_tracing import production_tracing_lifespan
+from clue_api.provider_observers import provider_observer
 from clue_api.research_view_api import (
     build_research_view_router,
     research_actor_resolver,
@@ -823,6 +824,17 @@ async def _projections_lifespan(_app: FastAPI) -> AsyncIterator[None]:
         startup_check = getattr(_app.state, "startup_check", None)
         if startup_check is not None:
             await startup_check()
+        # Design 2026-10-31: a missing provider key opens a provider incident (one Sentry event).
+        # In the background, so start-up never waits on it; only where Sentry is installed.
+        from clue_obs.sentry import sentry_is_installed
+
+        if sentry_is_installed():
+            from clue_db import transaction
+            from clue_spend.key_check import check_provider_keys, startup_environ
+
+            _app.state.provider_key_check = asyncio.create_task(
+                check_provider_keys(transaction, role="platform-api", environ=startup_environ())
+            )
         try:
             yield
         finally:
@@ -982,7 +994,11 @@ def create_projections_app(
             service=auth_service,
             conn_factory=conn_factory,
             provision_enabled=resolved.self_serve_provisioning_enabled,
-            clerk_api=ClerkApi(clerk_secret.get_secret_value()) if clerk_secret else None,
+            clerk_api=(
+                ClerkApi(clerk_secret.get_secret_value(), observe=provider_observer("clerk"))
+                if clerk_secret
+                else None
+            ),
             pages_system_suffix=resolved.pages_system_suffix,
             # The workspace switcher's company logo (Brandfetch's embed-only Logo API).
             brandfetch_client_id=resolved.brandfetch_client_id,

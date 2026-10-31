@@ -21,6 +21,7 @@ from clue_api.arv2.sinks import LedgerRow
 from clue_api.provider_incidents import _INSERT as INSERT_STATEMENT
 from clue_api.provider_incidents import (
     FAILURE_THRESHOLD,
+    OpenIncident,
     incident_sentence,
     open_incidents,
     record_failure,
@@ -302,3 +303,34 @@ def test_the_inline_sentence_reads_as_the_founder_approved() -> None:
         "Model provider failing: server errors. "
         "Since 16:01, 7 calls affected. Clue has been notified."
     )
+
+
+def test_customer_readers_ignore_key_missing_and_design_incidents() -> None:
+    """Design 2026-10-31: alert-only incidents never reach a customer surface. The overview and
+    research-card readers ask for the research provider's incidents by id (``openrouter``, or the
+    job's own provider), and neither a design refusal nor a missing key is filed under one."""
+
+    async def scenario() -> tuple[OpenIncident, ...]:
+        async with rollback_conn(seed_pack=False) as conn:
+            await record_failure(
+                conn,
+                ProviderFailure("openrouter_design", "refusal", "credits_exhausted", "no credit"),
+                surface="design",
+                workspace_id="ws_a",
+                now=NOW,
+            )
+            await record_failure(
+                conn,
+                ProviderFailure(
+                    "platform-api:CLUE_OPENROUTER_API_KEY",
+                    "refusal",
+                    "key_missing",
+                    "CLUE_OPENROUTER_API_KEY is not set",
+                ),
+                surface="startup",
+                workspace_id=None,
+                now=NOW,
+            )
+            return await open_incidents(conn, providers=["openrouter"])
+
+    assert run_async(scenario()) == ()

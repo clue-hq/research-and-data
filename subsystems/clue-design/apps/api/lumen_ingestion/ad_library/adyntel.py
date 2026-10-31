@@ -212,6 +212,8 @@ class AdyntelProvider:
                 "ad_library.transport_error",
                 f"{type(error).__name__}: {str(error)[:FAILURE_EXCERPT_MAX]}",
             ) from error
+        # A refusal (Adyntel out of credits, a rejected key) is written now, not when the job ends.
+        spend.flush_if_refused(ADYNTEL_PROVIDER_NAME, response.status, response.body)
         if response.status >= 400:
             excerpt = response.body.decode("utf-8", "replace")[:FAILURE_EXCERPT_MAX]
             raise AdLibraryError(

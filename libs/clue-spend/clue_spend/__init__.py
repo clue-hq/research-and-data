@@ -44,7 +44,6 @@ from .ledger import (
     BufferedLedger,
     BufferedRawSink,
     DrainReport,
-    FailureHook,
     HeldDrain,
     LedgerStamp,
     artifact_payload,
@@ -53,6 +52,7 @@ from .ledger import (
     ledger_id_for,
     record_drain,
 )
+from .observe import ConnFactory, Observe, record_observed_call
 from .openrouter import openrouter_cost_reader, openrouter_halt_rule
 from .sinks import (
     SECRET_HEADERS,
@@ -87,6 +87,9 @@ from .transport import (
 )
 
 __all__ = [
+    "ConnFactory",
+    "Observe",
+    "record_observed_call",
     "BROWSER_USER_AGENT",
     "DEFAULT_MAX_ATTEMPTS",
     "DEFAULT_RETRY_STATUSES",
@@ -107,7 +110,6 @@ __all__ = [
     "CostReading",
     "CostSource",
     "DrainReport",
-    "FailureHook",
     "FileRawSink",
     "HaltRule",
     "HttpRequest",

@@ -17,6 +17,7 @@ from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.research_fields import register_research_field_routes
 from clue_api.frontend_read.research_jobs import register_research_job_routes
 from clue_api.frontend_read.settings_authority import lock_manager, principal_for, refused
+from clue_api.provider_observers import provider_observer
 from clue_auth.errors import LifecycleTransitionError, MembershipPermissionError
 from clue_auth.principal import RequestPrincipal
 from clue_auth.providers.clerk_api import ClerkApi, ClerkApiError
@@ -203,7 +204,9 @@ def register_settings_routes(
     clerk_api: ClerkApi | None = None,
 ) -> None:
     secret = secrets.auth_clerk_secret_key if secrets else None
-    clerk = clerk_api or (ClerkApi(secret.get_secret_value()) if secret else None)
+    clerk = clerk_api or (
+        ClerkApi(secret.get_secret_value(), observe=provider_observer("clerk")) if secret else None
+    )
 
     register_research_field_routes(router, conn_factory=conn_factory)
     register_research_job_routes(router, conn_factory=conn_factory)

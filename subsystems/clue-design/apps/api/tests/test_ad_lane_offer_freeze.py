@@ -17,9 +17,15 @@ from lumen_api import ad_runtime
 from py_lumen_config import settings
 
 FROZEN = {
-    "card": {"prose": "bold, yellow, direct", "style_groups": [{"name": "holo"}]},
+    "card": {"prose": "bold, yellow, direct", "style_groups": []},
     "creative_assets": {"cr_1": "asset_1", "cr_2": "asset_2"},
-    "pregenerated": [{"asset_id": "gen_1", "style_group": "holo", "shape": "wide ground"}],
+    "pregenerated": [{"asset_id": "gen_1", "shape": "wide background"}],
+    "creatives": [
+        {"creative_id": "cr_1", "asset_id": "asset_1", "headline": "Spend less",
+         "commentary": "Ramp cuts costs.", "created_at": "2026-10-02T00:00:00+00:00"},
+        {"creative_id": "cr_2", "asset_id": "asset_2", "headline": None,
+         "commentary": None, "created_at": "2026-10-01T00:00:00+00:00"},
+    ],
 }
 
 
@@ -31,7 +37,8 @@ class _RecordingStore:
 
     def list_creatives(self, *, limit: int = 50) -> list[dict]:
         self.calls.append("list_creatives")
-        return [{"creative_id": "cr_9", "asset_id": "asset_9"}]
+        return [{"creative_id": "cr_9", "asset_id": "asset_9", "headline": "H9",
+                 "commentary": "C9", "created_at": "2026-10-03T00:00:00+00:00"}]
 
     def latest_card(self, **_kwargs: Any) -> Optional[dict]:
         self.calls.append("latest_card")
@@ -135,3 +142,57 @@ def test_shared_reduction_constants_still_exported() -> None:
 
     assert ad_runtime.CREATIVE_SCAN == shared.CREATIVE_SCAN == 200
     assert ad_runtime.PREGENERATED_CONTEXT_MAX == shared.PREGENERATED_CONTEXT_MAX == 12
+
+
+def test_the_frozen_lane_carries_each_creatives_headline_and_copy() -> None:
+    lane = ad_runtime.lane_from_frozen(FROZEN)
+    assert lane is not None
+    assert lane.creatives[0]["headline"] == "Spend less"
+    assert ad_runtime.lane_from_frozen(ad_runtime.lane_to_frozen(lane)) == lane
+
+
+def test_a_legacy_frozen_lane_without_creatives_still_lists_them_blank() -> None:
+    """A fleet turn offered before 2026-10-30 carries no ``creatives``; never a failed turn."""
+    lane = ad_runtime.lane_from_frozen(
+        {"card": None, "creative_assets": {"c1": "a1"}, "pregenerated": []}
+    )
+    assert lane is not None
+    assert lane.creatives == (
+        {"creative_id": "c1", "asset_id": "a1", "headline": None, "commentary": None,
+         "created_at": None},
+    )
+
+
+def test_the_offerer_freezes_each_creatives_headline_and_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "lumen_brand_ad_assets", True, raising=False)
+    frozen = ad_runtime.frozen_lane_payload("ws_test", store=_RecordingStore())
+    assert frozen is not None
+    assert frozen["creatives"] == [
+        {"creative_id": "cr_9", "asset_id": "asset_9", "headline": "H9", "commentary": "C9",
+         "created_at": "2026-10-03T00:00:00+00:00"}
+    ]
+
+
+def test_nothing_auto_attaches_any_more() -> None:
+    for retired in ("select_reference_asset_ids", "choose_style_group", "AUTO_REFERENCE_MAX"):
+        assert not hasattr(ad_runtime, retired)
+
+
+def test_the_offerer_freezes_only_the_post_copy_the_list_shows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The list shows 200 characters of post copy; a queued turn carries no more than that."""
+
+    class _LongCopyStore(_RecordingStore):
+        def list_creatives(self, *, limit: int = 50) -> list[dict]:
+            return [{"creative_id": "cr_9", "asset_id": "asset_9", "headline": "H9",
+                     "commentary": "word  " * 100, "created_at": None}]
+
+    monkeypatch.setattr(settings, "lumen_brand_ad_assets", True, raising=False)
+    frozen = ad_runtime.frozen_lane_payload("ws_test", store=_LongCopyStore())
+    assert frozen is not None
+    commentary = frozen["creatives"][0]["commentary"]
+    assert len(commentary) <= 200
+    assert commentary.startswith("word word word")

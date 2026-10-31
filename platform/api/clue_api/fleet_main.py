@@ -186,6 +186,7 @@ from clue_api.project_execution_router import (
 from clue_api.project_library_refresh import ProjectLibraryRefresher
 from clue_api.prose_synthesis_step import ProseSynthesisStep
 from clue_api.prose_synthesis_tools import ProseSynthesisServices
+from clue_api.provider_observers import provider_observer
 from clue_api.recipe_wiring import (
     build_recipe_lifecycle,
     build_recipe_pin_registry,
@@ -615,7 +616,9 @@ async def _exa_discovery_loop(
 
     if not isinstance(api_key, SecretStr):
         raise TypeError("Exa discovery worker requires a SecretStr API key")
-    async with ExaWebsetsClient(api_key=api_key, lookup_attempts=1) as client:
+    async with ExaWebsetsClient(
+        api_key=api_key, lookup_attempts=1, observe=provider_observer("exa_websets")
+    ) as client:
         worker = ExaDiscoveryWakeWorker(
             lifecycle=DurableExaWebsetLifecycle(transport=client, storage=storage),
             materializer=ExaWebsetsD4Materializer(storage=storage),
@@ -670,7 +673,9 @@ def _build_exa_discovery_starter(
             "Exa Websets lifecycle is enabled but CLUE_EXA_API_KEY is not configured"
         )
     return ExaWebsetsDiscoveryStarter(
-        transport_factory=lambda: ExaWebsetsClient(api_key=api_key, lookup_attempts=1),
+        transport_factory=lambda: ExaWebsetsClient(
+            api_key=api_key, lookup_attempts=1, observe=provider_observer("exa_websets")
+        ),
         storage=storage,
         enforce_budget=settings.budget_controls_enabled,
     )
@@ -687,7 +692,9 @@ async def _exa_targeted_enrichment_loop(
 
     if not isinstance(api_key, SecretStr):
         raise TypeError("Exa targeted enrichment worker requires a SecretStr API key")
-    async with ExaWebsetsClient(api_key=api_key, lookup_attempts=1) as client:
+    async with ExaWebsetsClient(
+        api_key=api_key, lookup_attempts=1, observe=provider_observer("exa_websets")
+    ) as client:
         worker = ExaTargetedEnrichmentWorker(
             coordinator=ExaTargetedEnrichmentCoordinator(
                 transport=client,
@@ -1075,6 +1082,16 @@ async def _serve() -> None:
         db_lifespan(),
         redis_lifespan(),
     ):
+        # Design 2026-10-31: a missing provider key opens a provider incident (one Sentry event).
+        # The ingestion pool reads this same env file on the worker VM, so this check covers it.
+        from clue_obs.sentry import sentry_is_installed
+
+        if sentry_is_installed():
+            from clue_spend.key_check import check_provider_keys, startup_environ
+
+            provider_key_check = asyncio.create_task(  # noqa: F841 - held so it is not collected
+                check_provider_keys(transaction, role="worker", environ=startup_environ())
+            )
         register_compliance_wiring()
         register_narrative_wiring()
         register_arv2_wiring()

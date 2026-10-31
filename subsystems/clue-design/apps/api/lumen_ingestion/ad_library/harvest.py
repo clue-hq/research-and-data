@@ -40,14 +40,16 @@ __all__ = [
 
 JsonObject = dict[str, Any]
 
-#: Pages per harvest. One page is ~24–25 ads and ~1 credit (spec §5 W2), so three pages is
-#: ~75 ads for ~3 credits — comfortably more than the 10–15 creatives the lane keeps, and a
-#: bound the caller can lower but never accidentally lose.
-DEFAULT_MAX_PAGES = 3
+#: Pages per harvest. One page is ~24–25 ads and ~1 credit (spec §5 W2), so eight pages is
+#: ~200 ads for ~8 credits — room for the 50 creatives the lane keeps after filtering, and a
+#: bound the caller can lower but never accidentally lose. Matches automatic onboarding's
+#: ``CLUE_BRAND_AD_ASSETS_AUTO_MAX_PAGES``.
+DEFAULT_MAX_PAGES = 8
 
-#: Kept creatives per harvest (spec: "target 10–15"). The cap is applied AFTER filtering and
+#: Kept creatives per harvest (founder 2026-10-30: 50, matching automatic onboarding's
+#: ``CLUE_BRAND_AD_ASSETS_AUTO_MAX_CREATIVES``). The cap is applied AFTER filtering and
 #: de-duplication so it counts usable creatives, not raw ads.
-DEFAULT_MAX_CREATIVES = 15
+DEFAULT_MAX_CREATIVES = 50
 
 #: The media class the lane wants. Video, carousel and document creatives are out of scope
 #: for v1 (spec §7) — a video's "image" is only its cover frame, and a carousel is several

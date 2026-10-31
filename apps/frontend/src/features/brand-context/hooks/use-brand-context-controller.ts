@@ -255,10 +255,19 @@ export function useBrandContextController({
     setAssetRenameValue("");
   }
 
-  function deleteAsset(assetId: string) {
+  async function deleteAsset(assetId: string) {
+    // Hidden at once; the design API archives it so neither the page nor the design agent finds
+    // it again. A refusal puts the card back (the library shows the error).
     setHiddenAssetIds((current) => new Set(current).add(assetId));
     setAssetMenuId(null);
     if (selectedAssetId === assetId) closeAsset();
+    if (!(await assetLibrary.remove(assetId))) {
+      setHiddenAssetIds((current) => {
+        const next = new Set(current);
+        next.delete(assetId);
+        return next;
+      });
+    }
   }
 
   function editAssetDetails(assetId: string) {

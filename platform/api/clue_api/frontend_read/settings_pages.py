@@ -463,7 +463,13 @@ def build_cloudflare_client(
     )
     if not token or not settings.cloudflare_zone_id:
         return None
-    return CloudflareCustomHostnames(zone_id=settings.cloudflare_zone_id, api_token=token)
+    from clue_api.provider_observers import provider_observer
+
+    return CloudflareCustomHostnames(
+        zone_id=settings.cloudflare_zone_id,
+        api_token=token,
+        observe=provider_observer("cloudflare"),
+    )
 
 
 def register_settings_pages_routes(

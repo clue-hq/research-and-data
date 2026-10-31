@@ -2,9 +2,9 @@
 
 Two halves, matching the two things a scene turn takes out of the lane:
 
-* **Selection** — pure, no database and no model call. `select_reference_asset_ids` takes its
-  group-picker as a seam, so both branches (the match and the deterministic fallback) are
-  driven directly.
+* **No selection** (founder ruling 2026-10-30, reference ads spec §5.4): the platform no longer
+  picks ads for a turn. The agent gets the whole list and opens what it wants; only the person's
+  own attachments ride as references.
 * **Composition** — a real scene turn through `run_agent_turn_preview`, with the lane's STORE
   faked and everything downstream real: the flag check, the manifest build against real
   uploaded assets, and the config the runtime is handed. Faking the store rather than
@@ -96,15 +96,6 @@ class _FakeStore:
 # --- the cap ----------------------------------------------------------------------------------
 
 
-def test_the_auto_cap_is_the_same_four_as_the_manual_cap() -> None:
-    """Founder ruling 2026-08-24: the reference cap is FOUR, and it is one number. Two
-    constants exist only because `main` imports `ad_runtime` and not the reverse."""
-    assert ad_runtime.AUTO_REFERENCE_MAX == REFERENCE_ASSETS_MAX == 4
-
-
-# --- reading the lane -------------------------------------------------------------------------
-
-
 def test_a_flag_off_process_never_even_asks_the_database(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -165,8 +156,8 @@ def test_the_lane_now_carries_the_pregenerated_grounds_for_the_active_card(
     # Pinned to the ACTIVE card version, never the lineage.
     assert "list_pregenerated:adna_kit:3" in store.calls
     assert lane.pregenerated == (
-        {"asset_id": "asset_gen_aaaa1111", "style_group": "Deep Field", "shape": "wide ground"},
-        {"asset_id": "asset_gen_bbbb2222", "style_group": "Deep Field", "shape": "square ground"},
+        {"asset_id": "asset_gen_aaaa1111", "shape": "wide background"},
+        {"asset_id": "asset_gen_bbbb2222", "shape": "square background"},
     )
     assert ad_runtime.context_pregenerated(lane) == [dict(e) for e in lane.pregenerated]
 
@@ -285,120 +276,6 @@ def test_an_undistilled_lane_still_serves_its_creatives(
 # --- selection --------------------------------------------------------------------------------
 
 
-def test_the_matched_group_decides_which_creatives_ride() -> None:
-    lane = _lane(
-        [
-            {"name": "Deep Field", "creative_ids": ["adcre_a", "adcre_b"]},
-            {"name": "Photo Poster", "creative_ids": ["adcre_c"]},
-        ],
-        {"adcre_a": "asset_a", "adcre_b": "asset_b", "adcre_c": "asset_c"},
-    )
-    asked: list[tuple[str, list[str]]] = []
-
-    def choose(brief: str, names: list[str]) -> str:
-        asked.append((brief, names))
-        return "Photo Poster"
-
-    assert ad_runtime.select_reference_asset_ids(
-        "a photographic launch ad", lane, choose=choose
-    ) == ["asset_c"]
-    assert asked == [("a photographic launch ad", ["Deep Field", "Photo Poster"])]
-
-
-def test_a_single_group_is_not_worth_a_model_call() -> None:
-    lane = _lane(
-        [{"name": "Deep Field", "creative_ids": ["adcre_b", "adcre_a"]}],
-        {"adcre_a": "asset_a", "adcre_b": "asset_b"},
-    )
-
-    def choose(brief: str, names: list[str]) -> str:
-        raise AssertionError("nothing to choose between; the call must be skipped")
-
-    assert ad_runtime.select_reference_asset_ids("an ad", lane, choose=choose) == [
-        "asset_b",
-        "asset_a",
-    ]
-
-
-def test_a_failed_or_nonsense_pick_falls_back_to_the_most_recent_creatives() -> None:
-    """RED CASE. The fallback is not decoration: the picker is a network call, and a turn
-    that loses its references to a flaky tie-break has lost the whole feature. It is also
-    what refuses an INVENTED group — the answer is matched against the known names."""
-    lane = _lane(
-        [
-            {"name": "Deep Field", "creative_ids": ["adcre_c"]},
-            {"name": "Photo Poster", "creative_ids": ["adcre_b"]},
-        ],
-        {"adcre_a": "asset_a", "adcre_b": "asset_b", "adcre_c": "asset_c"},
-    )
-
-    def exploding(brief: str, names: list[str]) -> str:
-        raise RuntimeError("the gateway is on fire")
-
-    recency = ["asset_a", "asset_b", "asset_c"]
-    assert ad_runtime.select_reference_asset_ids("an ad", lane, choose=exploding) == recency
-    assert (
-        ad_runtime.select_reference_asset_ids("an ad", lane, choose=lambda *_a: None) == recency
-    )
-    assert (
-        ad_runtime.select_reference_asset_ids(
-            "an ad", lane, choose=lambda *_a: "The Neon One"
-        )
-        == recency
-    )
-
-
-def test_a_quoted_or_chatty_answer_still_resolves_to_its_group() -> None:
-    """The answer is free text out of a language model. It may not INVENT a group; it may
-    well arrive quoted or wrapped in a sentence."""
-    lane = _lane(
-        [{"name": "Deep Field", "creative_ids": ["adcre_a"]}, {"name": "Photo", "ids": []}],
-        {"adcre_a": "asset_a", "adcre_z": "asset_z"},
-    )
-    for answer in ('"Deep Field"', "Deep Field.", "I would use Deep Field"):
-        assert ad_runtime.select_reference_asset_ids(
-            "an ad", lane, choose=lambda *_a, _answer=answer: _answer
-        ) == ["asset_a"], answer
-
-
-def test_a_group_whose_creatives_no_longer_resolve_falls_back_rather_than_attaching_none() -> None:
-    """A re-harvest replaces creative rows; a card version pinned to the old ones is a stale
-    pointer, not a reason to send the turn in blind."""
-    lane = _lane(
-        [
-            {"name": "Deep Field", "creative_ids": ["adcre_gone"]},
-            {"name": "Photo Poster", "creative_ids": ["adcre_a"]},
-        ],
-        {"adcre_a": "asset_a"},
-    )
-    assert ad_runtime.select_reference_asset_ids(
-        "an ad", lane, choose=lambda *_a: "Deep Field"
-    ) == ["asset_a"]
-
-
-def test_selection_is_capped_at_four_on_both_branches() -> None:
-    many = {f"adcre_{n}": f"asset_{n}" for n in range(9)}
-    grouped = _lane([{"name": "One", "creative_ids": list(many)}], many)
-    assert len(ad_runtime.select_reference_asset_ids("an ad", grouped)) == 4
-
-    ungrouped = ad_runtime.AdLane(card=None, creative_assets=many)
-    assert ad_runtime.select_reference_asset_ids("an ad", ungrouped) == [
-        "asset_0",
-        "asset_1",
-        "asset_2",
-        "asset_3",
-    ]
-
-
-def test_an_undistilled_lane_selects_by_recency_without_a_model_call() -> None:
-    lane = ad_runtime.AdLane(card=None, creative_assets={"adcre_a": "asset_a"})
-
-    def choose(brief: str, names: list[str]) -> str:
-        raise AssertionError("there is no card to name a group from")
-
-    assert ad_runtime.select_reference_asset_ids("an ad", lane, choose=choose) == ["asset_a"]
-
-
 # --- composition into the turn ----------------------------------------------------------------
 
 
@@ -451,14 +328,14 @@ def _turn(prompt: str = "Design a launch ad", **overrides: Any) -> AgentTurnPrev
     return AgentTurnPreviewRequest(**payload)
 
 
-def test_a_scene_turn_with_no_attachments_gets_the_brands_own_published_ads(
+def test_a_scene_turn_with_no_attachments_carries_no_references(
     client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """W4's whole point: the marketer says "make me an ad" and the run is conditioned on this
-    brand's real creative, with nobody hand-feeding anything (spec §5 W5's "no hand-fed")."""
+    """Founder ruling 2026-10-30: nothing is auto-attached. The agent sees every ad in its list
+    and opens the ones it wants; the brand's ad description still rides."""
     monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     monkeypatch.setattr(settings, "lumen_brand_ad_assets", True, raising=False)
-    creatives = _harvested(client, monkeypatch)
+    _harvested(client, monkeypatch)
     captured = _stub_scene_turn_runtime(monkeypatch)
 
     run_agent_turn_preview(
@@ -466,12 +343,7 @@ def test_a_scene_turn_with_no_attachments_gets_the_brands_own_published_ads(
     )
 
     config = captured["config"]
-    assert set(config.reference_assets or {}) == set(creatives)
-    # A real by-value manifest, not a list of ids: the runtime never reads the API database.
-    for entry in config.reference_assets.values():
-        assert entry["preview_digest"]
-        assert entry["record"]["id"] in creatives
-    # And the description rides alongside.
+    assert not config.reference_assets
     assert config.ad_dna_card["prose"] == PROSE
 
 
@@ -516,33 +388,7 @@ def test_the_flag_off_turn_is_byte_identical_to_a_pre_w4_one(
     assert config.ad_pregenerated_assets is None
 
 
-def test_the_selected_group_decides_which_published_ads_reach_the_run(
-    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
-    monkeypatch.setattr(settings, "lumen_brand_ad_assets", True, raising=False)
-    first, second = _harvested(
-        client,
-        monkeypatch,
-        groups=[
-            {"name": "Deep Field", "creative_ids": ["adcre_one"]},
-            {"name": "Photo Poster", "creative_ids": ["adcre_two"]},
-        ],
-    )
-    monkeypatch.setattr(ad_runtime, "choose_style_group", lambda *_a: "Photo Poster")
-    captured = _stub_scene_turn_runtime(monkeypatch)
-
-    run_agent_turn_preview(
-        _turn("a photographic ad"),
-        repo_root(),
-        workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"],
-    )
-
-    assert list(captured["config"].reference_assets) == [second]
-    assert first not in (captured["config"].reference_assets or {})
-
-
-def test_the_platform_design_leg_path_auto_attaches_too(
+def test_the_platform_design_leg_path_carries_the_card_and_no_auto_references(
     client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The DEMO path, and the one that used to be silently inert.
@@ -554,9 +400,9 @@ def test_the_platform_design_leg_path_auto_attaches_too(
     reading a bare ``.get`` ``None`` as "resolved: no references" — which is exactly what made
     every accepted platform reference inert before that fix.
 
-    W4 hangs off that same in-worker branch, so the chat-driven ad turn gets the brand's own
-    published ads with nothing hand-fed. This test drives the REAL executor with a key-less
-    leg envelope to prove the whole chain, rather than asserting the sentinel and hoping.
+    The chat-driven ad turn gets the brand's ad description through that same in-worker branch,
+    and — since 2026-10-30 — no auto-attached references. This test drives the REAL executor with
+    a key-less leg envelope to prove the whole chain, rather than asserting the sentinel and hoping.
     """
     from clue_design.envelopes import DesignTurnEnvelope
     from clue_design.runs import work_id_for_run
@@ -566,7 +412,7 @@ def test_the_platform_design_leg_path_auto_attaches_too(
     monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     monkeypatch.setattr(settings, "lumen_brand_ad_assets", True, raising=False)
     workspace_id = os.environ["LUMEN_DEV_WORKSPACE_ID"]
-    creatives = _harvested(client, monkeypatch)
+    _harvested(client, monkeypatch)
     captured = _stub_scene_turn_runtime(monkeypatch)
 
     run_id = f"run_{uuid4().hex}"
@@ -594,9 +440,9 @@ def test_the_platform_design_leg_path_auto_attaches_too(
     )
 
     config = captured["config"]
-    assert set(config.reference_assets or {}) == set(creatives)
+    assert not config.reference_assets
     assert config.ad_dna_card["prose"] == PROSE
-    # The leg's brief still rides the prompt — auto-attach did not displace anything.
+    # The leg's brief still rides the prompt.
     assert "A launch ad for the new plan." in captured.get("prompt", "")
 
 
@@ -655,27 +501,125 @@ def test_a_legs_own_attachments_survive_the_key_less_envelope_and_beat_auto_atta
         assert auto not in captured["config"].reference_assets
 
 
-def test_an_unresolvable_auto_attachment_costs_the_references_not_the_turn(
+# --- the brand's ad list (spec 2026-10-30, reference ads §5.5) -------------------------------
+
+
+def _entry(asset_id: str, creative_type: Optional[str], *, created_at: str = "2026-09-01",
+           title: str = "", width: int = 0, height: int = 0, marked: bool = False) -> dict:
+    record: dict = {"id": asset_id, "kind": "raster_image", "status": "ready"}
+    if width:
+        record["raster"] = {"pixel_width": width, "pixel_height": height}
+    entry: dict = {"record": record, "created_at": created_at, "title": title,
+                   "description": f"About {asset_id}."}
+    if creative_type is not None:
+        entry["creative_type"] = creative_type
+        entry["asset_context"] = {"classification_origin": "human" if marked else "ai"}
+    return entry
+
+
+def _ads_lane() -> ad_runtime.AdLane:
+    return ad_runtime.AdLane(
+        card=None,
+        creative_assets={"c1": "a1", "c2": "a2"},
+        creatives=(
+            {"creative_id": "c1", "asset_id": "a1", "headline": "H1", "commentary": "Copy 1",
+             "created_at": "2026-10-02"},
+            {"creative_id": "c2", "asset_id": "a2", "headline": None, "commentary": None,
+             "created_at": "2026-10-01"},
+        ),
+    )
+
+
+def test_the_list_holds_harvested_ads_and_person_marked_ones_newest_first() -> None:
+    library = {
+        "a1": _entry("a1", "ad", title="T1", width=1200, height=628),
+        "a2": _entry("a2", "ad"),
+        "a3": _entry("a3", "ad", created_at="2026-10-03", marked=True),
+        "a4": _entry("a4", "photo"),
+    }
+    ads = ad_runtime.context_brand_ads(_ads_lane(), library)
+    assert [ad["asset_id"] for ad in ads] == ["a3", "a1", "a2"]
+    assert ads[0]["from"] == "marked_by_person" and ads[1]["from"] == "linkedin_ad"
+    assert ads[1]["headline"] == "H1" and ads[1]["commentary"] == "Copy 1"
+    assert ads[1]["title"] == "T1" and ads[1]["description"] == "About a1."
+    assert (ads[1]["width"], ads[1]["height"]) == (1200, 628)
+    assert (ads[2]["width"], ads[2]["height"]) == (None, None)
+
+
+def test_a_harvested_ad_the_person_retyped_leaves_the_list() -> None:
+    library = {"a1": _entry("a1", "photo"), "a2": _entry("a2", "ad")}
+    assert [ad["asset_id"] for ad in ad_runtime.context_brand_ads(_ads_lane(), library)] == ["a2"]
+
+
+def test_a_harvested_ad_with_no_description_is_still_listed() -> None:
+    library = {"a1": _entry("a1", None), "a2": _entry("a2", "ad")}
+    assert [ad["asset_id"] for ad in ad_runtime.context_brand_ads(_ads_lane(), library)] == ["a1", "a2"]
+
+
+def test_a_harvested_ad_missing_from_the_library_is_left_out() -> None:
+    assert [ad["asset_id"] for ad in ad_runtime.context_brand_ads(_ads_lane(), {"a2": _entry("a2", "ad")})] == ["a2"]
+
+
+def test_person_marked_ads_are_listed_with_no_lane() -> None:
+    ads = ad_runtime.context_brand_ads(None, {"a3": _entry("a3", "ad", marked=True)})
+    assert [(ad["asset_id"], ad["from"]) for ad in ads] == [("a3", "marked_by_person")]
+
+
+def test_a_harvested_ad_outside_the_lane_is_still_called_a_linkedin_ad() -> None:
+    """Only code calls an asset an ad without a person: an un-overridden ``ad`` is harvested."""
+    ads = ad_runtime.context_brand_ads(None, {"a1": _entry("a1", "ad")})
+    assert [(ad["asset_id"], ad["from"]) for ad in ads] == [("a1", "linkedin_ad")]
+
+
+def test_no_ads_is_none() -> None:
+    assert ad_runtime.context_brand_ads(None, {"a4": _entry("a4", "photo")}) is None
+    assert ad_runtime.context_brand_ads(_ads_lane(), None) is None
+
+
+def test_a_turn_carries_the_list_even_with_the_lane_off(
     client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """RED CASE, and the one deliberate asymmetry against the manual path: a bad attachment
-    the HUMAN made is a loud 422 (explicit intent), but one the platform suggested must never
-    be able to fail the turn."""
+    """The flag gates the harvest lane, not the person's own "Ad" choice (spec §5.5)."""
     monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
-    monkeypatch.setattr(settings, "lumen_brand_ad_assets", True, raising=False)
-    store = _FakeStore(
-        [{"creative_id": "adcre_ghost", "asset_id": "asset_never_uploaded"}],
-        card={"card": {"schema_version": 2, "prose": PROSE, "style_groups": []}},
-    )
-    import lumen_ingestion.ad_library.store as store_mod
-
-    monkeypatch.setattr(store_mod, "AdAssetsStore", lambda **_kwargs: store)
+    monkeypatch.setattr(settings, "lumen_brand_ad_assets", False, raising=False)
+    marked = upload_logo(client, label="Our print ad").json()["asset"]["id"]
     captured = _stub_scene_turn_runtime(monkeypatch)
+    from lumen_api import main as main_module
+
+    real = main_module.resolve_scene_turn_asset_library
+
+    def library_with_marked_ad(*args: Any, **kwargs: Any):
+        library = real(*args, **kwargs) or {}
+        library[marked] = {**library.get(marked, {}), "creative_type": "ad"}
+        return library
+
+    monkeypatch.setattr(main_module, "resolve_scene_turn_asset_library", library_with_marked_ad)
 
     run_agent_turn_preview(
         _turn(), repo_root(), workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"]
     )
 
-    assert captured["config"].reference_assets is None
-    # The description is independent of the references and still rides.
+    assert [ad["asset_id"] for ad in captured["config"].brand_ads] == [marked]
+
+
+def test_a_list_that_cannot_be_built_costs_the_list_not_the_turn(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Spec anti-goal: a turn never fails because the ad list can't be read."""
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
+    monkeypatch.setattr(settings, "lumen_brand_ad_assets", True, raising=False)
+    _harvested(client, monkeypatch)
+    captured = _stub_scene_turn_runtime(monkeypatch)
+
+    def broken(*_args: Any) -> None:
+        raise ValueError("a malformed library entry")
+
+    monkeypatch.setattr(ad_runtime, "context_brand_ads", broken)
+
+    run_agent_turn_preview(
+        _turn(), repo_root(), workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    )
+
+    assert "config" in captured, "the turn reached the runtime"
+    assert captured["config"].brand_ads is None
     assert captured["config"].ad_dna_card["prose"] == PROSE

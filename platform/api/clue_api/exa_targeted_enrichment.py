@@ -32,6 +32,7 @@ from clue_api.exa_websets_submit import (
     DEFAULT_EXA_WEBSETS_PRICING,
     ExaWebsetsPricingPolicy,
 )
+from clue_api.provider_observers import provider_observer
 from clue_config import Secrets, Settings
 from clue_core import (
     BudgetScope,
@@ -1664,7 +1665,9 @@ def build_production_exa_targeted_starter(
         )
     api_key = secrets.exa_api_key
     return ExaTargetedEnrichmentStarter(
-        transport_factory=lambda: ExaWebsetsClient(api_key=api_key, lookup_attempts=1),
+        transport_factory=lambda: ExaWebsetsClient(
+            api_key=api_key, lookup_attempts=1, observe=provider_observer("exa_websets")
+        ),
         storage=storage,
         enforce_budget=settings.budget_controls_enabled,
     )

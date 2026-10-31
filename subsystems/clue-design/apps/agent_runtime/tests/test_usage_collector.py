@@ -149,3 +149,34 @@ def test_a_failed_governed_call_still_records_the_model_it_asked_for() -> None:
     (call,) = collector.calls
     assert call.status == "failed"
     assert call.requested_model == "openai/gpt-6.1-sol"
+
+
+class _Refused(Exception):
+    status_code = 402
+
+
+def test_a_refused_call_carries_its_classified_failure_for_the_design_provider() -> None:
+    """Design 2026-10-31: a design agent's model refusal opens the design provider's incident."""
+    collector = ModelCallCollector()
+    run_id = uuid4()
+    collector.on_chat_model_start({}, [[]], run_id=run_id, invocation_params={"model": "m"})
+    collector.on_llm_error(_Refused("Insufficient credits"), run_id=run_id)
+    (call,) = collector.calls
+    assert call.provider_failure == {
+        "kind": "refusal",
+        "reason": "credits_exhausted",
+        "message": "Insufficient credits",
+        "provider": "openrouter_design",
+    }
+
+
+def test_a_timeout_is_a_failure_and_a_success_carries_none() -> None:
+    collector = ModelCallCollector()
+    failed, ok = uuid4(), uuid4()
+    collector.on_chat_model_start({}, [[]], run_id=failed, invocation_params={"model": "m"})
+    collector.on_llm_error(TimeoutError("slow"), run_id=failed)
+    collector.on_chat_model_start({}, [[]], run_id=ok, invocation_params={"model": "m"})
+    collector.on_llm_end(_result(), run_id=ok)
+    timed_out, answered = collector.calls
+    assert timed_out.provider_failure is not None and timed_out.provider_failure["reason"] == "timeout"
+    assert answered.provider_failure is None

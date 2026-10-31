@@ -347,3 +347,92 @@ def test_get_many_returns_only_the_callers_workspace(require_design_db: None) ->
             await txn.rollback()
 
     run_async(_check())
+
+
+# --- harvested ads are ads at the read seam (spec 2026-10-30, reference ads §5.2) -------------
+
+
+async def _harvest(conn: AsyncConnection, ws: str, asset_id: str) -> None:
+    """One ``design_ad_creative`` row for ``asset_id`` — what the Adyntel harvest writes."""
+    await conn.execute(
+        text(
+            "INSERT INTO design_ad_creative (creative_id, workspace_id, harvest_job_id, provider,"
+            " ad_id, creative_url, asset_id, fetched_at, provenance_json) VALUES (:c, :w, 'job',"
+            " 'adyntel', :c, 'https://example.com/ad.png', :a, now(), '{}'::jsonb)"
+        ),
+        {"c": f"cr_{uuid4().hex[:10]}", "w": ws, "a": asset_id},
+    )
+
+
+async def _describe(conn: AsyncConnection, ws: str, asset_id: str, ai_type: str) -> None:
+    await design_descriptions.put_ai(
+        conn, workspace_id=ws, asset_id=asset_id, title="T", description="D.", usage="U.",
+        tags=[], model="some/model",
+    )
+    await conn.execute(
+        text(
+            "UPDATE design_asset_description SET analysis_json = CAST(:j AS jsonb)"
+            " WHERE asset_id = :a AND workspace_id = :w"
+        ),
+        {"j": f'{{"creative_type": "{ai_type}"}}', "a": asset_id, "w": ws},
+    )
+
+
+def test_get_many_marks_harvested_assets_as_ads(require_design_db: None) -> None:
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            ws = await _seed_ws(conn)
+            harvested = await _seed_asset(conn, ws)
+            plain = await _seed_asset(conn, ws)
+            await _harvest(conn, ws, harvested)
+            await _describe(conn, ws, harvested, "photo")
+            await _describe(conn, ws, plain, "ad")
+            rows = await design_descriptions.get_many(
+                conn, workspace_id=ws, asset_ids=[harvested, plain]
+            )
+            assert rows[harvested]["creative_type"] == "ad"
+            assert rows[plain]["creative_type"] == "other"
+            await txn.rollback()
+
+    run_async(_check())
+
+
+def test_a_harvested_asset_with_no_row_appears_only_when_stubs_are_asked_for(
+    require_design_db: None,
+) -> None:
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            ws = await _seed_ws(conn)
+            harvested = await _seed_asset(conn, ws)
+            undescribed = await _seed_asset(conn, ws)
+            await _harvest(conn, ws, harvested)
+            ids = [harvested, undescribed]
+            assert await design_descriptions.get_many(conn, workspace_id=ws, asset_ids=ids) == {}
+            rows = await design_descriptions.get_many(
+                conn, workspace_id=ws, asset_ids=ids, harvested_stubs=True
+            )
+            assert list(rows) == [harvested]
+            assert rows[harvested]["asset_id"] == harvested
+            assert rows[harvested]["creative_type"] == "ad"
+            assert rows[harvested]["status"] == "stale"
+            await txn.rollback()
+
+    run_async(_check())
+
+
+def test_another_workspaces_harvest_does_not_make_an_asset_an_ad(require_design_db: None) -> None:
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            ws_a = await _seed_ws(conn)
+            ws_b = await _seed_ws(conn)
+            asset_a = await _seed_asset(conn, ws_a)
+            asset_b = await _seed_asset(conn, ws_b)
+            await _harvest(conn, ws_b, asset_b)
+            await _describe(conn, ws_a, asset_a, "photo")
+            rows = await design_descriptions.get_many(
+                conn, workspace_id=ws_a, asset_ids=[asset_a, asset_b], harvested_stubs=True
+            )
+            assert list(rows) == [asset_a] and rows[asset_a]["creative_type"] == "photo"
+            await txn.rollback()
+
+    run_async(_check())

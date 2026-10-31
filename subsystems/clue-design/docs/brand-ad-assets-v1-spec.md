@@ -91,6 +91,12 @@ Failure ledger from the POCs = enumerated requirements (§5 W1).
 
 ## 4. Architecture — the Brand Ad Assets lane
 
+**[SUPERSEDED 2026-10-30 — reference ads, `docs/superpowers/specs/2026-10-30-design-reference-ads-design.md`
+(repo root): style groups are retired (the card is prose only; `style_groups` stays in the
+stored payload, always empty), nothing is auto-attached, the agent gets the brand's whole ad
+list in `ad-assets.md` and opens the ones it wants, and pre-generation makes one background
+from each of up to four different ads.]**
+
 A brand-kit-adjacent, versioned lane populated at onboarding, three artifact
 kinds:
 
@@ -176,6 +182,12 @@ implementation.
   it. Waking it is a later ruling.]**
 
 ### W4 — runtime composition
+
+**[AUTO-ATTACH AND SELECTION SUPERSEDED 2026-10-30 — reference ads, `docs/superpowers/specs/2026-10-30-design-reference-ads-design.md`
+(repo root): style groups are retired (the card is prose only; `style_groups` stays in the
+stored payload, always empty), nothing is auto-attached, the agent gets the brand's whole ad
+list in `ad-assets.md` and opens the ones it wants, and pre-generation makes one background
+from each of up to four different ads.]**
 
 **[Status: BUILT, 2026-08-26, flag-gated by the same `LUMEN_BRAND_AD_ASSETS`.
 Flag off = byte-identical, proven. Built WITHOUT the composition corpus

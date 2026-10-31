@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -24,6 +24,10 @@ CreativeType = Literal[
     "other",
     "unknown",
 ]
+#: What the describing model may answer. Only code calls an asset an ad: a harvested ad is one
+#: by where it came from, and a person may mark any asset as one (spec 2026-10-30, reference ads).
+AI_CREATIVE_TYPES: tuple[str, ...] = tuple(value for value in get_args(CreativeType) if value != "ad")
+
 UsageRole = Literal[
     "section_background", "hero_image", "card_image", "inline_image", "reference_only"
 ]
@@ -153,11 +157,21 @@ def validate_analysis(value: dict[str, Any], occurrences: list[dict[str, Any]]) 
     return analysis
 
 
-def effective_context(row: dict[str, Any]) -> dict[str, Any]:
-    """Legacy scalar columns remain compatible, with richer fields added at the read seam."""
+def effective_context(row: dict[str, Any], *, harvested: bool = False) -> dict[str, Any]:
+    """Legacy scalar columns remain compatible, with richer fields added at the read seam.
+
+    The shown type follows one rule (spec 2026-10-30, reference ads §5.2): the person's choice;
+    else ``ad`` for an asset the Adyntel harvest brought in (``harvested``); else ``other`` where
+    the model said ``ad``; else the model's type.
+    """
     generated = row.get("analysis") or {}
     overrides = row.get("overrides") or {}
     result = {**row, **generated, **overrides}
+    if "creative_type" not in overrides:
+        if harvested:
+            result["creative_type"] = "ad"
+        elif result.get("creative_type") == "ad":
+            result["creative_type"] = "other"
     result["creative_type"] = result.get("creative_type") or "unknown"
     result["usage_roles"] = result.get("usage_roles") or []
     result["classification_origin"] = "human" if "creative_type" in overrides else "ai"

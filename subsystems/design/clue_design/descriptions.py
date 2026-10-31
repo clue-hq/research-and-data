@@ -41,7 +41,7 @@ from clue_design.asset_context import (
 _UPSERT_COLUMNS = "asset_id, workspace_id, title, description, usage, tags_json, origin, model"
 
 
-def _description_from_row(row: Any) -> JsonObject:
+def _description_from_row(row: Any, *, harvested: bool = False) -> JsonObject:
     return effective_context(
         {
             "asset_id": row.asset_id,
@@ -62,28 +62,60 @@ def _description_from_row(row: Any) -> JsonObject:
             "status": row.analysis_status,
             "diagnostic": load_json_opt(row.analysis_diagnostic_json),
             "job_id": row.analysis_job_id,
-        }
+        },
+        harvested=harvested,
     )
 
 
 async def get_many(
-    conn: AsyncConnection, *, workspace_id: str, asset_ids: list[str]
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    asset_ids: list[str],
+    harvested_stubs: bool = False,
 ) -> dict[str, JsonObject]:
     """The cache read: ``asset_id -> description`` for the caller's workspace only.
 
     One bound array (``= ANY(:ids)``) rather than the ported N placeholders — PG has no host
     parameter ceiling to chunk around.
+
+    An asset the Adyntel harvest brought in (it has a ``design_ad_creative`` row in this
+    workspace) reads as an ad (spec 2026-10-30, reference ads §5.2). ``harvested_stubs`` also
+    returns a bare context for a harvested asset with no description row, so the Assets page's
+    "Ad" filter shows it. Off by default: enrichment reads this as its cache, and a stub there
+    would look like a description already made.
     """
     if not asset_ids:
         return {}
+    params = {"w": workspace_id, "ids": list(asset_ids)}
+    harvested = {
+        row.asset_id
+        for row in await conn.execute(
+            text(
+                "SELECT DISTINCT asset_id FROM design_ad_creative"
+                " WHERE workspace_id = :w AND asset_id = ANY(:ids)"
+            ),
+            params,
+        )
+    }
     rows = await conn.execute(
         text(
             "SELECT * FROM design_asset_description"
             " WHERE workspace_id = :w AND asset_id = ANY(:ids)"
         ),
-        {"w": workspace_id, "ids": list(asset_ids)},
+        params,
     )
-    return {row.asset_id: _description_from_row(row) for row in rows}
+    found = {
+        row.asset_id: _description_from_row(row, harvested=row.asset_id in harvested)
+        for row in rows
+    }
+    if harvested_stubs:
+        for asset_id in asset_ids:
+            if asset_id in harvested and asset_id not in found:
+                found[asset_id] = effective_context(
+                    {"asset_id": asset_id, "status": "stale", "revision": 0}, harvested=True
+                )
+    return found
 
 
 async def put_ai(
