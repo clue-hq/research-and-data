@@ -35,8 +35,14 @@ onboarding where PDL answered 402 and nobody was told.
   collected calls after its receipts land — `record_design_run_incidents`).
 - A per-minute/per-second quota reply is a rate limit (Gemini bursts), not a first-sight refusal.
 - A failed key check logs its error type only (no traceback carrying the environment).
-- Deferred minors are listed in the plan ledger's `Final: minor` lines (retries counted, observed
-  rows' cost_source, design-side failure thresholds, PDL incident only at drain, etc.).
+- The review's minors were then all fixed (founder go, 2026-10-31): retried attempts are not
+  reported; "insufficient" needs funds/balance and a Composio 4xx on a tool run or connected
+  account is unclassified; observed rows say retry_exhausted / estimate (Websets); the threshold
+  reads the incident provider and design receipts carry provider_failed: codes; PDL/Adyntel
+  refusals flush the scope at once (`spend.flush_if_refused`); observing is a background task;
+  the key check closes retired keys, reads the design .env + .env.local, sends any unsent alert;
+  a drain logs one recorder_failed; research-card and two-writer race tests; FailureHook dropped,
+  sentry-sdk + python-dotenv declared; Exa + Exa Websets share one Sentry event per outage.
 
 ## Owed
 - Founder: the Sentry alert rule (spec §10); top up PDL; re-run Pallet ad onboarding afterwards.
