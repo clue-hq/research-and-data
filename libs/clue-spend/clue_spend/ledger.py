@@ -374,7 +374,9 @@ def _stamped_failure(row: LedgerRow) -> ProviderFailure | None:
         return None
     try:
         return ProviderFailure(
-            row.provider,
+            # A design-side row keeps ``provider='openrouter'`` for the cost views and names the
+            # incident it belongs to here (``openrouter_design``, design 2026-10-31).
+            str(stamped.get("provider") or row.provider),
             stamped["kind"],
             stamped["reason"],
             str(stamped.get("message", "")),
