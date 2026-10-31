@@ -186,6 +186,7 @@ from clue_api.project_execution_router import (
 from clue_api.project_library_refresh import ProjectLibraryRefresher
 from clue_api.prose_synthesis_step import ProseSynthesisStep
 from clue_api.prose_synthesis_tools import ProseSynthesisServices
+from clue_api.provider_observers import provider_observer
 from clue_api.recipe_wiring import (
     build_recipe_lifecycle,
     build_recipe_pin_registry,
@@ -615,7 +616,9 @@ async def _exa_discovery_loop(
 
     if not isinstance(api_key, SecretStr):
         raise TypeError("Exa discovery worker requires a SecretStr API key")
-    async with ExaWebsetsClient(api_key=api_key, lookup_attempts=1) as client:
+    async with ExaWebsetsClient(
+        api_key=api_key, lookup_attempts=1, observe=provider_observer("exa_websets")
+    ) as client:
         worker = ExaDiscoveryWakeWorker(
             lifecycle=DurableExaWebsetLifecycle(transport=client, storage=storage),
             materializer=ExaWebsetsD4Materializer(storage=storage),
@@ -670,7 +673,9 @@ def _build_exa_discovery_starter(
             "Exa Websets lifecycle is enabled but CLUE_EXA_API_KEY is not configured"
         )
     return ExaWebsetsDiscoveryStarter(
-        transport_factory=lambda: ExaWebsetsClient(api_key=api_key, lookup_attempts=1),
+        transport_factory=lambda: ExaWebsetsClient(
+            api_key=api_key, lookup_attempts=1, observe=provider_observer("exa_websets")
+        ),
         storage=storage,
         enforce_budget=settings.budget_controls_enabled,
     )
@@ -687,7 +692,9 @@ async def _exa_targeted_enrichment_loop(
 
     if not isinstance(api_key, SecretStr):
         raise TypeError("Exa targeted enrichment worker requires a SecretStr API key")
-    async with ExaWebsetsClient(api_key=api_key, lookup_attempts=1) as client:
+    async with ExaWebsetsClient(
+        api_key=api_key, lookup_attempts=1, observe=provider_observer("exa_websets")
+    ) as client:
         worker = ExaTargetedEnrichmentWorker(
             coordinator=ExaTargetedEnrichmentCoordinator(
                 transport=client,

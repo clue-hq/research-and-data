@@ -164,3 +164,52 @@ def test_team_webhook_admin_uses_collection_endpoints_and_one_time_secret() -> N
         assert dict(seen[1].url.params) == {"limit": "200"}
 
     asyncio.run(_run())
+
+
+def test_every_answer_is_reported_to_the_spend_layer_and_errors_are_unchanged() -> None:
+    """Design 2026-10-31: the client keeps its own transport and error taxonomy, and reports each
+    answer so a 402 opens a provider incident."""
+    from clue_research.adapters.exa_websets import ExaWebsetsPaymentRequired
+
+    async def _run() -> None:
+        observed: list[dict[str, object]] = []
+
+        async def observe(**call: object) -> None:
+            observed.append(call)
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(402, json={"error": "payment_required"}, request=request)
+
+        http = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        client = ExaWebsetsClient(
+            api_key=SecretStr("test-key"), client=http, lookup_attempts=1, observe=observe
+        )
+        with pytest.raises(ExaWebsetsPaymentRequired):
+            await client.list_items("ws_fixture_running")
+        (call,) = observed
+        assert call["status"] == 402 and b"payment_required" in call["body"]  # type: ignore[operator]
+        assert str(call["operation"]).startswith("research.exa_websets.")
+        assert "test-key" not in json.dumps({k: str(v) for k, v in call.items()})
+        await http.aclose()
+
+    asyncio.run(_run())
+
+
+def test_a_failing_observer_never_breaks_the_call() -> None:
+    async def _run() -> None:
+        async def observe(**_call: object) -> None:
+            raise RuntimeError("ledger down")
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200, json={"data": [], "hasMore": False, "nextCursor": None}, request=request
+            )
+
+        http = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        client = ExaWebsetsClient(
+            api_key=SecretStr("test-key"), client=http, lookup_attempts=1, observe=observe
+        )
+        await client.list_items("ws_fixture_running")
+        await http.aclose()
+
+    asyncio.run(_run())

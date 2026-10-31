@@ -3,9 +3,10 @@ Sentry events per incident (design 2026-09-16 §3.3; moved here from ``clue_api`
 2026-10-31 so the design subsystem records through the same code).
 
 Writers: the shared ledger drain (every spend scope in every subsystem), the chat turn's
-model-call handler, and the start-up key check (``clue_spend.key_check``). The partial unique index ``provider_incident_one_open`` is the
-open-once rule; the process whose insert returns a row fires the open event, the process whose
-close returns rows fires the close event. Nothing here may raise into the call it observes.
+model-call handler, and the start-up key check (``clue_spend.key_check``). The partial unique
+index ``provider_incident_one_open`` is the open-once rule; the process whose insert returns a
+row fires the open event, the process whose close returns rows fires the close event. Nothing here
+may raise into the call it observes.
 """
 
 from __future__ import annotations

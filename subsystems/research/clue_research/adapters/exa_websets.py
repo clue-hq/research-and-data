@@ -17,6 +17,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -1067,6 +1068,7 @@ class ExaWebsetsClient:
         max_retry_after_seconds: float = 30.0,
         client: httpx.AsyncClient | None = None,
         sleep: AsyncSleep = asyncio.sleep,
+        observe: Callable[..., Awaitable[None]] | None = None,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("Exa Websets timeout_seconds must be positive")
@@ -1079,6 +1081,10 @@ class ExaWebsetsClient:
         self._client = client or httpx.AsyncClient(timeout=timeout_seconds)
         self._owns_client = client is None
         self._sleep = sleep
+        # The spend layer's observer (``clue_spend.record_observed_call``, bound by the platform):
+        # every answer is reported so a 402 opens a provider incident (design 2026-10-31). The
+        # client keeps its own transport because its dispatch taxonomy is load-bearing.
+        self._observe = observe
 
     async def __aenter__(self) -> ExaWebsetsClient:
         return self
@@ -1361,6 +1367,23 @@ class ExaWebsetsClient:
             webset=webset,
         )
 
+    async def _report(
+        self, method: str, url: str, status: int, body: bytes, started: float
+    ) -> None:
+        if self._observe is None:
+            return
+        path = url.removeprefix(self._base_url).split("?", 1)[0].strip("/").split("/", 1)[0]
+        try:
+            await self._observe(
+                operation=f"research.exa_websets.{method.lower()}_{path or 'root'}",
+                label=f"exa_websets:{method} {path}",
+                status=status,
+                body=body,
+                latency_ms=int((time.monotonic() - started) * 1000),
+            )
+        except Exception:  # noqa: BLE001 - reporting must never break the call it observes
+            return
+
     async def _raw_request(
         self,
         *,
@@ -1377,6 +1400,7 @@ class ExaWebsetsClient:
         }
         if body is not None:
             headers["content-type"] = "application/json"
+        started = time.monotonic()
         try:
             response = await self._client.request(
                 method, url, headers=headers, content=body, params=params
@@ -1393,6 +1417,7 @@ class ExaWebsetsClient:
             raise error_type("Exa Websets transport outcome is indeterminate") from exc
 
         response_body = await response.aread()
+        await self._report(method, url, response.status_code, response_body, started)
         request_id = response.headers.get("x-request-id")
         if response.status_code != expected_status:
             raise _provider_error(

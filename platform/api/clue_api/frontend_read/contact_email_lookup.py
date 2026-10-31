@@ -47,6 +47,7 @@ from clue_api.arv2.transport import HttpxTransport
 from clue_api.exa_websets_submit import DEFAULT_EXA_WEBSETS_PRICING
 from clue_api.frontend_read.accounts_list import WireModel
 from clue_api.frontend_read.v1_shared import arv2_display_allowed
+from clue_api.provider_observers import provider_observer
 from clue_config import STRICT_DEFAULT_REGIME, Jurisdiction, RetentionTtls
 from clue_core import (
     Claim,
@@ -347,7 +348,10 @@ class ExaEmailProvider:
             title="Clue contact email lookup",
             metadata={"clueOperation": external_id},
         )
-        async with ExaWebsetsClient(api_key=self._api_key) as client:
+        async with ExaWebsetsClient(
+            api_key=self._api_key,
+            observe=provider_observer("exa_websets", workspace_id=target.workspace_id),
+        ) as client:
             imported = await client.create_import(import_request)
             await client.upload_import_csv(
                 upload_url=imported.response.upload_url, content=csv_content
@@ -397,7 +401,10 @@ class ExaEmailProvider:
     async def poll(self, target: EmailLookupTarget, attempt: ProviderAttempt) -> ProviderProgress:
         if self._api_key is None or attempt.provider_operation_id is None:
             raise RuntimeError("Exa email operation cannot be polled")
-        async with ExaWebsetsClient(api_key=self._api_key) as client:
+        async with ExaWebsetsClient(
+            api_key=self._api_key,
+            observe=provider_observer("exa_websets", workspace_id=target.workspace_id),
+        ) as client:
             exchange = await client.poll_webset(attempt.provider_operation_id)
             artifacts: list[ProviderArtifact] = [
                 ProviderArtifact(

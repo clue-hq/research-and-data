@@ -14,7 +14,6 @@ is what lets a subsystem import it without importing the platform. ``tests/spend
 
 from __future__ import annotations
 
-from .acall import ConnFactory, acall
 from .calls import (
     DEFAULT_MAX_ATTEMPTS,
     DEFAULT_RETRY_STATUSES,
@@ -54,6 +53,7 @@ from .ledger import (
     ledger_id_for,
     record_drain,
 )
+from .observe import ConnFactory, Observe, record_observed_call
 from .openrouter import openrouter_cost_reader, openrouter_halt_rule
 from .sinks import (
     SECRET_HEADERS,
@@ -89,7 +89,8 @@ from .transport import (
 
 __all__ = [
     "ConnFactory",
-    "acall",
+    "Observe",
+    "record_observed_call",
     "BROWSER_USER_AGENT",
     "DEFAULT_MAX_ATTEMPTS",
     "DEFAULT_RETRY_STATUSES",

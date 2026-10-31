@@ -35,6 +35,7 @@ from clue_core import (
     ResearchDirectivePin,
     RetryableResolverError,
 )
+from clue_obs import get_logger
 from clue_research.durable.contact_research_control import (
     ContactResearchOperationStop,
     bind_external_research_contact_authority,
@@ -83,7 +84,6 @@ from clue_research.resolvers.http import (
     resolve_credential,
 )
 from clue_research.resolvers.live import HttpFetcher
-from clue_obs import get_logger
 from clue_spend import (
     BufferedLedger,
     BufferedRawSink,
@@ -174,7 +174,9 @@ def _ledgered_fetcher(caller: ProviderCaller) -> HttpFetcher:
         try:
             return json.loads(body)
         except ValueError as exc:
-            raise ProviderResponseError(f"{source_key}: non-JSON response from {url}: {exc}") from exc
+            raise ProviderResponseError(
+                f"{source_key}: non-JSON response from {url}: {exc}"
+            ) from exc
 
     return fetch
 
