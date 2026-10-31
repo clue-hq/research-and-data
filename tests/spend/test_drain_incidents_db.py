@@ -94,3 +94,33 @@ def test_a_drain_whose_recorder_fails_still_writes_its_rows(
     monkeypatch.setattr(incidents, "record_success", boom)
     report, _ = _drain_rows([_refusal("pdl", NOW)])
     assert report.rows == 1
+
+
+def test_a_recorder_sql_error_never_rolls_back_the_drains_own_rows(
+    require_claimstore_db: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Final review #1: the recorder writes on the drain's connection. A database error inside it
+    must not abort that transaction — the ledger rows are the money trail."""
+    from sqlalchemy import text
+
+    monkeypatch.setattr(
+        incidents, "_INCREMENT", text("SELECT no_such_column FROM provider_incident")
+    )
+    ledger = BufferedLedger()
+    row = _refusal("pdl", NOW)
+    ledger.record(row)
+
+    async def scenario() -> int:
+        async with rollback_conn(seed_pack=False) as conn:
+            await drain_provider_calls(
+                conn, raw=BufferedRawSink(), ledger=ledger, artifacts=None, stamp=STAMP
+            )
+            # The transaction must still be usable: the drain's row is there to read back.
+            return (
+                await conn.execute(
+                    text("SELECT count(*) FROM provider_call_ledger WHERE call_id = :c"),
+                    {"c": row.call_id},
+                )
+            ).scalar_one()
+
+    assert run_async(scenario()) == 1
