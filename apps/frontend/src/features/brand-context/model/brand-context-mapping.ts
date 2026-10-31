@@ -452,7 +452,12 @@ function toAssets(
   kit: BrandKitDetail,
   records: ReadonlyMap<string, DesignAssetRecord> | undefined,
 ): BrandAsset[] {
-  return kitAssetEntries(kit).map((entry) => {
+  // A kit asset deleted on the Assets page is archived, not removed from the kit: leave it out,
+  // as the registry rows below already do.
+  const live = kitAssetEntries(kit).filter(
+    (entry) => records?.get(entry.assetId)?.asset.status !== "archived",
+  );
+  return live.map((entry) => {
     const stored = records?.get(entry.assetId);
     const record = stored?.asset;
     const media = record?.media;

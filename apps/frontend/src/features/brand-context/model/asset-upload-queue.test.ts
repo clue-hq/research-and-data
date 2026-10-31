@@ -9,7 +9,7 @@ test("upload slots refill independently, mixed failure retains key and successfu
   const repository: AssetRepository = {
     async capabilities() {return {max_bytes: 10000000, formats: ["png"]};},
     upload: request => new Promise((resolve, reject) => calls.push({key: request.key, resolve, reject})),
-    async readMetadata() {return {};}, async save() {}, async retry() {},
+    async readMetadata() {return {};}, async save() {}, async retry() {}, async archive() {},
   };
   let refreshed = 0;
   const queue = createAssetUploadQueue(repository, () => refreshed++);

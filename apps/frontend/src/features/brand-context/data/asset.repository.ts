@@ -9,6 +9,8 @@ export interface AssetRepository {
   readMetadata(ids: string[]): Promise<Record<string, AssetContext>>;
   save(assetId: string, patch: AssetPatch): Promise<void>;
   retry(assetId: string): Promise<void>;
+  /** Delete on the Assets page: archive the asset, so neither the page nor the design agent finds it. */
+  archive(assetId: string): Promise<void>;
 }
 const UploadResponse = z.object({asset: z.object({id: z.string()}), enrichment: AssetContextSchema.nullish()});
 
@@ -55,6 +57,7 @@ export function httpAssetRepository(designFetch: () => Promise<typeof fetch> | t
       await request(`/assets/${encodeURIComponent(id)}/description`, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({...values, reset_fields: patch.reset_fields})});
     },
     async retry(id) { await request(`/assets/${encodeURIComponent(id)}/analysis/retry`, {method: "POST"}); },
+    async archive(id) { await request(`/assets/${encodeURIComponent(id)}/archive`, {method: "POST"}); },
   };
 }
 
@@ -69,6 +72,7 @@ export function fixtureAssetRepository(): AssetRepository {
       rows[assetId] ??= AssetContextSchema.parse({asset_id: assetId, title: file.name, ...overrides, overrides, status: "stale"});
       return {assetId, context: rows[assetId]};
     },
+    async archive(id) { delete rows[id]; },
     async readMetadata(ids) { return Object.fromEntries(ids.filter(id => rows[id]).map(id => [id, rows[id]])); },
     async save(id, patch) {
       const prior = rows[id] ?? AssetContextSchema.parse({asset_id: id});
