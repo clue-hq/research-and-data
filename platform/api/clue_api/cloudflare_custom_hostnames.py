@@ -8,6 +8,8 @@ for ``/zones/{zone_id}/custom_hostnames`` and are pinned by
 
 from __future__ import annotations
 
+import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -81,8 +83,12 @@ class CloudflareCustomHostnames:
         api_token: str,
         client: httpx.AsyncClient | None = None,
         base_url: str = "https://api.cloudflare.com/client/v4",
+        observe: Callable[..., Awaitable[None]] | None = None,
     ) -> None:
         self._client = client or httpx.AsyncClient(timeout=_TIMEOUT_S)
+        # Every answer is reported to the spend layer so a refusal opens a provider incident
+        # (design 2026-10-31); the client keeps its own two-attempt retry and error type.
+        self._observe = observe
         self._base = f"{base_url.rstrip('/')}/zones/{zone_id}/custom_hostnames"
         self._headers = {"Authorization": f"Bearer {api_token}", "Accept": "application/json"}
 
@@ -91,6 +97,7 @@ class CloudflareCustomHostnames:
     ) -> httpx.Response:
         last: CloudflareError | None = None
         for _attempt in (1, 2):
+            started = time.monotonic()
             try:
                 response = await self._client.request(
                     method,
@@ -104,6 +111,7 @@ class CloudflareCustomHostnames:
                     f"Cloudflare unreachable: {error}", status=None, retryable=True
                 )
                 continue
+            await self._report(method, response, started)
             if response.status_code >= 500:
                 last = CloudflareError(
                     f"Cloudflare {response.status_code}: {response.text[:200]}",
@@ -117,6 +125,20 @@ class CloudflareCustomHostnames:
             "cloudflare.custom_hostnames.failed", method=method, path=path, status=last.status
         )
         raise last
+
+    async def _report(self, method: str, response: httpx.Response, started: float) -> None:
+        if self._observe is None:
+            return
+        try:
+            await self._observe(
+                operation=f"pages.cloudflare.{method.lower()}_custom_hostname",
+                label=f"cloudflare:{method} custom hostname",
+                status=response.status_code,
+                body=response.content,
+                latency_ms=int((time.monotonic() - started) * 1000),
+            )
+        except Exception:  # noqa: BLE001 - reporting must never break the call it observes
+            return
 
     @staticmethod
     def _error_message(response: httpx.Response) -> str:
