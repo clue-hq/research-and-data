@@ -223,11 +223,6 @@ def _incident(row: Any) -> OpenIncident:
     )
 
 
-#: Keyless providers: a host refusing one download is not an account running dry (design §5). Their
-#: incidents are still recorded and still reach Sentry, but never carry the tag the email matches.
-_NOT_EMAILED = frozenset({"public_media", "live_http"})
-
-
 def _sentry_event(
     title: str, *, level: Literal["error", "info"], incident: OpenIncident
 ) -> str | None:
@@ -237,7 +232,7 @@ def _sentry_event(
         scope.set_tag("provider", incident.provider)
         scope.set_tag("reason", incident.reason)
         scope.set_tag("kind", incident.kind)
-        if level == "error" and incident.provider not in _NOT_EMAILED:
+        if level == "error":
             # The Sentry alert rule that emails the founders matches this tag (design 2026-10-31).
             scope.set_tag("alert", "provider")
         scope.fingerprint = [

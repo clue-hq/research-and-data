@@ -63,5 +63,5 @@ onboarding where PDL answered 402 and nobody was told.
   18) and Conduit AI too ("Cole Rubin", 26): both need the ad-assets onboarding re-run once PDL answers.
   Illumio, Kaseya, Proxon guessed their company right.
 - Open prod incident: gemini credits_exhausted since 2026-10-28.
-- public_media opens a refusal incident most weeks (14 in 30 days); keyless providers (public_media,
-  live_http) are now never tagged `alert=provider`, so they never email.
+- public_media opens a refusal incident most weeks (14 in 30 days). Founder ruling 2026-10-31: keep
+  keyless providers (public_media, live_http) IN scope — their refusals and repeated failures email too.

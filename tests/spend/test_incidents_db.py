@@ -257,24 +257,23 @@ def test_different_reasons_on_one_account_still_alert_separately(
     assert [e["level"] for e in sentry.events] == ["error", "error"]
 
 
-def test_a_keyless_provider_is_recorded_but_never_tagged_for_the_email(
+
+def test_a_keyless_provider_is_tagged_for_the_email_like_any_other(
     require_claimstore_db: None, sentry: StubTransport
 ) -> None:
-    """Design §5: keyless downloads (public media, the website fetch) are out of scope for the
-    founders' email. A podcast host refusing one download is not an account running dry; their
-    incidents stay recorded for the product's own surfaces but carry no `alert` tag."""
+    """Founder ruling 2026-10-31: keyless downloads (public media, the website fetch) stay in scope.
+    Their refusals open an incident and email the founders like every other provider's."""
 
     async def scenario():
         async with rollback_conn(seed_pack=False) as conn:
-            for provider in ("public_media", "live_http"):
-                await record_failure(
-                    conn,
-                    ProviderFailure(provider, "refusal", "auth_invalid", "403 Forbidden"),
-                    surface="research_job",
-                    workspace_id=None,
-                    now=NOW,
-                )
+            await record_failure(
+                conn,
+                ProviderFailure("public_media", "refusal", "auth_invalid", "403 Forbidden"),
+                surface="research_job",
+                workspace_id=None,
+                now=NOW,
+            )
 
     run_async(scenario())
-    assert len(sentry.events) == 2
-    assert all("alert" not in _tags(event) for event in sentry.events)
+    (event,) = sentry.events
+    assert _tags(event)["alert"] == "provider"

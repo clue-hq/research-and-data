@@ -129,8 +129,10 @@ Websets, deep), AI Ark, Parallel, People Data Labs, Adyntel, Brandfetch,
 Composio, Cloudflare, Clerk. **Out of scope by ruling:** ZoomInfo,
 Clay, Apollo, BuiltWith, Dun & Bradstreet (no production caller yet), Firecrawl and Sumble (out of the
 stack). **Out of scope by design:** Langfuse and S3/R2 storage (not credit-metered services
-whose refusal blocks the product; Langfuse already degrades by itself), keyless public-media
-downloads (no key, no credits).
+whose refusal blocks the product; Langfuse already degrades by itself). Keyless public-media
+downloads and the website fetch have no key check (no key, no credits), but **their refusals and
+repeated failures alert like every other provider's** (founder ruling 2026-10-31, after the
+production check showed public_media opening a refusal incident most weeks).
 
 ## 6. Design
 
