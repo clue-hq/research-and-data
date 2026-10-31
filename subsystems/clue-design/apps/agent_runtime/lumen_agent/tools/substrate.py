@@ -57,6 +57,7 @@ from ..models.creative_direction import (
 from ..image_crop import (
     ImageCropError, crop_source_pixels, has_generated_image_origin, require_supported_crop_origin,
 )
+from ..image_knockout import ImageKnockOutError, knock_out_plain_background
 from ..retokenize import (
     build_logo_placement_operations,
     build_retokenize_operations,
@@ -2457,6 +2458,95 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    def knock_out_background(self, node_id: str, label: str | None = None) -> str:
+        """Make the plain, single-colour background of the image in `node_id` transparent, exactly
+        (no model), and put the result back in the same node. The original asset is untouched."""
+        refusal = self._refuse_without_page("knock_out_background")
+        if refusal is not None:
+            return refusal
+        record, source_bytes, mime, _digest, error = self._resolve_node_image_source(node_id)
+        if error is not None:
+            return self._tool_error(error[0], error[1], node_id=node_id)
+        source_id = record.get("id")
+        license = record.get("license")
+        # Mirror AssetRecord::allows_modification, as crop_image does.
+        if license is not None and license.get("allow_modification") is not True:
+            return self._tool_error(
+                "asset.knockout_license", "The source license does not permit modification."
+            )
+        try:
+            knocked = knock_out_plain_background(
+                source_bytes, mime_type=mime, source_asset_id=source_id
+            )
+        except ImageKnockOutError as refused:
+            return self._tool_error(refused.code, str(refused), node_id=node_id)
+        derived_id = f"asset_knockout_{self.run_id[:12]}_{uuid4().hex}"
+        provenance = copy.deepcopy(record.get("provenance") or {})
+        provenance["notes"] = [
+            *(provenance.get("notes") or []),
+            "asset_derivation=" + json.dumps(knocked.receipt, sort_keys=True),
+        ]
+        try:
+            ingested = self.core.ingest_asset(
+                store_root=str(self.config.effective_asset_store_root),
+                bytes_base64=base64.b64encode(knocked.png_bytes).decode("ascii"),
+                asset_id=derived_id,
+                label=label or f"{record.get('label') or source_id} (background removed)",
+                declared_mime_type="image/png",
+                kind="raster_image",
+                filename=f"{derived_id}.png",
+                license=copy.deepcopy(license),
+                provenance=provenance,
+                # `edited` means MODEL-edited in the engine schema; a knock-out has no model.
+                source={"kind": "manual", "label": f"background knocked out of {source_id}"},
+                tags=[*(record.get("tags") or []), "background-removed"],
+            )
+            derived = ingested["asset"]["record"]
+            with self._scene_mutation_lock:
+                operations = [{"kind": "upsert_asset", "asset": derived}]
+                response = self.core.apply_operations(self.scene, operations)
+                self._replace_scene_from_core_response(
+                    response, "knock_out_background", operations, construction=True
+                )
+        except CoreError as failure:
+            return self._tool_error(failure.code, failure.message, node_id=node_id)
+        # Back into the SAME node, keeping its placement, with the new transparency kept.
+        placement = ((self.scene.get("nodes") or {}).get(node_id) or {}).get(
+            "asset_placement"
+        ) or {}
+        focal = placement.get("focal_point") or {}
+        place_result = json.loads(
+            self.place_asset_in_node(
+                node_id,
+                derived_id,
+                fit=placement.get("fit") or "contain",
+                focal_x=focal.get("x", 0.5),
+                focal_y=focal.get("y", 0.5),
+                alt=placement.get("alt_text"),
+                preserve_transparency=True,
+            )
+        )
+        payload = {
+            "knock_out": {
+                "status": "ok",
+                "asset_id": derived_id,
+                "source_asset_id": source_id,
+                "node_id": node_id,
+                "mode": "deterministic",
+                "knockout_receipt": knocked.receipt,
+                "placement": place_result.get("placement"),
+            },
+            "diagnostics": ingested.get("diagnostics") or [],
+        }
+        self.record(
+            "coordinator",
+            "image_background_knocked_out",
+            input_summary=f"{node_id}: {source_id}",
+            output_summary=f"{source_id} -> {derived_id} re-placed into {node_id}",
+            payload=payload,
+        )
+        return json.dumps(payload, indent=2)
+
     def _resolve_node_image_source(
         self, node_id: str
     ) -> tuple[Optional[JsonObject], Optional[bytes], Optional[str], Optional[str], Optional[tuple]]:
@@ -2947,6 +3037,12 @@ class LumenDesignTools:
           and crop_receipt with source digest/rect. Inspect, then explicitly place
           it in an independent image node. Cannot recover occluded or absent UI,
           nor remove backgrounds baked inside the selected rectangle.
+        - `action="knock_out_background"` — make the plain, single-colour background of
+          the image in `node_id` transparent, exactly — no model, nothing redrawn. Use it
+          for a logo or brand image that has a plain solid tile (a black or white square)
+          which would sit as a box on your surface. It refuses when the background isn't
+          one colour; for photos use edit_image with remove_background. Never use
+          edit_image on a logo.
         - `action="generate_qr"` — generate a deterministic QR asset from `data`
           (URL/text). For physical artifacts set `print_media=True` and `target_width_mm`
           so print-scannability diagnostics can fire. Optional `ec_level`, `label`.
@@ -3017,6 +3113,12 @@ class LumenDesignTools:
             return self.edit_image(
                 node_id, prompt, transparent_background, label, operation=operation
             )
+        if action == "knock_out_background":
+            if not node_id:
+                return self._tool_error(
+                    "asset.bad_request", "action='knock_out_background' requires `node_id`."
+                )
+            return self.knock_out_background(node_id, label)
         if action == "crop_image":
             if not asset_id:
                 return self._tool_error("asset.bad_request", "action='crop_image' requires `asset_id`.")
@@ -3082,6 +3184,7 @@ class LumenDesignTools:
                 "generate_image",
                 "edit_image",
                 "crop_image",
+                "knock_out_background",
                 "generate_qr",
                 "place",
                 "use_brand_asset",
