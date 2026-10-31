@@ -14,6 +14,7 @@ is what lets a subsystem import it without importing the platform. ``tests/spend
 
 from __future__ import annotations
 
+from .acall import ConnFactory, acall
 from .calls import (
     DEFAULT_MAX_ATTEMPTS,
     DEFAULT_RETRY_STATUSES,
@@ -87,6 +88,8 @@ from .transport import (
 )
 
 __all__ = [
+    "ConnFactory",
+    "acall",
     "BROWSER_USER_AGENT",
     "DEFAULT_MAX_ATTEMPTS",
     "DEFAULT_RETRY_STATUSES",
