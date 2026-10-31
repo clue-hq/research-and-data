@@ -10,7 +10,7 @@ everything this one does not change.
 On 2026-10-31 a Pallet ad-assets onboarding (trenton lane) asked People Data Labs who
 `pallet.com` is. PDL answered `402 PAYMENT REQUIRED`. The only trace was an `httpx` info line in
 an ingestion child's log file. The job carried on unverified, guessed the founder's name as the
-brand's advertiser name, kept his 11 personal posts as "the brand's ads", dropped 36 likely company
+brand's advertiser name, kept that person's 11 posts as "the brand's ads", dropped 36 likely company
 ads, and wrote that person's name into four image prompts as the advertiser. Nobody was told PDL had
 stopped serving.
 
