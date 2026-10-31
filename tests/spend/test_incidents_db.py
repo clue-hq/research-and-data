@@ -17,12 +17,8 @@ from clue_core.provider_failures import ProviderFailure
 from clue_spend.incidents import provider_display, record_failure, record_success
 from clue_spend.ledger import _stamped_failure
 from clue_spend.sinks import LedgerRow
-from tests.api.test_provider_incidents_db import StubTransport, sentry  # noqa: F401
-from tests.claimstore.conftest import (  # noqa: F401
-    migrated_db,
-    require_claimstore_db,
-    rollback_conn,
-)
+from tests.api.test_provider_incidents_db import StubTransport
+from tests.claimstore.conftest import rollback_conn
 from tests.db.conftest import run_async
 
 NOW = datetime(2026, 10, 31, 9, 0, tzinfo=UTC)
@@ -31,7 +27,7 @@ NO_CREDIT = ProviderFailure("pdl", "refusal", "credits_exhausted", "Payment Requ
 
 def _tags(event: dict) -> dict:
     tags = event.get("tags") or {}
-    return dict(tags) if isinstance(tags, dict) else {k: v for k, v in tags}
+    return dict(tags)
 
 
 def test_open_event_carries_the_alert_tag_and_close_event_does_not(
@@ -39,7 +35,9 @@ def test_open_event_carries_the_alert_tag_and_close_event_does_not(
 ) -> None:
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
-            await record_failure(conn, NO_CREDIT, surface="onboarding", workspace_id="ws_a", now=NOW)
+            await record_failure(
+                conn, NO_CREDIT, surface="onboarding", workspace_id="ws_a", now=NOW
+            )
             await record_success(conn, "pdl", now=NOW + timedelta(minutes=3))
 
     run_async(scenario())
@@ -56,8 +54,9 @@ def test_an_unsent_open_event_is_sent_by_the_next_recorder(
             # An incident opened by a process with no Sentry: the row exists, nobody was told.
             await conn.execute(
                 text(
-                    "INSERT INTO provider_incident (incident_id, provider, kind, reason, opened_at, "
-                    "last_failure_at, failure_count, sample_message) VALUES (:id, 'pdl', "
+                    "INSERT INTO provider_incident (incident_id, provider, kind, reason, "
+                    "opened_at, last_failure_at, failure_count, sample_message) "
+                    "VALUES (:id, 'pdl', "
                     "'refusal', 'credits_exhausted', :now, :now, 1, 'Payment Required')"
                 ),
                 {"id": uuid4(), "now": NOW},
@@ -67,7 +66,9 @@ def test_an_unsent_open_event_is_sent_by_the_next_recorder(
                 conn, NO_CREDIT, surface="onboarding", workspace_id=None, now=later
             )
             assert first is not None and first.notified
-            await record_failure(conn, NO_CREDIT, surface="onboarding", workspace_id=None, now=later)
+            await record_failure(
+                conn, NO_CREDIT, surface="onboarding", workspace_id=None, now=later
+            )
 
     run_async(scenario())
     assert [event["level"] for event in sentry.events] == ["error"]

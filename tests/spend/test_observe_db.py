@@ -1,5 +1,8 @@
 """``clue_spend.record_observed_call``: a client that keeps its own HTTP stack reports each answer
-to the spend layer, which ledgers it and opens a provider incident on a refusal (design 2026-10-31)."""
+to the spend layer, which ledgers it and opens a provider incident on a refusal.
+
+Design 2026-10-31.
+"""
 
 from __future__ import annotations
 
@@ -10,11 +13,7 @@ from sqlalchemy import text
 
 from clue_spend import record_observed_call
 from clue_spend.incidents import open_incidents
-from tests.claimstore.conftest import (  # noqa: F401
-    migrated_db,
-    require_claimstore_db,
-    rollback_conn,
-)
+from tests.claimstore.conftest import rollback_conn
 from tests.db.conftest import run_async
 
 
@@ -58,7 +57,9 @@ def test_an_answered_call_is_one_ok_result_row(require_claimstore_db: None) -> N
 def test_a_402_opens_an_incident_even_with_no_workspace(require_claimstore_db: None) -> None:
     async def scenario():
         async with rollback_conn(seed_pack=False) as conn:
-            await _observe(conn, "cloudflare", None, 402, b'{"errors":[{"message":"payment required"}]}')
+            await _observe(
+                conn, "cloudflare", None, 402, b'{"errors":[{"message":"payment required"}]}'
+            )
             return await open_incidents(conn, providers=["cloudflare"])
 
     live = run_async(scenario())
@@ -73,7 +74,13 @@ def test_recording_never_raises() -> None:
 
     run_async(
         record_observed_call(
-            provider="clerk", conn_factory=broken, workspace_id=None, operation="o", label="l",
-            status=200, body=b"{}", latency_ms=1,
+            provider="clerk",
+            conn_factory=broken,
+            workspace_id=None,
+            operation="o",
+            label="l",
+            status=200,
+            body=b"{}",
+            latency_ms=1,
         )
     )

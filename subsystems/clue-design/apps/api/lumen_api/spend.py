@@ -380,8 +380,34 @@ def drain_sync(scope: SpendScope) -> DrainReport:
     return run_isolated(run())
 
 
+def check_provider_keys_sync(*, role: str = "design-api") -> None:
+    """The start-up key check for the design API (design 2026-10-31 §6.3).
+
+    The design API holds no process-global engine, so — like :func:`drain_sync` — the check owns
+    a private engine on its own loop and disposes of it. Run from a daemon thread at start-up so
+    the app never waits on it; never raises.
+    """
+    from clue_db import create_engine
+    from clue_spend.key_check import check_provider_keys, startup_environ
+
+    from .design_store import run_isolated
+
+    async def run() -> None:
+        engine = create_engine()
+        try:
+            await check_provider_keys(engine.begin, role=role, environ=startup_environ())
+        finally:
+            await engine.dispose()
+
+    try:
+        run_isolated(run())
+    except Exception:
+        log.exception("provider_keys.check_failed role=%s", role)
+
+
 __all__ = [
     "DrainFn",
+    "check_provider_keys_sync",
     "SpendScope",
     "caller",
     "current_scope",

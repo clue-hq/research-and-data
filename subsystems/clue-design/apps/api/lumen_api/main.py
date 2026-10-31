@@ -763,6 +763,21 @@ def create_app(
         # uvicorn has configured its own logging by the time lifespan startup
         # runs; fold its loggers into the shared bridge so there is one stream.
         _bridge_uvicorn_loggers()
+        # Design 2026-10-31: a missing provider key opens a provider incident (one Sentry event),
+        # checked once per start-up on a daemon thread so the app never waits on it. Only where
+        # Sentry is installed: the check exists to tell the founders.
+        from clue_obs.sentry import sentry_is_installed
+
+        if sentry_is_installed():
+            import threading
+
+            from .spend import check_provider_keys_sync
+
+            threading.Thread(
+                target=check_provider_keys_sync,
+                name="provider-key-check",
+                daemon=True,
+            ).start()
         # D5 Round B (R-D5-B5): the embedded design fleet worker. Turns are leased fleet work
         # now, so without a drain an offered turn would sit `queued` forever. In production the
         # detached clue_api.fleet_main worker drains it; in development (and under this suite)

@@ -824,6 +824,17 @@ async def _projections_lifespan(_app: FastAPI) -> AsyncIterator[None]:
         startup_check = getattr(_app.state, "startup_check", None)
         if startup_check is not None:
             await startup_check()
+        # Design 2026-10-31: a missing provider key opens a provider incident (one Sentry event).
+        # In the background, so start-up never waits on it; only where Sentry is installed.
+        from clue_obs.sentry import sentry_is_installed
+
+        if sentry_is_installed():
+            from clue_db import transaction
+            from clue_spend.key_check import check_provider_keys, startup_environ
+
+            _app.state.provider_key_check = asyncio.create_task(
+                check_provider_keys(transaction, role="platform-api", environ=startup_environ())
+            )
         try:
             yield
         finally:

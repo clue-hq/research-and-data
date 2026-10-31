@@ -22,12 +22,8 @@ from clue_spend.ledger import (
     drain_provider_calls,
 )
 from clue_spend.sinks import LedgerRow
-from tests.api.test_provider_incidents_db import StubTransport, sentry  # noqa: F401
-from tests.claimstore.conftest import (  # noqa: F401
-    migrated_db,
-    require_claimstore_db,
-    rollback_conn,
-)
+from tests.api.test_provider_incidents_db import StubTransport
+from tests.claimstore.conftest import rollback_conn
 from tests.db.conftest import run_async
 
 NOW = datetime(2026, 10, 31, 9, 0, tzinfo=UTC)
