@@ -37,6 +37,7 @@ __all__ = [
     "reason_words",
     "record_failure",
     "record_success",
+    "send_unsent",
 ]
 
 log = get_logger("clue_spend.incidents")
@@ -425,6 +426,24 @@ async def record_success(
     except Exception:
         log.exception("provider_incident.recorder_failed", provider=provider, reason="close")
         return ()
+
+
+async def send_unsent(conn: AsyncConnection) -> int:
+    """Send the open event of every open incident no process could send (it was opened where
+    Sentry was not installed). Returns how many were sent; never raises."""
+    if not sentry_is_installed():
+        return 0
+    sent = 0
+    for incident in await open_incidents(conn):
+        if incident.notified:
+            continue
+        try:
+            async with conn.begin_nested():
+                if await _send_open_event(conn, incident) is not None:
+                    sent += 1
+        except Exception:
+            log.exception("provider_incident.recorder_failed", reason="send_unsent")
+    return sent
 
 
 async def open_incidents(

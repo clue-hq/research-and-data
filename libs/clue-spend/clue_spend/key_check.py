@@ -19,7 +19,7 @@ variable only.
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -95,14 +95,17 @@ def provider_for_env(env_name: str) -> str | None:
     return _PROVIDER_BY_ENV.get(env_name)
 
 
-def startup_environ(env_file: str = ".env") -> dict[str, str]:
-    """What the settings loaders see: the ``.env`` file in the working directory, overridden by the
-    process environment (the same precedence ``pydantic-settings`` applies)."""
+def startup_environ(env_files: Sequence[str] = (".env",)) -> dict[str, str]:
+    """What the settings loaders see: each env file in order (a later one overrides an earlier),
+    then the process environment over all of them — the precedence ``pydantic-settings`` applies.
+    The platform reads ``.env`` in the working directory; the design API passes its own
+    ``.env`` and ``.env.local``."""
     values: dict[str, str] = {}
     try:
         from dotenv import dotenv_values
 
-        values.update({k: v for k, v in dotenv_values(env_file).items() if v is not None})
+        for env_file in env_files:
+            values.update({k: v for k, v in dotenv_values(env_file).items() if v is not None})
     except Exception:  # noqa: BLE001 - no dotenv, no file: the process environment alone
         pass
     values.update(os.environ)
@@ -124,11 +127,13 @@ async def check_provider_keys(
     at = now or datetime.now(UTC)
     try:
         async with conn_factory() as conn:
+            wanted: set[str] = set()
             for requirement in PROVIDER_KEYS:
                 if role not in requirement.roles:
                     continue
                 reported = requirement.env_names[0]
                 name = f"{role}:{reported}"
+                wanted.add(name)
                 present = any((environ.get(env) or "").strip() for env in requirement.env_names)
                 if present:
                     await incidents.record_success(conn, name, now=at)
@@ -140,6 +145,17 @@ async def check_provider_keys(
                     workspace_id=None,
                     now=at,
                 )
+            for incident in await incidents.open_incidents(conn):
+                # A key taken off the registry since its incident opened: this role closes it.
+                stale = (
+                    incident.reason == "key_missing"
+                    and incident.provider.startswith(f"{role}:")
+                    and incident.provider not in wanted
+                )
+                if stale:
+                    await incidents.record_success(conn, incident.provider, now=at)
+            # Any incident a process without Sentry opened is sent now, whoever's it is.
+            await incidents.send_unsent(conn)
     except Exception as error:  # noqa: BLE001 - the check must never stop a start-up
         # By type only, never with a traceback: ``environ`` holds every key, and a renderer that
         # prints a frame's locals (the dev console's) would print them.

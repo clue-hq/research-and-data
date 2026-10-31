@@ -159,3 +159,70 @@ def test_a_failed_check_logs_no_traceback_that_could_carry_keys() -> None:
     assert "exc_info" not in entry
     assert entry["error"] == "RuntimeError"
     assert "secret-value-123" not in json.dumps(entry, default=str)
+
+
+def test_an_incident_for_a_key_no_longer_on_the_list_is_closed_by_its_role(
+    require_claimstore_db: None,
+) -> None:
+    from clue_core.provider_failures import ProviderFailure
+    from clue_spend.incidents import record_failure
+
+    everything = {name: "set" for requirement in PROVIDER_KEYS for name in requirement.env_names}
+
+    async def steps(conn, factory):
+        for name in ("worker:RETIRED_API_KEY", "platform-api:RETIRED_API_KEY"):
+            await record_failure(
+                conn,
+                ProviderFailure(name, "refusal", "key_missing", "RETIRED_API_KEY is not set"),
+                surface="startup",
+                workspace_id=None,
+                now=NOW,
+            )
+        await check_provider_keys(factory, role="worker", environ=everything, now=NOW)
+        return {i.provider for i in await open_incidents(conn)}
+
+    still_open = _run(steps)
+    assert "worker:RETIRED_API_KEY" not in still_open
+    assert "platform-api:RETIRED_API_KEY" in still_open  # another role's row is that role's
+
+
+def test_any_start_up_sends_an_alert_nobody_could_send(
+    require_claimstore_db: None, sentry: StubTransport
+) -> None:
+    from uuid import uuid4
+
+    from sqlalchemy import text
+
+    everything = {name: "set" for requirement in PROVIDER_KEYS for name in requirement.env_names}
+
+    async def steps(conn, factory):
+        await conn.execute(
+            text(
+                "INSERT INTO provider_incident (incident_id, provider, kind, reason, opened_at, "
+                "last_failure_at, failure_count, sample_message) VALUES "
+                "(:id, 'pdl', 'refusal', 'credits_exhausted', :now, :now, 1, 'Payment Required')"
+            ),
+            {"id": uuid4(), "now": NOW},
+        )
+        await check_provider_keys(factory, role="design-api", environ=everything, now=NOW)
+        (row,) = await open_incidents(conn, providers=["pdl"])
+        return row
+
+    row = _run(steps)
+    assert row.notified
+    assert [e["level"] for e in sentry.events] == ["error"]
+
+
+def test_startup_environ_reads_every_env_file_and_the_process_wins(tmp_path, monkeypatch) -> None:
+    from clue_spend.key_check import startup_environ
+
+    first, second = tmp_path / ".env", tmp_path / ".env.local"
+    first.write_text("PDL_API_KEY=from-env\nADYNTEL_API_KEY=from-env\n")
+    second.write_text("ADYNTEL_API_KEY=from-local\nBRANDFETCH_API_KEY=from-local\n")
+    for name in ("PDL_API_KEY", "ADYNTEL_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("BRANDFETCH_API_KEY", "from-process")
+    values = startup_environ([str(first), str(second)])
+    assert values["PDL_API_KEY"] == "from-env"
+    assert values["ADYNTEL_API_KEY"] == "from-local"
+    assert values["BRANDFETCH_API_KEY"] == "from-process"

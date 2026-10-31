@@ -412,7 +412,11 @@ def check_provider_keys_sync(*, role: str = "design-api") -> None:
     async def run() -> None:
         engine = create_engine()
         try:
-            await check_provider_keys(engine.begin, role=role, environ=startup_environ())
+            # The design settings read the design tree's own .env and .env.local.
+            from py_lumen_config.config import _ENV_FILES
+
+            environ = startup_environ([str(path) for path in _ENV_FILES if path.exists()])
+            await check_provider_keys(engine.begin, role=role, environ=environ)
         finally:
             await engine.dispose()
 
