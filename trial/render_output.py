@@ -74,7 +74,7 @@ async def main(outdir, jobs):
                 stem = j["primary_domain"].split(".")[0].lower()
                 names = {stem, stem[:3], j["canonical_name"].split()[0].lower()}
                 cands = [b for b in files.get(path, []) if any(n in b.lower()[:400] for n in names)]
-                return cands[0] if cands else None
+                return cands[0] if cands else (files.get(path) or [None])[0]
             for path, title in (("outputs/page-brief.md", "1. The researcher's page brief (verdict and per-section messages)"),
                                 ("outputs/account-assessment.md", "1b. The agent's account assessment (earlier rounds)"),
                                 ("work/hypotheses.md", "2. Hypotheses, learning notes and outcomes"),
