@@ -452,6 +452,41 @@ async def _account_dossier_for_person(
     return {}
 
 
+async def page_brief(conn: AsyncConnection, storage: StorageBackend, scope: JobScope) -> str | None:
+    """The account researcher's /outputs/page-brief.md from this job's saved agent workspace
+    (research trial, guide v3); the job's saved verdict summary when the file is missing."""
+    thread = (
+        await conn.execute(
+            text("""SELECT 'research-quality-' || e.execution_id::text FROM arv2_quality_execution e
+            WHERE e.workspace_id=:ws AND e.job_id=:job AND e.role='account_research'
+            ORDER BY e.created_at DESC LIMIT 1"""),
+            {"ws": scope.workspace_id, "job": scope.job_id},
+        )
+    ).scalar_one_or_none()
+    if thread is not None:
+        key = (
+            await conn.execute(
+                text("""SELECT manifest_artifact_key FROM agent_workspace_snapshot
+                WHERE workspace_id=:ws AND thread_id=:thread"""),
+                {"ws": scope.workspace_id, "thread": thread},
+            )
+        ).scalar_one_or_none()
+        if key is not None:
+            manifest = json.loads(await storage.get(key))
+            for entry in manifest.get("entries", []):
+                if entry.get("path") == "outputs/page-brief.md":
+                    blob = f"{scope.workspace_id}/agent-workspace/{entry['sha256']}"
+                    body = await storage.get(blob)
+                    return body.decode("utf-8")
+    summary = (
+        await conn.execute(
+            text("SELECT finalization_json->>'summary' FROM arv2_research_job WHERE job_id=:job"),
+            {"job": scope.job_id},
+        )
+    ).scalar_one_or_none()
+    return f"Verdict summary (no page brief was written):\n\n{summary}" if summary else None
+
+
 async def account_story(conn: AsyncConnection, scope: JobScope, context_id: UUID) -> str:
     """The account's current short version: the opening of Overview › Why they fit."""
     body = (
@@ -497,6 +532,9 @@ async def write_pages(
             story = await account_story(conn, scope, context_id)
         else:
             people = await committee_people(conn, storage, scope, context_id)
+            brief_for_pages = (
+                await page_brief(conn, storage, scope) if guide_version == "v3" else None
+            )
     if scope.person_subject_id is not None:
         return await write_contact_page(
             model,
@@ -520,6 +558,7 @@ async def write_pages(
         account_dossier=own,
         people=people,
         guide_version=guide_version,
+        page_brief=brief_for_pages,
     )
 
 

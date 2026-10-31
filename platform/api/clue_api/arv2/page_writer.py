@@ -90,6 +90,10 @@ _SECTIONS_BY_GUIDE: dict[str, dict[str, tuple[str, ...]]] = {
 }
 
 
+# v3 (research trial): the same sections as v2; the writer also gets the researcher's page brief.
+_SECTIONS_BY_GUIDE["v3"] = _SECTIONS_BY_GUIDE["v2"]
+
+
 def sections_for(version: str = GUIDE_VERSION) -> dict[str, tuple[str, ...]]:
     """The pages' sections, in the order the guides of ``version`` write them."""
     return _SECTIONS_BY_GUIDE[version]
@@ -348,6 +352,7 @@ async def write_account_pages(
     account_dossier: Mapping[str, Any],
     people: Sequence[Person],
     guide_version: str = GUIDE_VERSION,
+    page_brief: str | None = None,
 ) -> WrittenPages:
     texts = finding_texts(account_dossier)
     claims = claim_ids(account_dossier)
@@ -363,6 +368,7 @@ async def write_account_pages(
             account_dossier=account_dossier,
             people=people,
             interpretations=shows_interpretations(guide_version),
+            page_brief=page_brief,
         ),
         pages,
         guide_version,

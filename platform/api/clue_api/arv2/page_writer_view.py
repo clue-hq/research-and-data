@@ -123,9 +123,15 @@ def account_view(
     account_dossier: Mapping[str, Any],
     people: Sequence[Person],
     interpretations: bool = True,
+    page_brief: str | None = None,
 ) -> str:
     parts = [
         "# Seller brief\n\n" + seller_brief.strip(),
+        *(
+            ["# Page brief from the account researcher\n\n" + page_brief.strip()]
+            if page_brief and page_brief.strip()
+            else []
+        ),
         f"# Account: {account_name}\n\n## Buying committee\n\n{_committee_lines(people)}",
         "## Account findings\n\n"
         + render_findings(account_dossier, interpretations=interpretations),
