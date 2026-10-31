@@ -63,6 +63,7 @@ from clue_api.onboarding_routes import (
 )
 from clue_api.production_metrics import production_metrics_lifespan
 from clue_api.production_tracing import production_tracing_lifespan
+from clue_api.provider_observers import provider_observer
 from clue_api.research_view_api import (
     build_research_view_router,
     research_actor_resolver,
@@ -982,7 +983,11 @@ def create_projections_app(
             service=auth_service,
             conn_factory=conn_factory,
             provision_enabled=resolved.self_serve_provisioning_enabled,
-            clerk_api=ClerkApi(clerk_secret.get_secret_value()) if clerk_secret else None,
+            clerk_api=(
+                ClerkApi(clerk_secret.get_secret_value(), observe=provider_observer("clerk"))
+                if clerk_secret
+                else None
+            ),
             pages_system_suffix=resolved.pages_system_suffix,
             # The workspace switcher's company logo (Brandfetch's embed-only Logo API).
             brandfetch_client_id=resolved.brandfetch_client_id,
