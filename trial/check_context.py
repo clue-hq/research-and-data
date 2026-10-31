@@ -11,8 +11,8 @@ async def main(prod_path):
     storage = FsStorage(os.environ["CLUE_STORAGE_FS_ROOT"])
     async with eng.connect() as conn:
         tx = await conn.begin()
-        ctx = await build_context(conn, storage, workspace_id="ws_98f69f42a7e54391aafadfc602446119",
-                                  project_id="prj_bcbca9a562a15149875c552222ee7c8f",
+        ctx = await build_context(conn, storage, workspace_id=os.environ.get("TRIAL_WS", "ws_98f69f42a7e54391aafadfc602446119"),
+                                  project_id=os.environ.get("TRIAL_PROJECT", "prj_bcbca9a562a15149875c552222ee7c8f"),
                                   product_selection_version=1)
         await tx.rollback()
     lane = json.loads(ctx.model_dump_json())
