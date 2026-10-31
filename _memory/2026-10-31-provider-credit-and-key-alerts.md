@@ -47,3 +47,12 @@ onboarding where PDL answered 402 and nobody was told.
 ## Owed
 - Founder: the Sentry alert rule (spec §10); top up PDL; re-run Pallet ad onboarding afterwards.
 - The advertiser-name fallback (use the brand kit's name when PDL can't answer) — separate change.
+
+## Same day, follow-ups (founder go, 2026-10-31)
+- Assets page Delete now archives on the design API (was page-memory only); archived kit assets are
+  hidden on the page and skipped in the agent's kit manifest (`brand_kit_asset_manifest`).
+- New agent action `asset(action="knock_out_background", node_id)` (`lumen_agent/image_knockout.py`):
+  exact colour-to-alpha on a plain tile, refuses non-plain/transparent/SVG, trims, re-places in the
+  same node. Founder-approved tool-description wording. Live check: Pallet's kit mark
+  (asset_ing_6333fd520407e88f, white bars on black) knocks out cleanly.
+- Open founder question: may the agent recolour a dark full logo to white (still forbidden).
