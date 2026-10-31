@@ -84,3 +84,29 @@ def test_recording_never_raises() -> None:
             latency_ms=1,
         )
     )
+
+
+def test_an_unclassified_answer_is_ledgered_but_opens_no_incident(
+    require_claimstore_db: None,
+) -> None:
+    async def scenario():
+        async with rollback_conn(seed_pack=False) as conn:
+
+            @asynccontextmanager
+            async def same():
+                yield conn
+
+            await record_observed_call(
+                provider="composio",
+                conn_factory=same,
+                workspace_id=None,
+                operation="o",
+                label="l",
+                status=401,
+                body=b"token expired",
+                latency_ms=1,
+                classify=False,
+            )
+            return await open_incidents(conn, providers=["composio"])
+
+    assert run_async(scenario()) == ()

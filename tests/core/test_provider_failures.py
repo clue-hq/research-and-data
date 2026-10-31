@@ -193,3 +193,17 @@ def test_a_per_minute_quota_is_a_rate_limit_not_a_refusal(body: str) -> None:
 def test_a_daily_quota_is_still_a_quota_refusal() -> None:
     failure = classify_http("youtube_data", 403, '{"error": {"message": "quota exceeded per day"}}')
     assert failure is not None and failure.reason == "quota_exhausted"
+
+
+def test_insufficient_permissions_is_a_rejected_key_not_exhausted_credits() -> None:
+    """Final-review minor: a 403 'insufficient permissions' must not read as credits exhausted."""
+    failure = classify_http("clerk", 403, '{"errors": [{"message": "Insufficient permissions"}]}')
+    assert failure is not None and failure.reason == "auth_invalid"
+
+
+@pytest.mark.parametrize(
+    "body", ["Insufficient credits", "insufficient funds on account", "insufficient balance"]
+)
+def test_insufficient_credit_still_reads_as_credits_exhausted(body: str) -> None:
+    failure = classify_http("openrouter", 403, body)
+    assert failure is not None and failure.reason == "credits_exhausted"

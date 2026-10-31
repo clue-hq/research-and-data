@@ -257,3 +257,32 @@ def test_every_composio_answer_is_reported_and_errors_are_unchanged() -> None:
         "crm.composio.delete_connected_accounts",
     }
     assert all("key-1" not in json.dumps({k: str(v) for k, v in c.items()}) for c in observed)
+
+
+def test_a_customers_own_connection_refusal_is_not_a_provider_refusal() -> None:
+    """A 401/403 on a tool run or a connected account is one customer's CRM connection, not
+    Composio refusing Clue: it is reported unclassified so it never opens a provider incident."""
+    observed: list[dict[str, Any]] = []
+
+    async def observe(**call: Any) -> None:
+        observed.append(call)
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(401, json={"error": {"message": "token expired"}})
+        )
+    )
+    gateway = HttpComposioGateway(api_key="key-1", base_url=BASE, client=client, observe=observe)
+    with pytest.raises(ComposioError):
+        asyncio.run(
+            gateway.execute(
+                slug="HUBSPOT_LIST",
+                arguments={},
+                connected_account_id="ca_1",
+                user_id="u",
+                version="1",
+            )
+        )
+    with pytest.raises(ComposioError):
+        asyncio.run(gateway.search_tools(toolkit="hubspot", query="deal", limit=5))
+    assert [call["classify"] for call in observed] == [False, True]

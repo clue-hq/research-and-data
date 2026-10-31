@@ -38,7 +38,14 @@ class Observe(Protocol):
     """What a client calls after each answer: the operation, its status and body, and how long."""
 
     def __call__(
-        self, *, operation: str, label: str, status: int, body: bytes | str, latency_ms: int
+        self,
+        *,
+        operation: str,
+        label: str,
+        status: int,
+        body: bytes | str,
+        latency_ms: int,
+        classify: bool = True,
     ) -> Awaitable[None]: ...
 
 
@@ -52,8 +59,12 @@ async def record_observed_call(
     status: int,
     body: bytes | str,
     latency_ms: int,
+    classify: bool = True,
 ) -> None:
     """Ledger one answered call and record any provider incident it shows.
+
+    ``classify=False`` ledgers the answer without a failure classification — for a refusal that is
+    about one customer's own connection (a CRM token that expired), not the provider refusing Clue.
 
     ``workspace_id`` is ``None`` for a call made on the platform's own behalf (a CRM tool search,
     a Clerk lookup with no workspace yet); the row then carries no workspace.
@@ -74,7 +85,10 @@ async def record_observed_call(
                 latency_ms=latency_ms,
                 attempts=1,
                 outcome="ok" if 200 <= status < 300 else "client_error",
-                extras={"cost_source": "free", **_failure_extras(provider, status, body)},
+                extras={
+                    "cost_source": "free",
+                    **(_failure_extras(provider, status, body) if classify else {}),
+                },
             )
         )
         async with conn_factory() as conn:

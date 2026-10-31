@@ -142,6 +142,14 @@ class HttpComposioGateway:
         if self._observe is None:
             return
         segment = path.strip("/").split("/", 1)[0] or "root"
+        # A 4xx on a tool run or a connected account is about one customer's own CRM connection
+        # (an expired token, a revoked grant), not Composio refusing Clue — no provider incident.
+        # A 402 or 429 is still the account's.
+        customer_scoped = (
+            path.startswith(("/tools/execute", "/connected_accounts"))
+            and 400 <= response.status_code < 500
+            and response.status_code not in (402, 429)
+        )
         try:
             await self._observe(
                 operation=f"crm.composio.{method.lower()}_{segment}",
@@ -149,6 +157,7 @@ class HttpComposioGateway:
                 status=response.status_code,
                 body=response.content,
                 latency_ms=int((time.monotonic() - started) * 1000),
+                classify=not customer_scoped,
             )
         except Exception:  # noqa: BLE001 - reporting must never break the call it observes
             return

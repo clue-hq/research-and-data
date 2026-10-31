@@ -55,7 +55,10 @@ _REFUSALS: frozenset[str] = frozenset(
 #: runtime. Keep this set and the ``FailureReason`` alias above in step with each other.
 _REASONS: frozenset[str] = _REFUSALS | frozenset({"rate_limited", "server_error", "timeout"})
 _CREDIT_WORDS = re.compile(
-    r"credit|insufficient|no_more_credits|payment.required|top up|billing", re.IGNORECASE
+    # "insufficient" only with what is insufficient: "insufficient permissions" is a key problem,
+    # not exhausted credit (final review 2026-10-31).
+    r"credit|insufficient.(funds|balance)|no_more_credits|payment.required|top up|billing",
+    re.IGNORECASE,
 )
 #: A quota or usage limit used up, said on a 429 or a 403 (Gemini's ``RESOURCE_EXHAUSTED``,
 #: YouTube's ``quotaExceeded``). A 429 without these words is an ordinary rate limit.
