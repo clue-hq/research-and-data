@@ -54,6 +54,9 @@ DrainFn = Callable[
     ["object", BufferedRawSink, BufferedLedger, LedgerStamp], Awaitable[DrainReport]
 ]
 
+#: Every design-side OpenRouter call's incident provider; its ledger rows keep ``openrouter``.
+DESIGN_MODEL_PROVIDER = "openrouter_design"
+
 _SCOPE: ContextVar["SpendScope | None"] = ContextVar("lumen_spend_scope", default=None)
 
 
@@ -208,7 +211,9 @@ def openrouter_call(
         max_attempts=max_attempts,
         halt_rule=openrouter_halt_rule,
         cost_reader=cost_reader,
-        extras=dict(extras or {}),
+        # The row stays provider='openrouter' (the cost views group by it); the incident a refusal
+        # opens is the design provider's (design 2026-10-31).
+        extras={"incident_provider": DESIGN_MODEL_PROVIDER, **(extras or {})},
     )
     return caller().call(spec).response
 
@@ -331,6 +336,12 @@ def record_collected_model_call(
                 "cost_source": cost_source,
                 "langfuse_trace_id": call.langfuse_trace_id,
                 "langfuse_observation_id": call.langfuse_observation_id,
+                "incident_provider": DESIGN_MODEL_PROVIDER,
+                **(
+                    {"provider_failure": call.provider_failure}
+                    if getattr(call, "provider_failure", None)
+                    else {}
+                ),
             },
         )
     )

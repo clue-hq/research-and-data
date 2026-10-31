@@ -23,6 +23,7 @@ from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
+from clue_core.provider_failures import classify_exception
 from clue_gateway.metadata import ANSWERING_MODEL_KEY, ROLE_KEY, cost_cents_from_metadata
 from clue_obs.langfuse import LangfuseRunRegistry
 from langchain_core.callbacks import BaseCallbackHandler
@@ -55,6 +56,10 @@ class CollectedModelCall:
     error_code: str | None
     started_at: datetime
     completed_at: datetime
+    #: A failed call's classified provider failure (``kind``/``reason``/``message``/``provider``),
+    #: so the ledger drain can open the design provider's incident (design 2026-10-31). ``None``
+    #: for an answered call and for an error that is not the provider's.
+    provider_failure: dict[str, str] | None = None
 
     def as_json(self) -> dict[str, Any]:
         """The JSON-safe shape that rides the turn's ``result_json``.
@@ -74,6 +79,23 @@ def _error_code(error: BaseException) -> str:
     """``TimeoutError`` -> ``timeout_error``: the exception class, in the ledger's word shape."""
     name = type(error).__name__
     return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+
+#: The incident provider a design-side model refusal belongs to: the design agents' calls must not
+#: open the research lane's "Model provider" incident, which customers' research pages read.
+DESIGN_MODEL_PROVIDER = "openrouter_design"
+
+
+def _provider_failure(error: BaseException) -> dict[str, str] | None:
+    failure = classify_exception(DESIGN_MODEL_PROVIDER, error)
+    if failure is None:
+        return None
+    return {
+        "kind": failure.kind,
+        "reason": failure.reason,
+        "message": failure.message,
+        "provider": failure.provider,
+    }
 
 
 def _response_metadata(response: Any) -> dict[str, Any]:
@@ -159,6 +181,7 @@ class ModelCallCollector(BaseCallbackHandler):
             cents=None,
             source=None,
             error_code=_error_code(error),
+            provider_failure=_provider_failure(error),
         )
 
     def _append(
@@ -173,6 +196,7 @@ class ModelCallCollector(BaseCallbackHandler):
         cents: Decimal | None,
         source: str | None,
         error_code: str | None,
+        provider_failure: dict[str, str] | None = None,
     ) -> None:
         sequence, requested, started_at, started_clock = pending
         ids = self._langfuse_ids.pop(run_id) if self._langfuse_ids is not None else None
@@ -195,6 +219,7 @@ class ModelCallCollector(BaseCallbackHandler):
                 error_code=error_code,
                 started_at=started_at,
                 completed_at=datetime.now(UTC),
+                provider_failure=provider_failure,
             )
         )
 
