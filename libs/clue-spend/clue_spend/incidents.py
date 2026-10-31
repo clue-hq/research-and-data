@@ -282,7 +282,36 @@ def incident_sentence(
     return sentence
 
 
+#: Providers billed by one account. When the account runs dry they all refuse at once, so an
+#: incident whose sibling on the same account is already open for the same reason shares that
+#: sibling's Sentry event: one outage, one email.
+_ACCOUNT = {"exa": "exa", "exa_websets": "exa"}
+
+_SIBLING_EVENT = text(
+    """
+    SELECT sentry_open_event_id FROM provider_incident
+     WHERE closed_at IS NULL AND reason = :reason AND provider = ANY(CAST(:siblings AS text[]))
+       AND incident_id <> :id AND sentry_open_event_id IS NOT NULL
+     ORDER BY opened_at LIMIT 1
+    """
+)
+
+
 async def _send_open_event(conn: AsyncConnection, incident: OpenIncident) -> str | None:
+    account = _ACCOUNT.get(incident.provider)
+    if account is not None:
+        siblings = [p for p, a in _ACCOUNT.items() if a == account and p != incident.provider]
+        shared = (
+            await conn.execute(
+                _SIBLING_EVENT,
+                {"reason": incident.reason, "siblings": siblings, "id": incident.incident_id},
+            )
+        ).scalar_one_or_none()
+        if shared is not None:
+            await conn.execute(
+                _STAMP_EVENT, {"open_id": shared, "close_id": None, "id": incident.incident_id}
+            )
+            return str(shared)
     verb = "refused" if incident.kind == "refusal" else "failing"
     title = f"{provider_display(incident.provider)} {verb}: {reason_words(incident.reason)}"
     event_id = _sentry_event(title, level="error", incident=incident)

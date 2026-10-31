@@ -201,3 +201,57 @@ def test_two_processes_recording_at_once_open_one_incident_and_one_event(
 
     assert run_async(scenario()) == (1, 2)
     assert [e["level"] for e in sentry.events if provider in json.dumps(e)] == ["error"]
+
+
+def test_one_exa_outage_sends_one_email_for_search_and_websets(
+    require_claimstore_db: None, sentry: StubTransport
+) -> None:
+    """Exa search and Exa Websets bill one Exa account: when the account runs dry both refuse.
+    The second incident shares the first one's Sentry event instead of sending its own."""
+
+    async def scenario():
+        async with rollback_conn(seed_pack=False) as conn:
+            first = await record_failure(
+                conn,
+                ProviderFailure("exa", "refusal", "credits_exhausted", "NO_MORE_CREDITS"),
+                surface="research_job",
+                workspace_id=None,
+                now=NOW,
+            )
+            second = await record_failure(
+                conn,
+                ProviderFailure("exa_websets", "refusal", "credits_exhausted", "payment_required"),
+                surface="discovery",
+                workspace_id=None,
+                now=NOW + timedelta(seconds=30),
+            )
+            return first, second
+
+    first, second = run_async(scenario())
+    assert first is not None and second is not None
+    assert first.notified and second.notified  # the card still says "Clue has been notified."
+    assert [e["level"] for e in sentry.events] == ["error"]
+
+
+def test_different_reasons_on_one_account_still_alert_separately(
+    require_claimstore_db: None, sentry: StubTransport
+) -> None:
+    async def scenario():
+        async with rollback_conn(seed_pack=False) as conn:
+            await record_failure(
+                conn,
+                ProviderFailure("exa", "refusal", "credits_exhausted", "NO_MORE_CREDITS"),
+                surface="research_job",
+                workspace_id=None,
+                now=NOW,
+            )
+            await record_failure(
+                conn,
+                ProviderFailure("exa_websets", "refusal", "auth_invalid", "bad key"),
+                surface="discovery",
+                workspace_id=None,
+                now=NOW,
+            )
+
+    run_async(scenario())
+    assert [e["level"] for e in sentry.events] == ["error", "error"]
