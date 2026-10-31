@@ -38,6 +38,8 @@ __all__ = [
     "record_failure",
     "record_success",
     "send_unsent",
+    "open_or_count",
+    "close_provider",
 ]
 
 log = get_logger("clue_spend.incidents")
@@ -292,7 +294,7 @@ async def _send_open_event(conn: AsyncConnection, incident: OpenIncident) -> str
     return event_id
 
 
-async def record_failure(
+async def open_or_count(
     conn: AsyncConnection,
     failure: ProviderFailure,
     *,
@@ -300,13 +302,61 @@ async def record_failure(
     workspace_id: str | None,
     now: datetime,
 ) -> OpenIncident | None:
-    """One classified failure. Returns the open incident it landed on, or ``None`` when none is
-    open (a failure below the threshold), or on any error of its own."""
-    try:
-        # A savepoint: a database error in here rolls back only the incident write, never
-        # the caller's own transaction (a drain's ledger rows, a key check's other rows).
-        async with conn.begin_nested():
-            incremented = (
+    """:func:`record_failure` without its guard: raises on a database error (after its savepoint
+    rolled back), so a caller recording many in a row can stop at the first."""
+    # A savepoint: a database error in here rolls back only the incident write, never
+    # the caller's own transaction (a drain's ledger rows, a key check's other rows).
+    async with conn.begin_nested():
+        incremented = (
+            await conn.execute(
+                _INCREMENT,
+                {
+                    "now": now,
+                    "surface": surface,
+                    "workspace": workspace_id,
+                    "provider": failure.provider,
+                    "reason": failure.reason,
+                },
+            )
+        ).first()
+        if incremented is not None:
+            incident = _incident(incremented)
+            if not incident.notified and sentry_is_installed():
+                # The process that opened it had no Sentry: tell the founders now, once.
+                await _send_open_event(conn, incident)
+                return _incident(
+                    (await conn.execute(_SELECT_ONE, {"id": incident.incident_id})).one()
+                )
+            return incident
+        if failure.kind == "failure":
+            recent = (
+                await conn.execute(
+                    _RECENT_FAILURES,
+                    {"provider": failure.provider, "since": now - FAILURE_WINDOW},
+                )
+            ).scalar_one()
+            if int(recent) < FAILURE_THRESHOLD:
+                return None
+        count = FAILURE_THRESHOLD if failure.kind == "failure" else 1
+        inserted = (
+            await conn.execute(
+                _INSERT,
+                {
+                    "id": uuid.uuid4(),
+                    "provider": failure.provider,
+                    "kind": failure.kind,
+                    "reason": failure.reason,
+                    "now": now,
+                    "count": count,
+                    "message": failure.message,
+                    "surfaces": json.dumps({surface: 1}),
+                    "workspaces": json.dumps([workspace_id] if workspace_id else []),
+                },
+            )
+        ).first()
+        if inserted is None:
+            # Lost the race to another process: count ours onto theirs.
+            again = (
                 await conn.execute(
                     _INCREMENT,
                     {
@@ -318,68 +368,35 @@ async def record_failure(
                     },
                 )
             ).first()
-            if incremented is not None:
-                incident = _incident(incremented)
-                if not incident.notified and sentry_is_installed():
-                    # The process that opened it had no Sentry: tell the founders now, once.
-                    await _send_open_event(conn, incident)
-                    return _incident(
-                        (await conn.execute(_SELECT_ONE, {"id": incident.incident_id})).one()
-                    )
-                return incident
-            if failure.kind == "failure":
-                recent = (
-                    await conn.execute(
-                        _RECENT_FAILURES,
-                        {"provider": failure.provider, "since": now - FAILURE_WINDOW},
-                    )
-                ).scalar_one()
-                if int(recent) < FAILURE_THRESHOLD:
-                    return None
-            count = FAILURE_THRESHOLD if failure.kind == "failure" else 1
-            inserted = (
-                await conn.execute(
-                    _INSERT,
-                    {
-                        "id": uuid.uuid4(),
-                        "provider": failure.provider,
-                        "kind": failure.kind,
-                        "reason": failure.reason,
-                        "now": now,
-                        "count": count,
-                        "message": failure.message,
-                        "surfaces": json.dumps({surface: 1}),
-                        "workspaces": json.dumps([workspace_id] if workspace_id else []),
-                    },
-                )
-            ).first()
-            if inserted is None:
-                # Lost the race to another process: count ours onto theirs.
-                again = (
-                    await conn.execute(
-                        _INCREMENT,
-                        {
-                            "now": now,
-                            "surface": surface,
-                            "workspace": workspace_id,
-                            "provider": failure.provider,
-                            "reason": failure.reason,
-                        },
-                    )
-                ).first()
-                return _incident(again) if again is not None else None
-            row = (await conn.execute(_SELECT_ONE, {"id": inserted.incident_id})).one()
-            incident = _incident(row)
-            event_id = await _send_open_event(conn, incident)
-            log.warning(
-                "provider_incident.opened",
-                provider=incident.provider,
-                reason=incident.reason,
-                kind=incident.kind,
-                surface=surface,
-                sentry_event_id=event_id,
-            )
-            return _incident((await conn.execute(_SELECT_ONE, {"id": incident.incident_id})).one())
+            return _incident(again) if again is not None else None
+        row = (await conn.execute(_SELECT_ONE, {"id": inserted.incident_id})).one()
+        incident = _incident(row)
+        event_id = await _send_open_event(conn, incident)
+        log.warning(
+            "provider_incident.opened",
+            provider=incident.provider,
+            reason=incident.reason,
+            kind=incident.kind,
+            surface=surface,
+            sentry_event_id=event_id,
+        )
+        return _incident((await conn.execute(_SELECT_ONE, {"id": incident.incident_id})).one())
+
+
+async def record_failure(
+    conn: AsyncConnection,
+    failure: ProviderFailure,
+    *,
+    surface: str,
+    workspace_id: str | None,
+    now: datetime,
+) -> OpenIncident | None:
+    """One classified failure. Returns the open incident it landed on, or ``None`` when none is
+    open (a failure below the threshold), or on any error of its own."""
+    try:
+        return await open_or_count(
+            conn, failure, surface=surface, workspace_id=workspace_id, now=now
+        )
     except Exception:
         log.exception(
             "provider_incident.recorder_failed",
@@ -390,39 +407,47 @@ async def record_failure(
         return None
 
 
+async def close_provider(
+    conn: AsyncConnection, provider: str, *, now: datetime
+) -> tuple[OpenIncident, ...]:
+    """:func:`record_success` without its guard: raises on a database error (after its savepoint
+    rolled back), so a caller recording many in a row can stop at the first."""
+    # A savepoint: a database error in here rolls back only the incident write, never
+    # the caller's own transaction (a drain's ledger rows, a key check's other rows).
+    async with conn.begin_nested():
+        rows = (await conn.execute(_CLOSE, {"now": now, "provider": provider})).all()
+        closed: list[OpenIncident] = []
+        for row in rows:
+            incident = _incident(row)
+            title = (
+                f"{provider_display(provider)} recovered after "
+                f"{_duration(now - incident.opened_at)} — "
+                f"{incident.failure_count} calls failed "
+                f"({_surface_breakdown(incident.surfaces)})"
+            )
+            event_id = _sentry_event(title, level="info", incident=incident)
+            if event_id is not None:
+                await conn.execute(
+                    _STAMP_EVENT,
+                    {"open_id": None, "close_id": event_id, "id": incident.incident_id},
+                )
+            log.info(
+                "provider_incident.closed",
+                provider=provider,
+                reason=incident.reason,
+                failure_count=incident.failure_count,
+                sentry_event_id=event_id,
+            )
+            closed.append(incident)
+        return tuple(closed)
+
+
 async def record_success(
     conn: AsyncConnection, provider: str, *, now: datetime
 ) -> tuple[OpenIncident, ...]:
     """One successful call: closes every open incident of the provider, one Sentry event each."""
     try:
-        # A savepoint: a database error in here rolls back only the incident write, never
-        # the caller's own transaction (a drain's ledger rows, a key check's other rows).
-        async with conn.begin_nested():
-            rows = (await conn.execute(_CLOSE, {"now": now, "provider": provider})).all()
-            closed: list[OpenIncident] = []
-            for row in rows:
-                incident = _incident(row)
-                title = (
-                    f"{provider_display(provider)} recovered after "
-                    f"{_duration(now - incident.opened_at)} — "
-                    f"{incident.failure_count} calls failed "
-                    f"({_surface_breakdown(incident.surfaces)})"
-                )
-                event_id = _sentry_event(title, level="info", incident=incident)
-                if event_id is not None:
-                    await conn.execute(
-                        _STAMP_EVENT,
-                        {"open_id": None, "close_id": event_id, "id": incident.incident_id},
-                    )
-                log.info(
-                    "provider_incident.closed",
-                    provider=provider,
-                    reason=incident.reason,
-                    failure_count=incident.failure_count,
-                    sentry_event_id=event_id,
-                )
-                closed.append(incident)
-            return tuple(closed)
+        return await close_provider(conn, provider, now=now)
     except Exception:
         log.exception("provider_incident.recorder_failed", provider=provider, reason="close")
         return ()

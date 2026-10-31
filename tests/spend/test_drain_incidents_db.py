@@ -90,8 +90,8 @@ def test_a_drain_whose_recorder_fails_still_writes_its_rows(
     async def boom(*_args, **_kwargs):
         raise RuntimeError("database went away")
 
-    monkeypatch.setattr(incidents, "record_failure", boom)
-    monkeypatch.setattr(incidents, "record_success", boom)
+    monkeypatch.setattr(incidents, "open_or_count", boom)
+    monkeypatch.setattr(incidents, "close_provider", boom)
     report, _ = _drain_rows([_refusal("pdl", NOW)])
     assert report.rows == 1
 
@@ -124,3 +124,19 @@ def test_a_recorder_sql_error_never_rolls_back_the_drains_own_rows(
             ).scalar_one()
 
     assert run_async(scenario()) == 1
+
+
+def test_a_database_that_fails_every_write_logs_once_per_drain(
+    require_claimstore_db: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlalchemy import text
+    from structlog.testing import capture_logs
+
+    monkeypatch.setattr(
+        incidents, "_INCREMENT", text("SELECT no_such_column FROM provider_incident")
+    )
+    rows = [_refusal("pdl", NOW + timedelta(seconds=i)) for i in range(5)]
+    with capture_logs() as logs:
+        report, _ = _drain_rows(rows)
+    assert report.rows == 5
+    assert [e["event"] for e in logs].count("provider_incident.recorder_failed") == 1

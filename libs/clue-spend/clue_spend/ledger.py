@@ -370,7 +370,7 @@ async def _record_incidents(
                 continue
             seen = last_failure_at.get(failure.provider, row.recorded_at)
             last_failure_at[failure.provider] = max(seen, row.recorded_at)
-            await incidents.record_failure(
+            await incidents.open_or_count(
                 conn,
                 failure,
                 surface=_surface_for(row, stamp),
@@ -380,8 +380,10 @@ async def _record_incidents(
         for provider, ok_at in last_ok_at.items():
             failed_at = last_failure_at.get(provider)
             if failed_at is None or ok_at > failed_at:
-                await incidents.record_success(conn, provider, now=ok_at)
+                await incidents.close_provider(conn, provider, now=ok_at)
     except Exception:
+        # One line per drain: a database that refuses the first incident write refuses the rest,
+        # so the drain stops recording rather than logging once per row.
         log.exception("provider_incident.recorder_failed", reason="drain")
 
 
