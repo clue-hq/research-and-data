@@ -30,6 +30,8 @@ FailureReason = Literal[
     "key_limit",
     "auth_invalid",
     "account_suspended",
+    "quota_exhausted",
+    "key_missing",
     "rate_limited",
     "server_error",
     "timeout",
@@ -40,7 +42,14 @@ FailureReason = Literal[
 MESSAGE_CHARS = 300
 
 _REFUSALS: frozenset[str] = frozenset(
-    {"credits_exhausted", "key_limit", "auth_invalid", "account_suspended"}
+    {
+        "credits_exhausted",
+        "key_limit",
+        "auth_invalid",
+        "account_suspended",
+        "quota_exhausted",
+        "key_missing",
+    }
 )
 #: Every member of ``FailureReason``, written out so ``parse_failure_code`` can check membership at
 #: runtime. Keep this set and the ``FailureReason`` alias above in step with each other.
@@ -48,6 +57,9 @@ _REASONS: frozenset[str] = _REFUSALS | frozenset({"rate_limited", "server_error"
 _CREDIT_WORDS = re.compile(
     r"credit|insufficient|no_more_credits|payment.required|top up|billing", re.IGNORECASE
 )
+#: A quota or usage limit used up, said on a 429 or a 403 (Gemini's ``RESOURCE_EXHAUSTED``,
+#: YouTube's ``quotaExceeded``). A 429 without these words is an ordinary rate limit.
+_QUOTA_WORDS = re.compile(r"quota|resource_exhausted|usage limit", re.IGNORECASE)
 _KEY_LIMIT_WORDS = re.compile(r"key limit|spend limit|limit exceeded", re.IGNORECASE)
 _SUSPENDED_WORDS = re.compile(r"suspended|disabled|banned", re.IGNORECASE)
 _TIMEOUT_CLASS_WORDS = re.compile(r"timeout|timed out|connection", re.IGNORECASE)
@@ -83,6 +95,8 @@ def _reason_for(status: int | None, body: str) -> tuple[FailureKind, FailureReas
         return None
     if status == 402 or (status in (401, 403) and _CREDIT_WORDS.search(body)):
         return "refusal", "credits_exhausted"
+    if status in (403, 429) and _QUOTA_WORDS.search(body):
+        return "refusal", "quota_exhausted"
     if status == 403 and _KEY_LIMIT_WORDS.search(body):
         return "refusal", "key_limit"
     if status in (401, 403) and _SUSPENDED_WORDS.search(body):

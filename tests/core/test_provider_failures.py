@@ -132,3 +132,36 @@ def test_the_runtime_reason_set_is_exactly_the_type_alias() -> None:
     # is where the two are held to each other instead, so neither can grow a reason alone.
     declared = frozenset(get_args(provider_failures.FailureReason))
     assert declared == provider_failures._REASONS
+
+
+# --- quota used up and missing keys (design 2026-10-31 §6.1) ---------------------------------
+
+
+@pytest.mark.parametrize(
+    ("status", "body"),
+    [
+        (429, '{"error": {"status": "RESOURCE_EXHAUSTED", "message": "Quota exceeded for metric"}}'),
+        (403, '{"error": {"errors": [{"reason": "quotaExceeded"}], "message": "The request cannot be completed"}}'),
+        (429, "monthly usage limit reached"),
+    ],
+)
+def test_quota_replies_are_a_quota_refusal(status: int, body: str) -> None:
+    failure = classify_http("gemini", status, body)
+    assert failure is not None
+    assert (failure.kind, failure.reason) == ("refusal", "quota_exhausted")
+
+
+def test_a_plain_429_is_still_a_rate_limit() -> None:
+    failure = classify_http("brandfetch", 429, "Too Many Requests")
+    assert failure is not None and failure.reason == "rate_limited"
+
+
+def test_402_stays_credits_exhausted() -> None:
+    failure = classify_http("composio", 402, "Payment Required")
+    assert failure is not None and failure.reason == "credits_exhausted"
+
+
+@pytest.mark.parametrize("reason", ["quota_exhausted", "key_missing"])
+def test_new_refusals_round_trip_through_the_failure_code(reason: str) -> None:
+    code = failure_code(ProviderFailure("pdl", "refusal", reason, "x"))  # type: ignore[arg-type]
+    assert parse_failure_code(code) == ("pdl", "refusal", reason)

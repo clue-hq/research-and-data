@@ -120,6 +120,8 @@ const REASON_WORDS: Readonly<Record<string, string>> = {
   key_limit: "key limit exceeded",
   auth_invalid: "API key rejected",
   account_suspended: "account suspended",
+  quota_exhausted: "quota used up",
+  key_missing: "API key missing",
   rate_limited: "rate limited",
   server_error: "server errors",
   timeout: "timeouts",
