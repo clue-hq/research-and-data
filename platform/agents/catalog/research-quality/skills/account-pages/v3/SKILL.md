@@ -139,12 +139,11 @@ How the company itself operates and makes money, only as far as it changes how t
 approach them (for example, a workforce split between office and field, or union and non-union).
 Keep it short.
 
-### miscellaneous — Also worth knowing
+### miscellaneous — Miscellaneous
 
-Up to four findings a rep could use in conversation that did not fit above and are worth a rep's
-time, each as a short item with its source. Leave out trivia, background and anything about other
-people who share a name. The rest stays in the research record; leave the section empty rather than
-fill it.
+Other findings a rep could use in conversation that did not fit above, each as a short item with its
+source. Leave out trivia and anything about other people who share a name. It is fine for this
+section to be short.
 
 ## Before you return
 

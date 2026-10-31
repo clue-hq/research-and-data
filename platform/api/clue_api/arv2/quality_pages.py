@@ -532,12 +532,6 @@ async def read_page(
     # recipes say. A research finding no section cites goes into this page's Miscellaneous.
     finding_ids: tuple[str, ...] = ()
     miscellaneous = next((s for s in block["sections"] if s["key"] == "miscellaneous"), None)
-    # Research trial (founder ruling B, 2026-10-31): with page guide v3 the writer chooses up to
-    # four "also worth knowing" items and uncited findings stay in the research record only.
-    from clue_config import load_settings
-
-    if load_settings().arv2_page_guide_version == "v3":
-        miscellaneous = None
     if miscellaneous is not None:
         from clue_api.arv2.quality_presentation import uncovered_findings
 
