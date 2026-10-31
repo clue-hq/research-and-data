@@ -220,3 +220,11 @@ def test_preseal_sumble_waterfall_has_independent_authorization(tmp_path: Path) 
         storage=storage,
     )
     assert isinstance(enabled, SumbleDiscoveryGapResolver)
+
+
+def test_the_websets_observer_marks_its_rows_as_estimated_spend() -> None:
+    """Exa Websets is billed per result: its observed rows say ``estimate``, never ``free``."""
+    from clue_api.provider_observers import cost_source_for
+
+    assert cost_source_for("exa_websets") == "estimate"
+    assert cost_source_for("clerk") == "free"

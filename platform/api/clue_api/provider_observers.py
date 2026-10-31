@@ -12,6 +12,14 @@ from functools import partial
 from clue_db import ConnFactory, transaction
 from clue_spend import Observe, record_observed_call
 
+#: Providers that bill per call or per result. Their observed rows say ``estimate``; every other
+#: observed provider charges nothing per call and says ``free``.
+_BILLED = frozenset({"exa_websets"})
+
+
+def cost_source_for(provider: str) -> str:
+    return "estimate" if provider in _BILLED else "free"
+
 
 def provider_observer(
     provider: str, *, workspace_id: str | None = None, conn_factory: ConnFactory = transaction
@@ -23,4 +31,5 @@ def provider_observer(
         provider=provider,
         conn_factory=conn_factory,
         workspace_id=workspace_id,
+        cost_source=cost_source_for(provider),
     )

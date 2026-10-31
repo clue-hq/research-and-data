@@ -25,13 +25,23 @@ from clue_obs import get_logger
 
 from .calls import _failure_extras
 from .ledger import BufferedLedger, BufferedRawSink, LedgerStamp, drain_provider_calls
-from .sinks import LedgerRow
+from .sinks import CallOutcome, LedgerRow
 
 __all__ = ["ConnFactory", "Observe", "record_observed_call"]
 
 log = get_logger("clue_spend.observe")
 
 ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
+
+
+def _outcome(status: int) -> CallOutcome:
+    """The ledger's word for one observed answer. A 429 or 5xx the client already retried (or
+    would have) is ``retry_exhausted``; any other non-2xx is ``client_error``."""
+    if 200 <= status < 300:
+        return "ok"
+    if status == 429 or status >= 500:
+        return "retry_exhausted"
+    return "client_error"
 
 
 class Observe(Protocol):
@@ -60,6 +70,7 @@ async def record_observed_call(
     body: bytes | str,
     latency_ms: int,
     classify: bool = True,
+    cost_source: str = "free",
 ) -> None:
     """Ledger one answered call and record any provider incident it shows.
 
@@ -84,9 +95,11 @@ async def record_observed_call(
                 http_status=status,
                 latency_ms=latency_ms,
                 attempts=1,
-                outcome="ok" if 200 <= status < 300 else "client_error",
+                outcome=_outcome(status),
                 extras={
-                    "cost_source": "free",
+                    # ``free`` for a provider that charges nothing per call; ``estimate`` (with no
+                    # estimate columns: "we do not know") for one that bills per call or result.
+                    "cost_source": cost_source,
                     **(_failure_extras(provider, status, body) if classify else {}),
                 },
             )

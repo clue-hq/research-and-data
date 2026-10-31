@@ -110,3 +110,40 @@ def test_an_unclassified_answer_is_ledgered_but_opens_no_incident(
             return await open_incidents(conn, providers=["composio"])
 
     assert run_async(scenario()) == ()
+
+
+def test_a_server_error_is_retry_exhausted_and_a_billed_provider_is_an_estimate(
+    require_claimstore_db: None,
+) -> None:
+    workspace = f"ws_observe_{uuid4().hex[:8]}"
+
+    async def scenario():
+        async with rollback_conn(seed_pack=False) as conn:
+
+            @asynccontextmanager
+            async def same():
+                yield conn
+
+            await record_observed_call(
+                provider="exa_websets",
+                conn_factory=same,
+                workspace_id=workspace,
+                operation="o",
+                label="l",
+                status=503,
+                body=b"busy",
+                latency_ms=1,
+                cost_source="estimate",
+            )
+            return (
+                await conn.execute(
+                    text(
+                        "SELECT outcome, extras_json ->> 'cost_source' AS source "
+                        "FROM provider_call_ledger WHERE workspace_id = :ws"
+                    ),
+                    {"ws": workspace},
+                )
+            ).one()
+
+    row = run_async(scenario())
+    assert (row.outcome, row.source) == ("retry_exhausted", "estimate")
