@@ -380,6 +380,23 @@ def drain_sync(scope: SpendScope) -> DrainReport:
     return run_isolated(run())
 
 
+def flush_if_refused(provider: str, status: int, body: bytes | str) -> None:
+    """Write this scope's rows now when ``provider`` just refused us (design 2026-10-31).
+
+    A unit of work drains when it ends, and a killed job never does — so a vendor refusing for
+    credits or a rejected key would open its incident late, or never. A refusal is written the
+    moment it happens; an ordinary answer still waits for the unit's own drain.
+    """
+    from clue_core.provider_failures import classify_http
+
+    text = body.decode("utf-8", "replace") if isinstance(body, bytes) else body
+    failure = classify_http(provider, status, text)
+    scope = current_scope()
+    if failure is None or failure.kind != "refusal" or scope is None:
+        return
+    drain_safely(scope)
+
+
 def check_provider_keys_sync(*, role: str = "design-api") -> None:
     """The start-up key check for the design API (design 2026-10-31 §6.3).
 
@@ -409,6 +426,7 @@ def check_provider_keys_sync(*, role: str = "design-api") -> None:
 __all__ = [
     "DrainFn",
     "check_provider_keys_sync",
+    "flush_if_refused",
     "SpendScope",
     "caller",
     "current_scope",

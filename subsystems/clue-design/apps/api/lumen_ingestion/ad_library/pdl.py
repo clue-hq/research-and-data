@@ -214,6 +214,8 @@ class PdlCompanyIdentityResolver:
                 "company_identity.transport_error",
                 f"{type(error).__name__}: {str(error)[:FAILURE_EXCERPT_MAX]}",
             ) from error
+        # A refusal (PDL out of credits, a rejected key) is written now, not when the job ends.
+        spend.flush_if_refused(PDL_RESOLVER_NAME, response.status, response.body)
         if response.status == 404:
             # The vendor's documented "no company matched". An answer, not a fault.
             return None

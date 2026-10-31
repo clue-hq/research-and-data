@@ -511,17 +511,23 @@ def _scoped(transport: _SpendTransport):
 
 
 def test_a_pdl_402_is_ledgered_as_credits_exhausted(
-    resolver: PdlCompanyIdentityResolver,
+    resolver: PdlCompanyIdentityResolver, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The Pallet onboarding of 2026-10-31: PDL answered 402 and nobody was told."""
+    from lumen_api import spend
+
+    written: list[Any] = []
+    monkeypatch.setattr(
+        spend, "drain_safely", lambda scope, **_: written.extend(scope.ledger.drain())
+    )
     transport = _SpendTransport(402, b'{"status": 402, "error": {"type": "payment_required"}}')
-    with _scoped(transport) as scope:
+    with _scoped(transport):
         with pytest.raises(CompanyIdentityError):
             resolver.resolve("https://www.pallet.com/")
     (request,) = transport.sent
     assert request.method == "GET"
     assert request.url == "https://api.example.com/v5/company/enrich?website=pallet.com"
-    (result,) = [row for row in scope.ledger.rows if row.phase == "result"]
+    (result,) = [row for row in written if row.phase == "result"]
     assert result.provider == "pdl"
     assert result.extras["provider_failure"]["reason"] == "credits_exhausted"
     assert "test-key" not in json.dumps(result.extras)
@@ -535,3 +541,36 @@ def test_a_pdl_404_through_the_spend_layer_is_still_an_absence(
         assert resolver.resolve("nobody.example") is None
     (result,) = [row for row in scope.ledger.rows if row.phase == "result"]
     assert "provider_failure" not in result.extras
+
+
+def test_a_pdl_refusal_is_written_at_once_not_at_the_end_of_the_job(
+    resolver: PdlCompanyIdentityResolver, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Final-review minor: the job drains at its end, and a killed job never does. A refusal is
+    written the moment it happens so its incident opens even if the job then dies."""
+    from lumen_api import spend
+
+    flushed: list[list[str]] = []
+    monkeypatch.setattr(
+        spend,
+        "drain_safely",
+        lambda scope, **_: flushed.append([row.provider for row in scope.ledger.drain()]),
+    )
+    transport = _SpendTransport(402, b'{"status": 402}')
+    with _scoped(transport):
+        with pytest.raises(CompanyIdentityError):
+            resolver.resolve("pallet.com")
+    assert flushed and "pdl" in flushed[0]
+
+
+def test_a_pdl_answer_waits_for_the_jobs_own_drain(
+    resolver: PdlCompanyIdentityResolver, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lumen_api import spend
+
+    flushed: list[object] = []
+    monkeypatch.setattr(spend, "drain_safely", lambda scope, **_: flushed.append(scope))
+    transport = _SpendTransport(404, json.dumps(load("pdl_not_found")).encode())
+    with _scoped(transport):
+        resolver.resolve("nobody.example")
+    assert flushed == []
