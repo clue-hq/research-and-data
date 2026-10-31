@@ -29,6 +29,15 @@ onboarding where PDL answered 402 and nobody was told.
 - Live on trenton: platform API + workers restarted; open `key_missing` incidents for the lane's
   blank keys (Composio, Cloudflare, Podcast Index ×2, YouTube), one Sentry event each.
 
+## Final review (fresh reviewer, 2026-10-31) — fixed
+- Recorder writes run in a savepoint (a DB error no longer rolls back a drain's ledger rows).
+- Design scene/site/web agents' refusals now open `openrouter_design` (recorded from the run's
+  collected calls after its receipts land — `record_design_run_incidents`).
+- A per-minute/per-second quota reply is a rate limit (Gemini bursts), not a first-sight refusal.
+- A failed key check logs its error type only (no traceback carrying the environment).
+- Deferred minors are listed in the plan ledger's `Final: minor` lines (retries counted, observed
+  rows' cost_source, design-side failure thresholds, PDL incident only at drain, etc.).
+
 ## Owed
 - Founder: the Sentry alert rule (spec §10); top up PDL; re-run Pallet ad onboarding afterwards.
 - The advertiser-name fallback (use the brand kit's name when PDL can't answer) — separate change.
