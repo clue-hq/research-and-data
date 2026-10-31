@@ -179,33 +179,51 @@ class PdlCompanyIdentityResolver:
     def _get(self, domain: str) -> JsonObject | None:
         """One HTTP round trip, or ``None`` for a documented not-found.
 
-        ``httpx`` is imported here so the seam stays transport-free, the same way the ad-library
-        provider does it.
+        The round trip goes through the unit of work's spend caller, like the ad-library vendor's:
+        the enrichment credit lands on ``provider_call_ledger`` and a refusal (a 402 when the PDL
+        account is out of credits, as on 2026-10-31) opens a provider incident when the scope
+        drains. No retry: one enrichment is one credit (``max_attempts=1``).
         """
-        import httpx  # lazy: only the real network path needs it
+        import json as _json  # lazy: only the real network path needs it
+        from decimal import Decimal
+        from urllib.parse import urlencode
 
+        from clue_spend import CallSpec, HttpRequest, SpendEstimate
+        from lumen_api import spend
+
+        request = HttpRequest(
+            method="GET",
+            url=f"{self.endpoint}?{urlencode({'website': domain})}",
+            headers={"X-Api-Key": self._api_key, "Accept": "application/json"},
+            timeout_s=self._timeout_s,
+        )
         try:
-            response = httpx.get(
-                self.endpoint,
-                params={"website": domain},
-                headers={"X-Api-Key": self._api_key, "Accept": "application/json"},
-                timeout=self._timeout_s,
-            )
+            response = spend.caller().call(
+                CallSpec(
+                    provider=PDL_RESOLVER_NAME,
+                    operation="design.ad_library.identity",
+                    label="ad_library:company identity",
+                    request=request,
+                    estimate=SpendEstimate(credits=Decimal(1)),
+                    max_attempts=1,
+                    binary=False,
+                )
+            ).response
         except Exception as error:  # noqa: BLE001 - every transport failure is one typed code
             raise CompanyIdentityError(
                 "company_identity.transport_error",
                 f"{type(error).__name__}: {str(error)[:FAILURE_EXCERPT_MAX]}",
             ) from error
-        if response.status_code == 404:
+        if response.status == 404:
             # The vendor's documented "no company matched". An answer, not a fault.
             return None
-        if response.status_code >= 400:
+        if response.status >= 400:
+            excerpt = response.body.decode("utf-8", "replace")[:FAILURE_EXCERPT_MAX]
             raise CompanyIdentityError(
-                "company_identity.http_error",
-                f"HTTP {response.status_code}: {response.text[:FAILURE_EXCERPT_MAX]}",
+                "company_identity.http_error", f"HTTP {response.status}: {excerpt}"
             )
         try:
-            payload = response.json()
+            payload = _json.loads(response.body)
         except Exception as error:  # noqa: BLE001
             raise CompanyIdentityError(
                 "company_identity.malformed_response",

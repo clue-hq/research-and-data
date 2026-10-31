@@ -484,3 +484,54 @@ def test_the_fallback_label_does_not_name_the_fetch_vendor() -> None:
     """
     assert RESOLVER_AD_LIBRARY_DOMAIN == "ad_library_domain"
     assert "adyntel" not in RESOLVER_AD_LIBRARY_DOMAIN
+
+
+# --- the lookup goes through the spend layer (design 2026-10-31) -------------------------------
+
+
+class _SpendTransport:
+    """A ``clue_spend`` transport answering every request with one canned response."""
+
+    def __init__(self, status: int, body: bytes) -> None:
+        from clue_spend import HttpResponse
+
+        self.response = HttpResponse(status=status, body=body)
+        self.sent: list[Any] = []
+
+    def send(self, request: Any) -> Any:
+        self.sent.append(request)
+        return self.response
+
+
+def _scoped(transport: _SpendTransport):
+    from clue_spend import LedgerStamp
+    from lumen_api import spend
+
+    return spend.spend_scope(LedgerStamp(workspace_id="ws_pdl"), transport=transport)
+
+
+def test_a_pdl_402_is_ledgered_as_credits_exhausted(
+    resolver: PdlCompanyIdentityResolver,
+) -> None:
+    """The Pallet onboarding of 2026-10-31: PDL answered 402 and nobody was told."""
+    transport = _SpendTransport(402, b'{"status": 402, "error": {"type": "payment_required"}}')
+    with _scoped(transport) as scope:
+        with pytest.raises(CompanyIdentityError):
+            resolver.resolve("https://www.pallet.com/")
+    (request,) = transport.sent
+    assert request.method == "GET"
+    assert request.url == "https://api.example.com/v5/company/enrich?website=pallet.com"
+    (result,) = [row for row in scope.ledger.rows if row.phase == "result"]
+    assert result.provider == "pdl"
+    assert result.extras["provider_failure"]["reason"] == "credits_exhausted"
+    assert "test-key" not in json.dumps(result.extras)
+
+
+def test_a_pdl_404_through_the_spend_layer_is_still_an_absence(
+    resolver: PdlCompanyIdentityResolver,
+) -> None:
+    transport = _SpendTransport(404, json.dumps(load("pdl_not_found")).encode())
+    with _scoped(transport) as scope:
+        assert resolver.resolve("nobody.example") is None
+    (result,) = [row for row in scope.ledger.rows if row.phase == "result"]
+    assert "provider_failure" not in result.extras
