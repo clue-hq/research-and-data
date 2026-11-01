@@ -1,0 +1,32 @@
+[
+  {
+    "name": "precision-square",
+    "title": "Aluminum Precision Woodworking Squares",
+    "variant": "6 Inch",
+    "price": "89.99",
+    "productUrl": "https://woodpeck.com/products/precision-woodworking-squares-aluminum?variant=43541846687803",
+    "imageSource": "https://cdn.shopify.com/s/files/1/0657/6652/2939/files/641i-24.jpg?v=1779579172&width=1000",
+    "observedAt": "2026-11-01",
+    "usage": "Retailer product photograph for local review demo; not a fulfillment photo."
+  },
+  {
+    "name": "dual-beam-scribe",
+    "title": "N\u00b094 Dual Beam Scribe",
+    "variant": "Inch",
+    "price": "99.99",
+    "productUrl": "https://woodpeck.com/products/n-94-dual-beam-scribe?variant=44484751720507",
+    "imageSource": "https://cdn.shopify.com/s/files/1/0657/6652/2939/files/Dual-Beam-Scribe_26_01.jpg?v=1791912617&width=1000",
+    "observedAt": "2026-11-01",
+    "usage": "Retailer product photograph for local review demo; not a fulfillment photo."
+  },
+  {
+    "name": "multi-marking-square",
+    "title": "3D Multi-Marking Square",
+    "variant": "Inch",
+    "price": "69.99",
+    "productUrl": "https://woodpeck.com/products/3d-multi-marking-square?variant=43543744217147",
+    "imageSource": "https://cdn.shopify.com/s/files/1/0657/6652/2939/files/3d-mms-i.jpg?v=1779635742&width=1000",
+    "observedAt": "2026-11-01",
+    "usage": "Retailer product photograph for local review demo; not a fulfillment photo."
+  }
+]

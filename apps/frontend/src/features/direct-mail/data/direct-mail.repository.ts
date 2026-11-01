@@ -4,6 +4,8 @@ import { approveMailers, CardAssetSchema, isDraft, requireMailer, reviewMailer, 
 import type { DirectMailStore } from "./direct-mail.storage";
 import { demoGifts } from "./direct-mail.fixture";
 import { GiftBudgetSchema, NoteTemplateSchema, type GiftBudget, type NoteTemplate } from "../model/direct-mail-context";
+import { advanceHarveyDemo, resetHarveyDemo } from "./harvey-demo";
+import { writePendingDraft } from "./direct-mail.drafts";
 
 const CreateSchema = z.object({ projectId: z.string(), campaign: z.string().trim().min(1).max(100), recipientIds: z.array(z.string()).min(1), budgetCents: z.number().int().min(100).max(1_000_000), cardId: z.string(), styleId: z.string() });
 export type CreateCampaign = z.infer<typeof CreateSchema>;
@@ -25,6 +27,8 @@ export interface DirectMailRepository {
   saveBudget(input: GiftBudget, expectedRevision: number): Promise<DirectMailState>;
   saveTemplate(input: NoteTemplate): Promise<DirectMailState>;
   topUp(amountCents: number): Promise<DirectMailState>;
+  advanceDemo?(id: string, revision: number): Promise<DirectMailState>;
+  resetDemo?(id: string, revision: number): Promise<DirectMailState>;
   subscribe(listener: () => void): () => void;
 }
 const EVENT = "clue-direct-mail-change";
@@ -41,13 +45,21 @@ function subscribe(listener: () => void) {
   return () => { window.removeEventListener(EVENT, listener); channel?.close(); };
 }
 
-export function createDirectMailRepository(store: DirectMailStore, pilotLoader?: () => Promise<Mailer[]>): DirectMailRepository {
+export function createDirectMailRepository(store: DirectMailStore, pilotLoader?: () => Promise<Mailer[]>, recordingDemo = false): DirectMailRepository {
   let loaded: Promise<Mailer[]> | undefined;
   async function write(change: (state: DirectMailState) => DirectMailState) {
     const state = await store.transact((state) => { const next = StateSchema.parse(change(state)); return { state: next, result: next }; });
     notify(); return state;
   }
   return {
+    ...(recordingDemo ? {
+      advanceDemo: (id: string, revision: number) => write(state => advanceHarveyDemo(state, id, revision)),
+      resetDemo: async (id: string, revision: number) => {
+        const state = await write(state => resetHarveyDemo(state, id, revision));
+        if (typeof sessionStorage !== "undefined" && !writePendingDraft(id, null)) throw new Error("The recording was reset, but the unsaved note could not be cleared. Discard the recovered draft before continuing.");
+        return state;
+      },
+    } : {}),
     read: async () => {
       if (!pilotLoader) return store.read();
       let examples: Mailer[];
