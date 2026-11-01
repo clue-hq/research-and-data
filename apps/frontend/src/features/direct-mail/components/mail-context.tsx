@@ -8,8 +8,9 @@ import { money, type Mailer } from "../model/direct-mail";
 import type { DirectMailController } from "../hooks/use-direct-mail";
 import { useGiftBudget, useNoteTemplates } from "../hooks/use-mail-context";
 import { MailDialog } from "./mail-ui";
+import { HarveyMaterials } from "./harvey-materials";
 import styles from "./direct-mail.module.css";
-import { HARVEY_DEMO_ID } from "../model/harvey-demo-context";
+import { HARVEY_PROJECT_ID } from "../model/harvey-demo-context";
 
 export function MailBadge({ children }: { children: React.ReactNode }) { return <span className={styles.badge}>{children}</span>; }
 
@@ -22,7 +23,7 @@ export function NoteTemplates({ controller: c, mailer, edit }: { controller: Dir
 export function MailerConnections({ mailer: m, onOpenPage }: { mailer: Mailer; onOpenPage?:()=>void }) {
   const site = m.assets?.find((asset) => asset.kind === "microsite");
   const destination = m.qr?.destinationUrl ?? site?.url;
-  if (m.id === HARVEY_DEMO_ID) return <section className={styles.section}><h2>Related project material</h2>{site?.url ? <a className={`${styles.small} ${styles.textLink}`} href={site.url} target="_blank" rel="noreferrer">{site.title}<ExternalLink size={13} /></a> : null}<p className={`${styles.caption} mt-2`}>{site?.source}</p></section>;
+  if (m.projectId === HARVEY_PROJECT_ID) return <HarveyMaterials accountId={m.accountId} />;
   return <section className={styles.section}><div className={styles.between}><h2>Microsite & printed card</h2><MailBadge>{m.qr?.verifiedAt ? "QR verified" : m.qr?.printedUrl ? "QR assigned · Check pending" : "Assign during preparation"}</MailBadge></div>
     {onOpenPage ? <Button variant="transparent" size="sm" onClick={onOpenPage}>Preview connected landing page</Button> : destination ? <a className={`${styles.small} ${styles.textLink}`} href={destination} target="_blank" rel="noreferrer">{site?.title ?? "Recipient microsite"}<ExternalLink size={13} /></a> : <p className={`${styles.small} ${styles.subtle}`}>The agent will link the recipient’s microsite from this project.</p>}
     {destination ? <p className={`${styles.caption} mt-2`}>{m.qr?.destinationStatus === "published" ? "Microsite published" : m.qr?.destinationStatus === "draft" ? "Microsite draft · Publish before dispatch" : "Microsite publication not verified"}</p> : null}

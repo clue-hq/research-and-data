@@ -4,15 +4,14 @@ import { MembersSchema } from "@/features/settings/model/members";
 import { PagesSettingsReadSchema } from "@/features/settings/model/pages";
 import { ResearchFieldsSchema } from "@/features/settings/model/research-fields";
 import { ProjectDocumentDetailSchema } from "@/features/projects/model/project-documents";
-import { workspaceProfileFixture } from "@/features/accounts/data/workspace-profile.fixture";
 
 export const previewProfile = ProfileSchema.parse({
-  user_id: "usr_demo", first_name: "Aakash", last_name: "Shrivastava",
-  full_name: workspaceProfileFixture.fullName, display_name: workspaceProfileFixture.displayName,
+  user_id: "usr_demo", first_name: "Shank", last_name: "Keshri",
+  full_name: "Shank Keshri", display_name: "Shank Keshri",
   email: "reviewer@example.test",
 });
 export const previewWorkspace = WorkspaceSchema.parse({
-  workspace_id: "ws-demo", name: "Clue Demo", website: "https://example.test", logo_url: null,
+  workspace_id: "ws-demo", name: "Harvey workspace", website: "https://www.harvey.ai", logo_url: "/direct-mail/harvey-demo/harvey-logo.svg",
 });
 export const previewMembers = MembersSchema.parse({
   invitations_configured: false,

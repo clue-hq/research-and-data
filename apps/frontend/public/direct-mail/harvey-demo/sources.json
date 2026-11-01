@@ -28,5 +28,69 @@
     "imageSource": "https://cdn.shopify.com/s/files/1/0657/6652/2939/files/3d-mms-i.jpg?v=1779635742&width=1000",
     "observedAt": "2026-11-01",
     "usage": "Retailer product photograph for local review demo; not a fulfillment photo."
+  },
+  {
+    "name": "squire-emerald",
+    "title": "Squire Classic Pen",
+    "variant": "Emerald",
+    "price": "65.0",
+    "productUrl": "https://baronfig.com/products/squire?variant=44180182270035",
+    "imageSource": "https://cdn.shopify.com/s/files/1/0543/1257/files/squire_emerald_buy-square_01_df315bdd-3c47-41e7-a04d-00df20de6591.jpg?v=1777040256",
+    "observedAt": "2026-11-01",
+    "usage": "Official product photograph; no physical delivery is asserted."
+  },
+  {
+    "name": "squire-slate",
+    "title": "Squire Classic Pen",
+    "variant": "Blue Slate",
+    "price": "65.0",
+    "productUrl": "https://baronfig.com/products/squire?variant=909578338329",
+    "imageSource": "https://cdn.shopify.com/s/files/1/0543/1257/products/squire_blue-slate_buy-square_01.jpg?v=1776094152",
+    "observedAt": "2026-11-01",
+    "usage": "Official product photograph; no physical delivery is asserted."
+  },
+  {
+    "name": "squire-black",
+    "title": "Squire Classic Pen",
+    "variant": "Blackout",
+    "price": "65.0",
+    "productUrl": "https://baronfig.com/products/squire?variant=18056190689363",
+    "imageSource": "https://cdn.shopify.com/s/files/1/0543/1257/files/squire_blackout_buy-variant_01.jpg?v=1776094152",
+    "observedAt": "2026-11-01",
+    "usage": "Official product photograph; no physical delivery is asserted."
+  },
+  {
+    "name": "benesch-page",
+    "source": "https://app.cluehq.ai/projects/prj_7f66ff82c4185f7789074d4555f3105e/chats/thr_2134514622d05eddb8d34bf58bc680dc",
+    "documentId": "doc_6e9634cf1bf350f9977b5eccf2720b19",
+    "observedAt": "2026-11-01",
+    "usage": "Screenshot of the existing rendered design, cropped to the canvas. Landing-page images are the opening viewport. Read-only local preview; publication or delivery status is not imported."
+  },
+  {
+    "name": "pinsent-page",
+    "source": "https://app.cluehq.ai/projects/prj_7f66ff82c4185f7789074d4555f3105e/chats/thr_2134514622d05eddb8d34bf58bc680dc",
+    "documentId": "doc_bab4f25ab54955cb87e4bf63728bb730",
+    "observedAt": "2026-11-01",
+    "usage": "Screenshot of the existing rendered design, cropped to the canvas. Landing-page images are the opening viewport. Read-only local preview; publication or delivery status is not imported."
+  },
+  {
+    "name": "benesch-ad",
+    "source": "https://app.cluehq.ai/projects/prj_7f66ff82c4185f7789074d4555f3105e/chats/thr_2134514622d05eddb8d34bf58bc680dc",
+    "documentId": null,
+    "observedAt": "2026-11-01",
+    "usage": "Screenshot of the existing rendered design, cropped to the canvas. Landing-page images are the opening viewport. Read-only local preview; publication or delivery status is not imported."
+  },
+  {
+    "name": "pinsent-ad",
+    "source": "https://app.cluehq.ai/projects/prj_7f66ff82c4185f7789074d4555f3105e/chats/thr_2134514622d05eddb8d34bf58bc680dc",
+    "documentId": null,
+    "observedAt": "2026-11-01",
+    "usage": "Screenshot of the existing rendered design, cropped to the canvas. Landing-page images are the opening viewport. Read-only local preview; publication or delivery status is not imported."
+  },
+  {
+    "name": "brand-logos",
+    "source": "Existing deployed landing-page image assets",
+    "observedAt": "2026-11-01",
+    "usage": "Original Harvey, Benesch and Pinsent Masons logo assets copied from the rendered campaign previews."
   }
 ]

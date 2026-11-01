@@ -85,10 +85,10 @@ export default async function ProtectedLayout({
             the R8 leave-as-is ruling. Workspace switching lives at /select-workspace;
             sign-out at /sign-out. */}
         <WorkspaceSwitcherProvider
-          activeWorkspaceId={session?.principal.workspace_id ?? null}
-          demo={transport.mode === "fixture"}
+          activeWorkspaceId={preview ? "harvey-preview" : session?.principal.workspace_id ?? null}
+          demo={!preview && transport.mode === "fixture"}
           onSelect={switchWorkspace}
-          workspaces={workspaces}
+          workspaces={preview ? [{ id: "harvey-preview", name: "Harvey workspace", initials: "H", role: "Owner", logoUrl: "/direct-mail/harvey-demo/harvey-logo.svg" }] : workspaces}
         >
           <ConfirmationProvider>
             <OrchestrationProvider enabled={preview}>

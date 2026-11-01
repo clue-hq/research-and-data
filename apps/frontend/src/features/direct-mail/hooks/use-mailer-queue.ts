@@ -3,13 +3,14 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { estimate, isDraft, readiness, type ApprovalResult, type Mailer } from "../model/direct-mail";
 import type { DirectMailController } from "./use-direct-mail";
+import { HARVEY_PROJECT_ID } from "../model/harvey-demo-context";
 import { readPendingDraft } from "../data/direct-mail.drafts";
 
 export const queueTabs = [{ id: "all", label: "All mailers" }, { id: "review", label: "Needs review" }, { id: "active", label: "In progress" }, { id: "attention", label: "Needs attention" }, { id: "delivered", label: "Delivered" }];
 export function useMailerQueue(c: DirectMailController) {
   const router = useRouter();
   const params = useSearchParams();
-  const search = params.get("q") ?? "", project = params.get("project") ?? "all", tab = params.get("status") ?? "all", sort = params.get("sort") ?? "recent";
+  const search = params.get("q") ?? "", project = params.get("project") ?? (c.data?.mailers.some(m => m.projectId === HARVEY_PROJECT_ID) ? HARVEY_PROJECT_ID : "all"), tab = params.get("status") ?? "all", sort = params.get("sort") ?? "recent";
   const campaign = params.get("campaign") ?? "all";
   const page = Math.max(1, Number(params.get("page")) || 1);
   const [selection, setSelection] = useState<string[]>([]);

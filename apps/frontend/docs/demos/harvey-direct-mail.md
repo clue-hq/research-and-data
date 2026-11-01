@@ -2,7 +2,7 @@
 
 Open http://localhost:5001/direct-mail/mailer-harvey-benesch-jason.
 
-This is the existing Direct Mail V2 UI with one additive, local recording fixture. Harvey is the seller; Benesch is the researched target account. No production records were changed. Research was read from the deployed Harvey project and the selected buyer profile; only the relevant public context is represented locally. This is not a full workspace sync.
+This is the existing Direct Mail V2 UI with additive local recording fixtures. Harvey is the seller; Benesch is the researched target account, and Pinsent Masons supplies a separate completed-delivery example. No production records were changed. Research was read from the deployed Harvey project and the selected buyer profile; only the relevant public context is represented locally. This is not a full workspace sync.
 
 ## Recording sequence
 
@@ -32,3 +32,16 @@ The V2 provider adds the fixture through its existing browser repository seam. D
 Approval uses the existing gift/note/address/budget checks. The existing landing page is linked to the deployed design conversation as account-level context; it is not represented as a published recipient microsite or a working QR destination.
 
 Validation: 27 focused tests; token build; lint (0 errors, 11 existing warnings); Next production build. Browser verification covered approval through all seven simulated fulfillment transitions, reset, unsaved-note reset, filtered queue, and reload persistence.
+
+## Recording overview and completed example
+
+`/direct-mail` now opens the Harvey queue by default. Existing scenarios remain in the project filter; the earlier 500-account walkthrough is at `/direct-mail?demo=walkthrough`.
+
+- The local shell uses **Shank Keshri / Harvey workspace**, with the original Harvey logo. This is a preview identity, not a new membership or a production profile change.
+- The queue shows real account logos, each recipient’s selected gift and note, separate account-level landing-page/ad previews, delivery stage and approved estimate.
+- Four previews were captured from the actual deployed project: Benesch and Pinsent Masons pages and LinkedIn ads. These are read-only visual captures, not locally editable or published copies. Landing-page captures show the opening viewport; “Open original in Clue” returns to the existing design conversation for the complete page.
+- `/direct-mail/mailer-harvey-pinsent-hayley` is a **simulated historical delivery**. It uses a genuine $65 Baronfig Squire Classic Pen (Emerald), a drafted approved card snapshot, and the public London office address. $129.50 illustrative estimate: $65 product + $8 inbound + $15 preparation + $35 outbound + $6.50 tax. The seeded history neither spends nor changes the current demo wallet.
+- The professional context is sourced from the firm’s [appointment announcement](https://www.pinsentmasons.com/about-us/announcements/pinsent-masons-appoints-first-global-chief-knowledge-and-ai-adoption-officer); the address from its [London office page](https://www.pinsentmasons.com/locations/europe/united-kingdom/london). The suggestion does not imply a personal hobby, acceptance of a gift or a real delivery.
+- The same cost-breakdown component now appears during review, approval (including summed bulk costs) and tracking. Unknown costs remain “Not quoted”.
+
+Validation for the overview polish: 28 Direct Mail tests plus 6 preview tests; design-system build; lint with 0 errors and 11 pre-existing warnings; Next production build; browser checks for queue filtering, saved ad previews, delivery details, and local workspace identity.

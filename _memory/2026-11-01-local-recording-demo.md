@@ -16,3 +16,13 @@
 - Removed the full-width recording banner at user request. Moved reset/replay and deployed-research access to an ellipsis menu in the page header; underlying simulation and approval behavior unchanged.
 - Simplified the address checkbox to the requested text: “Use this public office address.”
 - Verified menu rendering in the browser without resetting the user’s in-progress review. Token build, lint (0 errors / 11 existing warnings), production build and whitespace check passed for the menu change; the final checkbox adjustment is text-only.
+
+## Recording overview polish
+
+- Itemized costs now use one shared view for review, approval (single/bulk) and tracking. Added a separate historical-delivery fixture with an immutable approved card/gift snapshot and two-leg delivery history; seeding is additive and does not debit credits or reset the existing mailer.
+- Replaced the default generic account walkthrough entrance with the recording queue. Earlier walkthrough remains explicitly reachable; project filters still expose other records.
+- Added original brand assets and four read-only canvas captures from existing deployed designs. Captures are not editable/published copies; links lead to originals. Asset provenance stays in the demo manifest, not this memory.
+- Preview-only profile/workspace renamed as requested. Restarted only the verified V2 port-5001 process to refresh the process-local profile fixture; V1 and production untouched.
+- A browser media download stalled and reset the tool runtime. Recovered the existing browser via inventory and used screenshots plus observed public asset URLs. No browser credentials were extracted. One token-build invocation used the repo root and failed; reran successfully in apps/frontend.
+
+- Closing verification: 28 Direct Mail tests and 6 preview tests passed; token build, lint (0 errors / 11 existing warnings), Next production build, and whitespace check passed. Browser verified both seeded accounts, preserved existing approval, delivered-only filtering, real ad preview, and requested profile/workspace branding. V2 remains running on port 5001; no production changes or remote publication.

@@ -1,7 +1,7 @@
-import { MailerSchema, StateSchema, requireMailer, type DirectMailState, type Stage } from "../model/direct-mail";
+import { MailerSchema, StateSchema, requireMailer, estimate, type DirectMailState, type Stage } from "../model/direct-mail";
 
 /** A sourced recording fixture. No backend, merchant or carrier writes are connected. */
-import { HARVEY_DEMO_ID, HARVEY_PROJECT_ID, HARVEY_ACCOUNT_ID, HARVEY_PROJECT_URL } from "../model/harvey-demo-context";
+import { HARVEY_DEMO_ID, HARVEY_PROJECT_ID, HARVEY_ACCOUNT_ID, HARVEY_PROJECT_URL, HARVEY_DELIVERED_ID, HARVEY_PINSENT_ID } from "../model/harvey-demo-context";
 export { HARVEY_DEMO_ID } from "../model/harvey-demo-context";
 
 export function createHarveyMailer() {
@@ -42,6 +42,7 @@ export function withHarveyDemo(input: DirectMailState): DirectMailState {
   if (!state.mailers.some(m => m.id === HARVEY_DEMO_ID)) state.mailers.unshift(createHarveyMailer());
   if (!state.cards.some(c => c.id === "card-harvey-demo")) state.cards.push({ id: "card-harvey-demo", name: "Harvey · Personal note", version: 1, frontUrl: "/direct-mail/harvey-demo/card.svg", backUrl: null, paper: "white", writingArea: { x: 9, y: 10, width: 82, height: 82 }, productionReady: true });
   if (!state.giftBudgets?.some(b => b.projectId === HARVEY_PROJECT_ID)) (state.giftBudgets ??= []).push({ projectId: HARVEY_PROJECT_ID, revision: 1, minimumCents: 7000, preferredCents: 10000, ceilingCents: 12000, locked: true });
+  if (!state.mailers.some(m => m.id === HARVEY_DELIVERED_ID)) state.mailers.push(createDeliveredHarveyMailer(state));
   return StateSchema.parse(state);
 }
 
@@ -83,4 +84,41 @@ export function resetHarveyDemo(input: DirectMailState, id: string, revision: nu
   }
   state.mailers = state.mailers.map(m => m.id === id ? { ...createHarveyMailer(), revision: old.revision + 1 } : m);
   return StateSchema.parse(state);
+}
+
+/** Historical simulation: materialized once, without debiting the active demo wallet. */
+export function createDeliveredHarveyMailer(state: DirectMailState) {
+  const base = createHarveyMailer();
+  const gifts = [
+    { id: "squire-emerald", color: "Emerald", variant: "44180182270035" },
+    { id: "squire-slate", color: "Blue Slate", variant: "909578338329" },
+    { id: "squire-black", color: "Blackout", variant: "18056190689363" },
+  ].map((item, index) => ({ id: item.id, name: "Baronfig Squire Classic Pen", variant: `${item.color} · Rollerball`, merchant: "Baronfig", priceCents: 6500, image: `/direct-mail/harvey-demo/${item.id}.jpg`, rationale: "A considered desk tool for working sessions and capturing ideas. This is a professional-context suggestion, not a claim about a personal interest.", available: true, arrival: "Merchant availability confirmed before ordering", recommended: index === 0, productUrl: `https://baronfig.com/products/squire?variant=${item.variant}`, observedAt: "2026-11-01" }));
+  const m = MailerSchema.parse({ ...base, id: HARVEY_DELIVERED_ID, revision: 9, reviewedRevision: null,
+    campaignId: "harvey-pinsent-introduction", campaign: "Pinsent Masons · Knowledge into practice",
+    accountId: HARVEY_PINSENT_ID, contactId: "demo-pinsent-hayley-harris",
+    recipient: { name: "Hayley Harris", role: "Global Chief Knowledge & AI Adoption Officer", company: "Pinsent Masons", initials: "HH" },
+    insight: { title: "Turning firm knowledge into everyday practice", detail: "Pinsent Masons appointed Hayley to lead its knowledge strategy and the selection and deployment of legal generative AI. The gift opens a working-session conversation about one knowledge workflow, alongside the firm’s existing tools. No personal hobby is inferred.", source: "Pinsent Masons · Appointment announcement", sourceUrl: "https://www.pinsentmasons.com/about-us/announcements/pinsent-masons-appoints-first-global-chief-knowledge-and-ai-adoption-officer", date: "2026-06-22", excerpt: "Hayley will be responsible for delivering the firm’s knowledge strategy and the selection and deployment of legal generative AI tools." },
+    gifts, selectedGiftId: "squire-emerald",
+    note: "Hi Hayley,\n\nA small desk companion for the ideas ahead. Congratulations on your knowledge and AI remit at Pinsent Masons.\n\nI’d welcome a working session on one firm-knowledge workflow, with your lawyers reviewing every answer.",
+    signature: "Shank Keshri\nThe Harvey team",
+    address: { name: "Hayley Harris", company: "Pinsent Masons", line1: "30 Crown Place", line2: "Earl Street", city: "London", region: "", postalCode: "EC2A 4ES", country: "United Kingdom" },
+    addressConfirmed: true, inboundCents: 800, preparationCents: 1500, outboundCents: 3500, taxCents: 650, budgetCents: 15000,
+    stage: "delivered", updatedAt: "2026-10-30T14:24:00Z", deliveryEstimate: "Delivered 30 Oct · Office reception",
+    inbound: { carrier: "Merchant delivery · Demo", trackingNumber: "DEMO-PM-INBOUND", trackingUrl: null, expected: "27 Oct 2026", status: "Received at Clue · 27 Oct" },
+    outbound: { carrier: "International delivery · Demo", trackingNumber: "DEMO-PM-OUTBOUND", trackingUrl: null, expected: "30 Oct 2026", status: "Delivered to office reception · 30 Oct" },
+    events: [
+      ["Approved for sending", "Gift, handwritten note and $129.50 estimate approved in this example.", "2026-10-23T16:00:00Z"],
+      ["Gift ordered", "Selected Emerald Squire Classic Pen ordered to Clue in the simulated sequence.", "2026-10-23T16:20:00Z"],
+      ["On its way to Clue", "Merchant shipment entered the inbound delivery stage.", "2026-10-24T12:00:00Z"],
+      ["Received at Clue", "Example inspection: correct item and variant, no damage recorded.", "2026-10-27T15:00:00Z"],
+      ["Card & package preparation", "Approved note prepared; gift and card placed together in the presentation box.", "2026-10-28T10:00:00Z"],
+      ["Quality check complete", "Example check: product, card text, recipient and label match the approved mailer.", "2026-10-28T12:00:00Z"],
+      ["Shipped to recipient", "Prepared package entered international delivery in the simulated sequence.", "2026-10-28T16:00:00Z"],
+      ["Delivered to office", "Simulated delivery to office reception. No real shipment or personal receipt is asserted.", "2026-10-30T14:24:00Z"],
+    ].map(([title, detail, at], i) => ({ id: `demo-pm-${i}`, title, detail, at, kind: "standard" })),
+    photos: [], assets: [], sourceLabel: "Sourced account and real retailer product. This delivery and approval history are simulated; no physical package was sent.",
+  });
+  m.approval = { revision: 2, at: "2026-10-23T16:00:00Z", gift: structuredClone(gifts[0]), note: m.note, signature: m.signature, card: structuredClone(state.cards.find(c => c.id === m.cardId)!), style: structuredClone(state.styles.find(c => c.id === m.styleId)!), address: structuredClone(m.address), estimatedCents: estimate(m)!, budgetCents: m.budgetCents };
+  return MailerSchema.parse(m);
 }

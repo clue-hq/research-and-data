@@ -6,6 +6,8 @@ import { approveMailers, readiness, reviewMailer, updateMailer } from "../model/
 import { HARVEY_DEMO_ID, withHarveyDemo, advanceHarveyDemo, resetHarveyDemo } from "./harvey-demo";
 import { createDirectMailRepository, unavailableDirectMailRepository } from "./direct-mail.repository";
 import type { DirectMailStore } from "./direct-mail.storage";
+import { HARVEY_DELIVERED_ID } from "../model/harvey-demo-context";
+import { estimate } from "../model/direct-mail";
 import { readPendingDraft, writePendingDraft } from "./direct-mail.drafts";
 
 const seed = () => withHarveyDemo(createDirectMailFixture());
@@ -22,7 +24,7 @@ function approved() {
 
 test("recording seed is additive and preserves edits on subsequent reads", () => {
   const before = createDirectMailFixture(), state = withHarveyDemo(before);
-  assert.deepEqual(state.mailers.filter(m => m.id !== HARVEY_DEMO_ID), before.mailers);
+  assert.deepEqual(state.mailers.filter(m => ![HARVEY_DEMO_ID, HARVEY_DELIVERED_ID].includes(m.id)), before.mailers);
   current(state).note = "My edit";
   const again = withHarveyDemo(state);
   assert.equal(again.mailers.filter(m => m.id === HARVEY_DEMO_ID).length, 1);
@@ -125,4 +127,21 @@ test("successful reset clears only this tab's recording draft, failed reset reta
     if (previous) Object.defineProperty(globalThis, "sessionStorage", previous);
     else Reflect.deleteProperty(globalThis, "sessionStorage");
   }
+});
+
+
+test("delivered example is additive, has a complete approved snapshot and does not debit credits", () => {
+  const before = createDirectMailFixture(), state = withHarveyDemo(before);
+  const m = state.mailers.find(m => m.id === HARVEY_DELIVERED_ID)!;
+  assert.equal(m.stage, "delivered");
+  assert.equal(m.approval?.estimatedCents, estimate(m));
+  assert.equal(estimate(m), 12950);
+  assert.equal(m.approval?.note, m.note);
+  assert.equal(m.approval?.card.id, "card-harvey-demo");
+  assert.equal(m.outbound?.trackingUrl, null);
+  assert.equal(m.events.length, 8);
+  assert.equal(state.creditBalanceCents, before.creditBalanceCents);
+  assert.deepEqual(state.creditEntries, before.creditEntries);
+  assert.deepEqual(withHarveyDemo(state), state);
+  for (const gift of m.gifts) assert.ok(existsSync(`public${gift.image}`));
 });

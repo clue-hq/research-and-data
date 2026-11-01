@@ -124,3 +124,43 @@
 .demoMenuItem { display: flex; padding: 8px 10px; border-radius: var(--clue-ds-product-component-button-sm-radius); cursor: pointer; outline: none; }
 .demoMenuItem[data-highlighted] { background: var(--clue-ds-color-bg-neutral-hover); }
 .demoMenuItem[data-disabled] { color: var(--clue-ds-color-content-disabled); cursor: default; }
+
+.costLine { display: contents; }
+
+.companyLogo { display: flex; align-items: center; justify-content: center; width: 72px; height: 44px; flex-shrink: 0; border: 1px solid var(--clue-ds-color-border-subtle); border-radius: 6px; padding: 9px; background: white; }
+.companyLogo img { width: 100%; max-height: 100%; object-fit: contain; }
+.assetLinks { display: flex; flex-wrap: wrap; gap: 6px; max-width: 170px; }
+.assetChip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; border-radius: 4px; font-size: 11px; line-height: 16px; color: var(--clue-ds-color-content-subtle); background: var(--clue-ds-color-bg-subtle); border: 1px solid var(--clue-ds-color-border-subtle); cursor: pointer; }
+.assetChip:hover { color: var(--clue-ds-color-content-neutral); border-color: var(--clue-ds-color-content-subtle); }
+.campaignMaterials { margin-top: 30px; }
+.sectionTitle { font-size: 16px; font-weight: 500; margin-bottom: 4px; }
+.materialGrid { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 16px; }
+.materialCard { display: flex; flex-direction: column; text-align: left; border: 1px solid var(--clue-ds-color-border-subtle); border-radius: 8px; overflow: hidden; cursor: pointer; background: var(--clue-ds-color-bg-neutral); transition: border-color .15s; }
+.materialCard:hover { border-color: var(--clue-ds-color-content-subtle); }
+.materialImage { height: 180px; overflow: hidden; background: var(--clue-ds-color-bg-subtle); border-bottom: 1px solid var(--clue-ds-color-border-subtle); }
+.materialImage img { width: 100%; height: 100%; object-fit: contain; object-position: center; }
+.materialImage[data-type="LinkedIn ad"] { padding: 10px; }
+.materialImage[data-type="LinkedIn ad"] img { object-fit: contain; }
+.materialInfo { display: grid; gap: 6px; padding: 12px; }
+.materialInfo strong { font-size: 13px; line-height: 19px; font-weight: 500; }
+.materialFull { background: var(--clue-ds-color-bg-subtle); border: 1px solid var(--clue-ds-color-border-subtle); border-radius: 6px; overflow: auto; max-height: 65vh; }
+.materialFull img { width: 100%; height: auto; display: block; }
+.materialFull[data-type="LinkedIn ad"] img { width: auto; max-height: 60vh; max-width: 100%; margin: auto; }
+.deliverySummary { border: 1px solid var(--clue-ds-color-border-subtle); border-radius: 8px; padding: 24px; margin-bottom: 24px; display: flex; justify-content: space-between; gap: 24px; background: var(--clue-ds-color-bg-subtle); }
+.deliverySummary h2 { font-size: 22px; line-height: 30px; margin: 4px 0 8px; font-weight: 500; }
+.deliveryFacts { display: flex; flex-wrap: wrap; gap: 36px; margin-top: 20px; font-size: 13px; }
+.deliveryFacts dt { font-size: 11px; color: var(--clue-ds-color-content-subtle); margin-bottom: 4px; }
+@media (max-width: 1100px) { .materialGrid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 700px) { .materialGrid { grid-template-columns: 1fr; } .deliverySummary { flex-direction: column; } }
+
+.mailerTable { table-layout: fixed; white-space: normal; min-width: 760px; }
+.mailerTable th, .mailerTable td { padding: 13px 10px; }
+.mailerTable .companyLogo { width: 48px; height: 40px; padding: 5px; }
+.mailerTable .person { align-items: center; min-width: 0; gap: 8px; }
+.mailerTable .thumb { flex: 0 0 40px; width: 40px; }
+.mailerTable td { font-size: 12px; line-height: 18px; }
+.mailerTable .small { font-size: 12px; }
+.mailerTable .caption { font-size: 10px; line-height: 15px; }
+.mailerTable .status { white-space: normal; }
+
+.mailerTable .assetChip { font-size: 10px; line-height: 14px; padding: 4px 5px; white-space: nowrap; }

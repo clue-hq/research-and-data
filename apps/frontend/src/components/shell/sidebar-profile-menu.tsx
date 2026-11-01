@@ -13,7 +13,7 @@ import { useWorkspaceSwitcher } from "./workspace-switcher-context";
 /** The company's logo in the workspace avatar box, or its initials when it has none.
  * unoptimized: Brandfetch's Logo API is embed-only, loaded by the browser itself. */
 function WorkspaceMark({ initials, logoUrl }: { initials: string; logoUrl?: string | null }) {
-  return logoUrl ? <Image alt="" height={16} src={logoUrl} unoptimized width={16} /> : <>{initials}</>;
+  return logoUrl ? <Image alt="" height={20} src={logoUrl} unoptimized width={28} /> : <>{initials}</>;
 }
 
 export function SidebarProfileMenu({ collapsed }: { collapsed: boolean }) {
