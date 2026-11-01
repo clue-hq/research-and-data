@@ -1,5 +1,7 @@
 "use client";
 import { useState } from "react";
+import { Menu } from "@base-ui/react/menu";
+import { MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { HARVEY_RESEARCH_URL, harveyNextLabel } from "../model/harvey-demo-context";
 import type { Mailer } from "../model/direct-mail";
@@ -11,13 +13,15 @@ export function HarveyDemoControls({ mailer, controller: c, onReset }: { mailer:
   const [reset, setReset] = useState(false);
   const next = harveyNextLabel[mailer.stage];
   return <>
-    <section className={`${styles.notice} ${styles.between} mb-6`} aria-label="Recording demo controls">
-      <div><p className={styles.small}>Recording demo · Order and delivery updates are simulated</p><a href={HARVEY_RESEARCH_URL} target="_blank" rel="noreferrer" className={`${styles.caption} ${styles.textLink}`}>Benesch research in the deployed app</a></div>
-      <div className={styles.row}>
-        {next && c.repository.advanceDemo ? <Button size="sm" variant="outline" disabled={c.pending} onClick={() => void c.run(() => c.repository.advanceDemo!(mailer.id, mailer.revision))}>{next}</Button> : null}
-        <Button size="sm" variant="transparent" disabled={c.pending} onClick={() => setReset(true)}>Reset demo</Button>
-      </div>
-    </section>
+    <Menu.Root>
+      <Menu.Trigger render={<Button size="icon-sm" variant="transparent" />} aria-label="Recording controls"><MoreHorizontal size={16} /></Menu.Trigger>
+      <Menu.Portal><Menu.Positioner sideOffset={6} align="end" className={styles.demoMenuPositioner}><Menu.Popup className={styles.demoMenu}>
+        <p className={`${styles.caption} px-2 py-2`}>Local demo · Orders and delivery are simulated.</p>
+        {next && c.repository.advanceDemo ? <Menu.Item className={styles.demoMenuItem} disabled={c.pending} onClick={() => void c.run(() => c.repository.advanceDemo!(mailer.id, mailer.revision))}>{next}</Menu.Item> : null}
+        <Menu.Item className={styles.demoMenuItem} render={<a href={HARVEY_RESEARCH_URL} target="_blank" rel="noreferrer" />}>Open deployed research</Menu.Item>
+        <Menu.Item className={styles.demoMenuItem} disabled={c.pending} onClick={() => setReset(true)}>Reset demo</Menu.Item>
+      </Menu.Popup></Menu.Positioner></Menu.Portal>
+    </Menu.Root>
     {reset ? <MailDialog title="Reset this recording?" description="Restore Jason’s original gift options and note, clear this demo’s tracking, and restore its demo credits. Other mailers stay unchanged." close={() => setReset(false)} busy={c.pending}>
       <div className={styles.actions}><Button variant="transparent" size="md" onClick={() => setReset(false)}>Keep current take</Button><Button variant="primary" size="md" disabled={c.pending} onClick={async () => { if (await c.run(() => c.repository.resetDemo!(mailer.id, mailer.revision))) { setReset(false); onReset(); } }}>Reset recording</Button></div>
     </MailDialog> : null}

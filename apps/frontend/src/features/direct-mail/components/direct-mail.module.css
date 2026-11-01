@@ -118,3 +118,9 @@
 @media (max-width: 1023px) { .header { padding-left: 56px; } }
 @media (max-width: 900px) { .reviewLayout { grid-template-columns: 1fr; } .previewRail { position: static; max-width: 600px; width: 100%; } .content { padding: 24px; } }
 @media (max-width: 600px) { .content { padding: 20px 16px; } .heading { align-items: flex-start; flex-wrap: wrap; } .header { padding-right: 12px; gap: 8px; } .twoColumns, .cardGrid { grid-template-columns: 1fr; } .tabs { gap: 16px; overflow-x: auto; } .gifts { grid-template-columns: 1fr; } .gift { display: grid; grid-template-columns: 110px 1fr; } .gift img { height: 100%; aspect-ratio: auto; } .toolbar > .row { flex-wrap: wrap; } .actions { flex-wrap: wrap; } .timeline li { grid-template-columns: 16px 1fr; } .timeline time { grid-column: 2; } }
+
+.demoMenuPositioner { z-index: 70; }
+.demoMenu { min-width: 240px; padding: 4px; background: var(--clue-ds-color-bg-neutral); border: 1px solid var(--clue-ds-color-border-subtle); border-radius: var(--clue-ds-product-component-button-md-radius); box-shadow: var(--clue-ds-shadow-card-subtle); font-family: var(--clue-ds-typography-text-sm-font-family); font-size: var(--clue-ds-typography-text-sm-font-size); }
+.demoMenuItem { display: flex; padding: 8px 10px; border-radius: var(--clue-ds-product-component-button-sm-radius); cursor: pointer; outline: none; }
+.demoMenuItem[data-highlighted] { background: var(--clue-ds-color-bg-neutral-hover); }
+.demoMenuItem[data-disabled] { color: var(--clue-ds-color-content-disabled); cursor: default; }

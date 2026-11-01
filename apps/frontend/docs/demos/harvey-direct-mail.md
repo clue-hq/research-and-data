@@ -12,8 +12,8 @@ This is the existing Direct Mail V2 UI with one additive, local recording fixtur
 4. Review the public Chicago office address. Select the acknowledgment to use it only for the simulated shipment. This does not establish recipient acceptance or permission to send a real gift.
 5. Review the $133.99 illustrative total: $89.99 gift + $8 inbound + $15 card/preparation + $12 outbound + $9 estimated tax. Only the gift is a sourced retailer price. The overall demo limit is $150; the gift-price ceiling is $120.
 6. Approve and confirm. The browser records a local approval snapshot and deducts demo credits. No order or payment is sent.
-7. Use the clearly labeled simulation button to advance through order confirmation, inbound shipment, receipt at Clue, preparation, quality check, dispatch and office delivery. No fabricated tracking links or inspection photos are supplied.
-8. Reset demo → Reset recording restores the original mailer and returns its net demo credits. It clears this tab’s pending note draft. Other mailers are preserved.
+7. Open the header’s ⋯ recording-controls menu and use the clearly labeled simulation action to advance through order confirmation, inbound shipment, receipt at Clue, preparation, quality check, dispatch and office delivery. No fabricated tracking links or inspection photos are supplied.
+8. ⋯ → Reset demo → Reset recording restores the original mailer and returns its net demo credits. It clears this tab’s pending note draft. Other mailers are preserved.
 
 ## Evidence and product provenance
 
