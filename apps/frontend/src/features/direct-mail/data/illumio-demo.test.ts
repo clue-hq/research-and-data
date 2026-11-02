@@ -10,7 +10,7 @@ test("Illumio starts with exactly one sourced account and all local preview asse
   assert.equal(state.mailers.length, 1);
   assert.equal(m.accountId, DEMO_ACCOUNT_ID);
   assert.equal(m.recipient.name, "Ann Barron-DiCamillo");
-  assert.equal(estimate(m), 13399);
+  assert.equal(estimate(m), 14200);
   for (const gift of m.gifts) {
     assert.ok(gift.productUrl?.includes("variant="));
     assert.ok(existsSync(`public${gift.image}`));

@@ -8,7 +8,7 @@ import styles from "./direct-mail.module.css";
 export function CardFace({ card, style, note = "", signature = "", face = "message" }: { card: CardAsset; style?: HandwritingStyle; note?: string; signature?: string; face?: "front" | "message" }) {
   const artwork = matchingCardArtwork(card, style, note, signature);
   const image = face === "front" ? card.frontUrl : artwork?.url ?? card.backUrl;
-  return <div className={styles.cardWrap}><div className={styles.card} data-paper={card.paper} aria-label={`${card.name}, ${face === "front" ? "front" : "message side"}`}>
+  return <div className={styles.cardWrap}><div className={styles.card} data-paper={card.paper} data-front-layout={face === "front" ? card.frontLayout : undefined} aria-label={`${card.name}, ${face === "front" ? "front" : "message side"}`}>
     {/* Card artwork can be a user-uploaded data URL; Next image optimization is not appropriate. */}
     {/* eslint-disable-next-line @next/next/no-img-element */}
     {image ? <img className={styles.cardImage} src={image} alt="" /> : null}
@@ -35,7 +35,8 @@ export function MailerPreview({ card, style, note, signature }: { card?: CardAss
   if (!card) return null;
   const artwork = matchingCardArtwork(card, style, note, signature);
   const preview = <CardFace card={card} style={style} note={note} signature={signature} face={face} />;
-  return <div><div className={styles.cardControls}><div className={styles.row}><button type="button" aria-pressed={face === "front"} onClick={() => setFace("front")}>Front</button><button type="button" aria-pressed={face === "message"} onClick={() => setFace("message")}>Message</button></div><button type="button" aria-label="Enlarge card preview" onClick={() => setZoom(true)}><Maximize2 size={14} /></button></div>{preview}<p className={`${styles.caption} mt-2`}>6 × 4 in · {artwork ? "Handwritten artwork" : style?.name ?? "Choose handwriting"}</p>
-    {zoom ? <MailDialog title="Card preview" description={`${card.name} · ${face === "front" ? "Front" : "Message side"}`} close={() => setZoom(false)} wide>{preview}</MailDialog> : null}
+  const faceControls = <div className={styles.row} role="group" aria-label="Card side"><button type="button" aria-pressed={face === "front"} onClick={() => setFace("front")}>Front</button><button type="button" aria-pressed={face === "message"} onClick={() => setFace("message")}>Message</button></div>;
+  return <div><div className={styles.cardControls}>{faceControls}<button type="button" aria-label="Enlarge card preview" onClick={() => setZoom(true)}><Maximize2 size={14} /></button></div>{preview}<p className={`${styles.caption} mt-2`}>6 × 4 in · {artwork ? "Handwritten artwork" : style?.name ?? "Choose handwriting"}</p>
+    {zoom ? <MailDialog title="Card preview" description={card.name} close={() => setZoom(false)} wide><div className={styles.cardControls}>{faceControls}</div>{preview}</MailDialog> : null}
   </div>;
 }

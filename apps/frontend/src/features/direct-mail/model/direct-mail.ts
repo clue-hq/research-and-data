@@ -6,6 +6,7 @@ import { CampaignAssetSchema, CreditEntrySchema, GiftBudgetSchema, NoteTemplateS
 const Cents = z.number().int().nonnegative().max(10_000_000);
 const AreaSchema = z.object({ x: z.number().min(0).max(45), y: z.number().min(0).max(45), width: z.number().min(35).max(100), height: z.number().min(30).max(100) }).refine((area) => area.x + area.width <= 100 && area.y + area.height <= 100, "The writing area must fit inside the card.");
 export const CardAssetSchema = z.object({
+  frontLayout: z.literal("photograph").optional(),
   id: z.string(), name: z.string().min(1), version: z.number().int().positive(), frontUrl: z.string().nullable(), backUrl: z.string().nullable(), paper: z.enum(["white", "cream"]), writingArea: AreaSchema, productionReady: z.boolean(),
   branding: z.object({ name: z.string().default(""), logoUrl: z.string(), markUrl: z.string(), line: z.string(), qrImageUrl: z.string(), qrDestination: WebUrlSchema }).optional(),
   // Rendered lettering is bound to exact text and style. Edits must never show a stale image.
