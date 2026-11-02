@@ -2,8 +2,8 @@ import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 
 const args = process.argv.slice(2);
-const port = args.length === 0 ? "5000" : args.length === 2 && args[0] === "--port" ? args[1] : "";
-if (!/^5\d{3}$/.test(port)) throw new Error("Use npm run dev:preview -- --port <5000–5999>.");
+const port = args.length === 0 ? "3000" : args.length === 2 && args[0] === "--port" ? args[1] : "";
+if (port !== "3000" && !/^5\d{3}$/.test(port)) throw new Error("Use npm run dev:preview -- --port <3000 or 5000–5999>.");
 const require = createRequire(import.meta.url);
 const child = spawn(process.execPath, [require.resolve("next/dist/bin/next"), "dev", "--hostname", "localhost", "--port", port], {
   stdio: "inherit",

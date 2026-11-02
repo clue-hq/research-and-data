@@ -85,10 +85,10 @@ export default async function ProtectedLayout({
             the R8 leave-as-is ruling. Workspace switching lives at /select-workspace;
             sign-out at /sign-out. */}
         <WorkspaceSwitcherProvider
-          activeWorkspaceId={preview ? "harvey-preview" : session?.principal.workspace_id ?? null}
+          activeWorkspaceId={preview ? "illumio-preview" : session?.principal.workspace_id ?? null}
           demo={!preview && transport.mode === "fixture"}
           onSelect={switchWorkspace}
-          workspaces={preview ? [{ id: "harvey-preview", name: "Harvey workspace", initials: "H", role: "Owner", logoUrl: "/direct-mail/harvey-demo/harvey-logo.svg" }] : workspaces}
+          workspaces={preview ? [{ id: "illumio-preview", name: "Illumio workspace", initials: "I", role: "Owner", logoUrl: "/direct-mail/illumio-demo/illumio-logo.svg" }] : workspaces}
         >
           <ConfirmationProvider>
             <OrchestrationProvider enabled={preview}>

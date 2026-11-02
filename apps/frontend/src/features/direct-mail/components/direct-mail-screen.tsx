@@ -18,8 +18,8 @@ import { DirectMailSettings } from "./mail-context";
 import { ProjectMailPlan } from "./project-mail-plan";
 import { MailerAccountContext } from "@/features/orchestration/components/mailer-context";
 import styles from "./direct-mail.module.css";
-import { HARVEY_DEMO_ID, HARVEY_PROJECT_ID, HARVEY_PROJECT_URL, HARVEY_QUEUE_HREF } from "../model/harvey-demo-context";
-import { HarveyDemoControls } from "./harvey-demo-controls";
+import { DEMO_ID, DEMO_PROJECT_ID, DEMO_PROJECT_URL, DEMO_QUEUE_HREF } from "../model/recording-demo-context";
+import { RecordingControls } from "./recording-controls";
 
 export function DirectMailScreen({ recordId }: { recordId?: string }) {
   const c = useDirectMail();
@@ -27,17 +27,17 @@ export function DirectMailScreen({ recordId }: { recordId?: string }) {
   const materialsEnabled=useMaterialsEnabled();
   const params = useSearchParams();
   const mailer = c.data?.mailers.find((m) => m.id === recordId);
-  const isHarvey = mailer?.projectId === HARVEY_PROJECT_ID;
-  const queueHref = isHarvey ? HARVEY_QUEUE_HREF : `/direct-mail${params.size ? `?${params}` : ""}`;
+  const isRecording = mailer?.projectId === DEMO_PROJECT_ID;
+  const queueHref = isRecording ? DEMO_QUEUE_HREF : `/direct-mail${params.size ? `?${params}` : ""}`;
   const peers = c.data?.mailers.filter((m) => m.projectId === mailer?.projectId) ?? [];
   const index = peers.findIndex((m) => m.id === recordId);
   const previous = peers[index - 1], next = peers[index + 1];
   if(materialsEnabled && ((!recordId && params.get("demo") === "walkthrough") || mailer?.campaignId===WALKTHROUGH_CAMPAIGN)) return <ApplicationShell activeHref="/direct-mail"><MaterialsBrowser initialAccount={mailer?.accountId} initialRecipient={mailer?.id} title="Direct mail"/></ApplicationShell>;
-  return <ApplicationShell activeHref="/direct-mail"><main className={styles.screen}><header className={styles.header}>{recordId ? <Link className={styles.back} href={queueHref}><ArrowLeft size={14} />Direct mail</Link> : <span className={styles.headerTitle}>Direct mail</span>}{mailer ? <div className={styles.row}><Link className={`${styles.small} ${styles.subtle}`} href={isHarvey ? HARVEY_PROJECT_URL : `/projects/${mailer.projectId}/chats/${mailer.threadId}`} target={isHarvey ? "_blank" : undefined} rel={isHarvey ? "noreferrer" : undefined}>{mailer.projectName}</Link>{recordId === HARVEY_DEMO_ID && c.repository.resetDemo ? <HarveyDemoControls controller={c} mailer={mailer} onReset={() => setRecordingTake(take => take + 1)} /> : null}{previous ? <Link aria-label="Previous recipient in project" href={`/direct-mail/${previous.id}?${params}`}><ChevronLeft size={16} /></Link> : null}{next ? <Link aria-label="Next recipient in project" href={`/direct-mail/${next.id}?${params}`}><ChevronRight size={16} /></Link> : null}</div> : null}</header><div className={styles.body}><div className={styles.content}>
+  return <ApplicationShell activeHref="/direct-mail"><main className={styles.screen}><header className={styles.header}>{recordId ? <Link className={styles.back} href={queueHref}><ArrowLeft size={14} />Direct mail</Link> : <span className={styles.headerTitle}>Direct mail</span>}{mailer ? <div className={styles.row}><Link className={`${styles.small} ${styles.subtle}`} href={isRecording ? DEMO_PROJECT_URL : `/projects/${mailer.projectId}/chats/${mailer.threadId}`} target={isRecording ? "_blank" : undefined} rel={isRecording ? "noreferrer" : undefined}>{mailer.projectName}</Link>{recordId === DEMO_ID && c.repository.resetDemo ? <RecordingControls controller={c} mailer={mailer} onReset={() => setRecordingTake(take => take + 1)} /> : null}{previous ? <Link aria-label="Previous recipient in project" href={`/direct-mail/${previous.id}?${params}`}><ChevronLeft size={16} /></Link> : null}{next ? <Link aria-label="Next recipient in project" href={`/direct-mail/${next.id}?${params}`}><ChevronRight size={16} /></Link> : null}</div> : null}</header><div className={styles.body}><div className={styles.content}>
     {!c.enabled ? <div className={styles.empty}><h1 className={styles.title}>Direct Mail isn’t connected yet</h1><p className={styles.subtle}>This workspace will show mailers when the Direct Mail service is connected.</p></div> : <>
       {c.error ? <div className={`${styles.notice} ${styles.error}`} role="alert">{c.error} <Button variant="transparent" size="sm" onClick={() => void c.reload()}>Reload data</Button></div> : null}
       {c.data?.pilotLoadError ? <div className={styles.notice} role="status">{c.data.pilotLoadError} <Button variant="transparent" size="sm" onClick={() => void c.reload()}>Retry pilot import</Button></div> : null}
-      {!isHarvey && mailer ? <MailerAccountContext mailerId={mailer.id} /> : null}
+      {!isRecording && mailer ? <MailerAccountContext mailerId={mailer.id} /> : null}
       {!c.data ? !c.error ? <p className={`${styles.subtle} py-12`} role="status">Loading mailers…</p> : null : !recordId ? <MailerQueue controller={c} /> : recordId === "library" ? <CardLibrary controller={c} /> : recordId === "settings" ? <DirectMailSettings controller={c} /> : recordId === "project" ? <ProjectMailPlan controller={c} projectId={params.get("project") ?? c.data.mailers[0]?.projectId} /> : mailer ? isDraft(mailer) ? <MailerReview key={`${mailer.id}-${recordingTake}`} controller={c} saved={mailer} queueHref={queueHref} /> : <MailerTracking controller={c} mailer={mailer} /> : <div className={styles.empty}><h1 className={styles.title}>Mailer not found</h1><Link href="/direct-mail">Return to direct mail</Link></div>}
     </>}
   </div></div></main></ApplicationShell>;

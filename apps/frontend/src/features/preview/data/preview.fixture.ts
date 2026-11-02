@@ -11,7 +11,7 @@ export const previewProfile = ProfileSchema.parse({
   email: "reviewer@example.test",
 });
 export const previewWorkspace = WorkspaceSchema.parse({
-  workspace_id: "ws-demo", name: "Harvey workspace", website: "https://www.harvey.ai", logo_url: "/direct-mail/harvey-demo/harvey-logo.svg",
+  workspace_id: "ws-demo", name: "Illumio workspace", website: "https://www.illumio.com", logo_url: "/direct-mail/illumio-demo/illumio-logo.svg",
 });
 export const previewMembers = MembersSchema.parse({
   invitations_configured: false,

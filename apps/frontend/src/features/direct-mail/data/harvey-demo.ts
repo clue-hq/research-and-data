@@ -1,4 +1,5 @@
-import { MailerSchema, StateSchema, requireMailer, estimate, type CardAsset, type HandwritingStyle, type DirectMailState, type Stage } from "../model/direct-mail";
+import { advanceRecordingDemo, resetRecordingDemo } from "./recording-simulation";
+import { MailerSchema, StateSchema, estimate, type CardAsset, type HandwritingStyle, type DirectMailState } from "../model/direct-mail";
 
 /** A sourced recording fixture. No backend, merchant or carrier writes are connected. */
 import { HARVEY_DEMO_ID, HARVEY_PROJECT_ID, HARVEY_ACCOUNT_ID, HARVEY_PROJECT_URL, HARVEY_DELIVERED_ID, HARVEY_PINSENT_ID } from "../model/harvey-demo-context";
@@ -85,45 +86,8 @@ export function withHarveyDemo(input: DirectMailState): DirectMailState {
   return StateSchema.parse(state);
 }
 
-const sequence: Stage[] = ["approved", "ordered", "inbound", "received", "preparing", "ready_to_ship", "shipped", "delivered"];
-
-const eventText: Partial<Record<Stage, [string, string]>> = {
-  ordered: ["Gift ordered", "Simulated merchant confirmation for the approved product and variant. No purchase was made."],
-  inbound: ["On its way to Clue", "Simulated inbound shipment to Clue for inspection and preparation."],
-  received: ["Received at Clue", "Simulated receipt at the fulfillment center; inspection begins."],
-  preparing: ["Card & package preparation", "Simulated product inspection, handwritten card and repackaging."],
-  ready_to_ship: ["Quality check complete", "Simulated final inspection passed. Package ready for carrier collection."],
-  shipped: ["Shipped to recipient", "Simulated carrier handoff. No real shipment or tracking number exists."],
-  delivered: ["Delivered to office", "Simulated delivery at the office address. Personal receipt is not confirmed."],
-};
-
-export function advanceHarveyDemo(input: DirectMailState, id: string, revision: number): DirectMailState {
-  if (id !== HARVEY_DEMO_ID) throw new Error("Simulation is limited to the recording demo.");
-  const state = structuredClone(input), m = requireMailer(state, id, revision);
-  if (!m.approval || !sequence.includes(m.stage)) throw new Error("Complete gift, note and cost approval before simulating fulfillment.");
-  const index = sequence.indexOf(m.stage), stage = sequence[index + 1];
-  if (!stage) throw new Error("The demo delivery is complete. Reset to record another take.");
-  const at = new Date().toISOString(), [title, detail] = eventText[stage]!;
-  m.stage = stage; m.revision++; m.updatedAt = at;
-  m.events.push({ id: `harvey-demo-${m.revision}`, title, detail, at, kind: "standard" });
-  m.deliveryEstimate = stage === "delivered" ? "Delivered · Simulated" : "Demo timeline · No live delivery estimate";
-  if (index >= 1) m.inbound = { carrier: "Merchant shipment · Simulation", trackingNumber: "DEMO-INBOUND", trackingUrl: null, expected: "Demo timeline", status: index >= 2 ? "Received at Clue" : "In transit to Clue" };
-  if (index >= 5) m.outbound = { carrier: "Recipient shipment · Simulation", trackingNumber: "DEMO-OUTBOUND", trackingUrl: null, expected: "Demo timeline", status: stage === "delivered" ? "Delivered to office" : "In transit" };
-  return StateSchema.parse(state);
-}
-
-export function resetHarveyDemo(input: DirectMailState, id: string, revision: number): DirectMailState {
-  if (id !== HARVEY_DEMO_ID) throw new Error("Reset is limited to the recording demo.");
-  const state = structuredClone(input), old = requireMailer(state, id, revision);
-  // Reverse only this record's net demo debit, including any prior cancel refund.
-  const net = (state.creditEntries ?? []).filter(e => e.mailerId === id).reduce((sum, e) => sum + e.amountCents, 0);
-  if (net < 0) {
-    state.creditBalanceCents = (state.creditBalanceCents ?? 200000) - net;
-    (state.creditEntries ??= []).push({ id: `demo-reset-${revision}`, kind: "refund", amountCents: -net, mailerId: id, at: new Date().toISOString(), description: "Recording reset · Demo credits restored" });
-  }
-  state.mailers = state.mailers.map(m => m.id === id ? { ...createHarveyMailer(), revision: old.revision + 1 } : m);
-  return StateSchema.parse(state);
-}
+export const advanceHarveyDemo = advanceRecordingDemo(HARVEY_DEMO_ID);
+export const resetHarveyDemo = resetRecordingDemo(HARVEY_DEMO_ID, createHarveyMailer);
 
 /** Historical simulation: materialized once, without debiting the active demo wallet. */
 export function createDeliveredHarveyMailer(state: DirectMailState) {

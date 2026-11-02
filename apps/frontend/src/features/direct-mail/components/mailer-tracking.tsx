@@ -9,20 +9,20 @@ import { MailerPreview } from "./mailer-preview";
 import { trackingMilestones } from "../model/direct-mail-context";
 import { MailBadge, MailerConnections } from "./mail-context";
 import styles from "./direct-mail.module.css";
-import { HARVEY_PROJECT_ID, harveyAccounts } from "../model/harvey-demo-context";
+import { DEMO_PROJECT_ID, demoAccounts } from "../model/recording-demo-context";
 
 const nextSteps: Partial<Record<Mailer["stage"], string>> = { approved: "Your mailer is approved. Next, the selected gift will be ordered to Clue.", ordered: "The merchant is preparing your gift for delivery to Clue.", inbound: "Your gift is on its way to Clue. We’ll inspect it when it arrives.", received: "Your gift has arrived at Clue and is awaiting inspection.", quality_check: "We’re checking the item and its condition before preparing your package.", preparing: "Your card is being written and the gift is being repackaged.", ready_to_ship: "Your package has passed its quality check and is ready for carrier collection.", shipped: "Your finished package is with the carrier, on its way to the recipient.", delivered: "The carrier has confirmed delivery at the receiving address. Personal receipt is not yet confirmed.", canceled: "This mailer was canceled before the merchant order was confirmed." };
 export function MailerTracking({ mailer: m, controller: c, onOpenPage }: { mailer: Mailer; controller: DirectMailController; onOpenPage?:()=>void }) {
   const [cancel, setCancel] = useState(false);
   const a = m.approval;
-  const recording = m.projectId === HARVEY_PROJECT_ID;
+  const recording = m.projectId === DEMO_PROJECT_ID;
   const deliveredAt = m.events.findLast(e => e.title === "Delivered to office")?.at;
   return <><div className={styles.heading}><div><div className={`${styles.row} mb-1`}><h1 className={styles.title}>{m.recipient.name}</h1><MailStatus stage={m.stage} /></div><p className={`${styles.small} ${styles.subtle}`}>{m.recipient.company} · {m.campaign}</p></div>{m.stage === "approved" ? <Button variant="transparent" size="md" onClick={() => setCancel(true)}>Cancel mailer</Button> : null}</div>
     {m.stage === "delivered" ? <section className={styles.deliverySummary}>
       <div><span className={styles.caption}>{recording ? "Example delivery" : "Delivery update"}</span><h2>Delivered to {m.recipient.company}</h2><p className={styles.subtle}>Gift and approved handwritten card delivered to the office.</p><dl className={styles.deliveryFacts}><div><dt>Delivered</dt><dd>{deliveredAt ? new Date(deliveredAt).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC" }) + " UTC" : m.deliveryEstimate}</dd></div><div><dt>Receiving location</dt><dd>{a?.address.city} · Office reception</dd></div><div><dt>Recipient</dt><dd>{m.recipient.name}</dd></div><div><dt>Approved estimate</dt><dd>{money(a?.estimatedCents ?? null)}</dd></div></dl><p className={`${styles.caption} mt-4`}>{recording ? "Simulated order and delivery history. Personal receipt is not confirmed." : "Personal receipt is not yet confirmed."}</p></div>
-      {harveyAccounts[m.accountId] ? <span className={styles.companyLogo}>
+      {demoAccounts[m.accountId] ? <span className={styles.companyLogo}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={harveyAccounts[m.accountId].logo} alt={`${m.recipient.company} logo`} />
+        <img src={demoAccounts[m.accountId].logo} alt={`${m.recipient.company} logo`} />
       </span> : null}
     </section> : null}
     <div className={styles.reviewLayout}><div>

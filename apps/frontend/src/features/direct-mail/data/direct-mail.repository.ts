@@ -45,7 +45,7 @@ function subscribe(listener: () => void) {
   return () => { window.removeEventListener(EVENT, listener); channel?.close(); };
 }
 
-export function createDirectMailRepository(store: DirectMailStore, pilotLoader?: () => Promise<Mailer[]>, recordingDemo = false): DirectMailRepository {
+export function createDirectMailRepository(store: DirectMailStore, pilotLoader?: () => Promise<Mailer[]>, recordingDemo = false, simulation = { advance: advanceHarveyDemo, reset: resetHarveyDemo }): DirectMailRepository {
   let loaded: Promise<Mailer[]> | undefined;
   async function write(change: (state: DirectMailState) => DirectMailState) {
     const state = await store.transact((state) => { const next = StateSchema.parse(change(state)); return { state: next, result: next }; });
@@ -53,9 +53,9 @@ export function createDirectMailRepository(store: DirectMailStore, pilotLoader?:
   }
   return {
     ...(recordingDemo ? {
-      advanceDemo: (id: string, revision: number) => write(state => advanceHarveyDemo(state, id, revision)),
+      advanceDemo: (id: string, revision: number) => write(state => simulation.advance(state, id, revision)),
       resetDemo: async (id: string, revision: number) => {
-        const state = await write(state => resetHarveyDemo(state, id, revision));
+        const state = await write(state => simulation.reset(state, id, revision));
         if (typeof sessionStorage !== "undefined" && !writePendingDraft(id, null)) throw new Error("The recording was reset, but the unsaved note could not be cleared. Discard the recovered draft before continuing.");
         return state;
       },

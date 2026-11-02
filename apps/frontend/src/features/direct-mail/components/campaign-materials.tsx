@@ -2,19 +2,19 @@
 import { useState } from "react";
 import { ExternalLink, Globe, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { harveyMaterials } from "../model/harvey-demo-context";
+import { demoMaterials } from "../model/recording-demo-context";
 import { MailDialog } from "./mail-ui";
 import styles from "./direct-mail.module.css";
 
-type Material = typeof harveyMaterials[number];
+type Material = typeof demoMaterials[number];
 /** Read-only captures of the customer's existing designs. Approval stays in its own flow. */
-export function HarveyMaterials({ accountId, compact = false }: { accountId?: string; compact?: boolean }) {
+export function CampaignMaterials({ accountId, compact = false }: { accountId?: string; compact?: boolean }) {
   const [selected, setSelected] = useState<Material | null>(null);
-  const materials = harveyMaterials.filter(m => !accountId || m.accountId === accountId);
+  const materials = demoMaterials.filter(m => !accountId || m.accountId === accountId);
   if (!materials.length) return null;
   return <>
     {compact ? <div className={styles.assetLinks}>{materials.map(m => <button key={m.id} className={styles.assetChip} data-type={m.type} onClick={() => setSelected(m)} aria-label={`Preview ${m.account} ${m.type.toLowerCase()}`}>{m.type === "Landing page" ? <Globe size={12} /> : <ImageIcon size={12} />}{m.type}</button>)}</div> : <section className={styles.campaignMaterials}>
-      <div className={styles.heading}><div><h2 className={styles.sectionTitle}>Campaign materials</h2><p className={styles.caption}>Account-specific pages and ads from your Harvey project.</p></div><span className={styles.caption}>{materials.length} materials</span></div>
+      <div className={styles.heading}><div><h2 className={styles.sectionTitle}>Campaign materials</h2><p className={styles.caption}>Account-specific pages and ads from your Illumio project.</p></div><span className={styles.caption}>{materials.length} materials</span></div>
       <div className={styles.materialGrid}>{materials.map(m => <button className={styles.materialCard} key={m.id} onClick={() => setSelected(m)} aria-label={`Preview ${m.account} ${m.type.toLowerCase()}`}>
         <div className={styles.materialImage} data-type={m.type}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
