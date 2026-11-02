@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync } from "node:fs";
 import { createDirectMailFixture } from "./direct-mail.fixture";
-import { approveMailers, readiness, reviewMailer, updateMailer } from "../model/direct-mail";
+import { approveMailers, readiness, reviewMailer, updateMailer, noteFits, matchingCardArtwork, StateSchema } from "../model/direct-mail";
 import { HARVEY_DEMO_ID, withHarveyDemo, advanceHarveyDemo, resetHarveyDemo } from "./harvey-demo";
 import { createDirectMailRepository, unavailableDirectMailRepository } from "./direct-mail.repository";
 import type { DirectMailStore } from "./direct-mail.storage";
@@ -144,4 +144,66 @@ test("delivered example is additive, has a complete approved snapshot and does n
   assert.deepEqual(state.creditEntries, before.creditEntries);
   assert.deepEqual(withHarveyDemo(state), state);
   for (const gift of m.gifts) assert.ok(existsSync(`public${gift.image}`));
+});
+
+test("physical-card refresh preserves recording progress, edited text and financial history", () => {
+  const before = approved(), mailer = current(before);
+  const legacyCard = { ...before.cards.find(c => c.id === mailer.cardId)!, version: 1, frontUrl: "/direct-mail/harvey-demo/card.svg", paper: "white" as const };
+  before.cards = before.cards.map(c => c.id === legacyCard.id ? legacyCard : c);
+  mailer.styleId = "style-warm";
+  mailer.note = "Keep this edited message";
+  mailer.approval!.card = structuredClone(legacyCard);
+  mailer.approval!.style = structuredClone(before.styles.find(s => s.id === "style-warm")!);
+  const after = withHarveyDemo(before), updated = current(after);
+  assert.equal(updated.note, mailer.note);
+  assert.equal(updated.styleId, "style-harvey-handprint");
+  assert.equal(updated.approval!.card.version, 3);
+  assert.equal(updated.approval!.card.paper, "cream");
+  assert.equal(updated.approval!.style.family, "Clue Handprint");
+  assert.ok(existsSync(`public${updated.approval!.card.frontUrl}`));
+  // The only differences are the requested card and lettering; the send stays intact.
+  assert.deepEqual({ ...updated, styleId: mailer.styleId, approval: { ...updated.approval, card: mailer.approval!.card, style: mailer.approval!.style } }, mailer);
+  assert.deepEqual(after.creditEntries, before.creditEntries);
+  assert.equal(after.creditBalanceCents, before.creditBalanceCents);
+  assert.deepEqual(after.mailers.filter(m => m.id !== HARVEY_DEMO_ID), before.mailers.filter(m => m.id !== HARVEY_DEMO_ID));
+  assert.deepEqual(withHarveyDemo(after), after);
+  // A later deliberate handwriting choice must survive reads.
+  updated.styleId = "style-warm";
+  assert.equal(current(withHarveyDemo(after)).styleId, "style-warm");
+});
+
+test("both recording messages fit the physical-card layout with upright handwriting", () => {
+  const state = seed();
+  for (const mailer of state.mailers.filter(m => [HARVEY_DEMO_ID, HARVEY_DELIVERED_ID].includes(m.id))) {
+    const card = state.cards.find(c => c.id === mailer.cardId)!;
+    const style = state.styles.find(s => s.id === mailer.styleId)!;
+    assert.equal(style.family, "Clue Handprint");
+    assert.equal(noteFits(mailer.note, mailer.signature, card, style), true);
+  }
+});
+
+
+test("handwritten images match exact recipient text, signature and style; edits never show stale art", () => {
+  const state = seed();
+  for (const mailer of state.mailers.filter(m => [HARVEY_DEMO_ID, HARVEY_DELIVERED_ID].includes(m.id))) {
+    const card = state.cards.find(c => c.id === mailer.cardId)!;
+    const style = state.styles.find(s => s.id === mailer.styleId)!;
+    const artwork = matchingCardArtwork(card, style, mailer.note, mailer.signature);
+    assert.ok(artwork);
+    assert.ok(existsSync(`public${artwork.url}`));
+    assert.equal(matchingCardArtwork(card, style, mailer.note + "Edited", mailer.signature), undefined);
+    assert.equal(matchingCardArtwork(card, style, mailer.note, "Different sender"), undefined);
+    assert.equal(matchingCardArtwork(card, state.styles[0], mailer.note, mailer.signature), undefined);
+    assert.equal(card.branding?.qrDestination, "https://www.harvey.ai/");
+    assert.ok(existsSync(`public${card.branding?.qrImageUrl}`));
+  }
+});
+
+
+test("saved card branding without an optional display name still hydrates", () => {
+  const saved = JSON.parse(JSON.stringify(seed()));
+  const card = saved.cards.find((c: { id: string }) => c.id === "card-harvey-demo");
+  delete card.branding.name;
+  const hydrated = StateSchema.parse(saved);
+  assert.equal(hydrated.cards.find(c => c.id === card.id)?.branding?.name, "");
 });

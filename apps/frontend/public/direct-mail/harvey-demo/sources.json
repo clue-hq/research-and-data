@@ -92,5 +92,30 @@
     "source": "Existing deployed landing-page image assets",
     "observedAt": "2026-11-01",
     "usage": "Original Harvey, Benesch and Pinsent Masons logo assets copied from the rendered campaign previews."
+  },
+  {
+    "name": "card-front",
+    "source": "https://www.harvey.ai/company",
+    "imageSource": "https://cdn.sanity.io/images/07s0r5r6/production/480454f35fa5a4753563e59999f34adaa80a1dc1-5000x3333.jpg",
+    "observedAt": "2026-11-01",
+    "usage": "Generated card composition based on the official office photograph and supplied physical card layout. Not a fulfillment photo. Prompt in docs/demos/harvey-card-artwork.md."
+  },
+  {
+    "name": "card-message-jason / card-message-hayley",
+    "source": "User-supplied physical card handwriting reference",
+    "observedAt": "2026-11-01",
+    "usage": "Generated recipient-specific lettering images, bound to exact message and signature. Visual handwriting reproduction, not an extracted font. Original personal card photos are not stored in this repo."
+  },
+  {
+    "name": "harvey-mark",
+    "source": "https://www.harvey.ai/icons/brand-favicon.png",
+    "observedAt": "2026-11-01",
+    "usage": "Official brand favicon used as the small card mark."
+  },
+  {
+    "name": "harvey-qr",
+    "source": "Generated with Segno; encodes https://www.harvey.ai/",
+    "observedAt": "2026-11-01",
+    "usage": "Public brand homepage destination only. No recipient-specific routing or analytics connection."
   }
 ]

@@ -5,7 +5,12 @@ import { CampaignAssetSchema, CreditEntrySchema, GiftBudgetSchema, NoteTemplateS
 
 const Cents = z.number().int().nonnegative().max(10_000_000);
 const AreaSchema = z.object({ x: z.number().min(0).max(45), y: z.number().min(0).max(45), width: z.number().min(35).max(100), height: z.number().min(30).max(100) }).refine((area) => area.x + area.width <= 100 && area.y + area.height <= 100, "The writing area must fit inside the card.");
-export const CardAssetSchema = z.object({ id: z.string(), name: z.string().min(1), version: z.number().int().positive(), frontUrl: z.string().nullable(), backUrl: z.string().nullable(), paper: z.enum(["white", "cream"]), writingArea: AreaSchema, productionReady: z.boolean() });
+export const CardAssetSchema = z.object({
+  id: z.string(), name: z.string().min(1), version: z.number().int().positive(), frontUrl: z.string().nullable(), backUrl: z.string().nullable(), paper: z.enum(["white", "cream"]), writingArea: AreaSchema, productionReady: z.boolean(),
+  branding: z.object({ name: z.string().default(""), logoUrl: z.string(), markUrl: z.string(), line: z.string(), qrImageUrl: z.string(), qrDestination: WebUrlSchema }).optional(),
+  // Rendered lettering is bound to exact text and style. Edits must never show a stale image.
+  messageArtworks: z.array(z.object({ note: z.string(), signature: z.string(), styleId: z.string(), url: z.string() })).optional(),
+});
 export const StyleSchema = z.object({ id: z.string(), name: z.string(), version: z.number().int().positive(), family: z.string(), sourceUrl: z.string().nullable(), productionReady: z.boolean() });
 export const GiftSchema = z.object({ id: z.string(), name: z.string(), variant: z.string(), merchant: z.string(), priceCents: Cents.nullable(), image: z.string(), rationale: z.string(), available: z.boolean(), arrival: z.string(), recommended: z.boolean(), productUrl: WebUrlSchema.optional(), observedAt: z.string().optional() });
 export const AddressSchema = z.object({ name: z.string(), company: z.string(), line1: z.string(), line2: z.string(), city: z.string(), region: z.string(), postalCode: z.string(), country: z.string() });
@@ -39,6 +44,9 @@ export type Mailer = z.infer<typeof MailerSchema>;
 export type Gift = z.infer<typeof GiftSchema>;
 export type CardAsset = z.infer<typeof CardAssetSchema>;
 export type HandwritingStyle = z.infer<typeof StyleSchema>;
+export function matchingCardArtwork(card: CardAsset, style: HandwritingStyle | undefined, note: string, signature: string) {
+  return card.messageArtworks?.find(a => a.note === note && a.signature === signature && a.styleId === style?.id);
+}
 export const MailerPatchSchema = MailerSchema.pick({ selectedGiftId: true, note: true, signature: true, cardId: true, styleId: true, address: true, addressConfirmed: true, budgetCents: true }).partial().strict();
 export type MailerPatch = z.infer<typeof MailerPatchSchema>;
 export type ApprovalItem = { id: string; revision: number };

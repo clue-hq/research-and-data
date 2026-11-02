@@ -8,7 +8,7 @@ This is the existing Direct Mail V2 UI with additive local recording fixtures. H
 
 1. Start with Benesch research / Jason Dirkx in the deployed app. Use the existing Benesch landing-page conversation if showing the design part first.
 2. Switch to the local mailer. Explain the woodworking insight, open its source, and review three real products. The 6-inch Woodpeckers Precision Square is selected at $89.99.
-3. Continue to Card & note. The note is editable; the physical card preview uses the existing handwriting renderer. The sender and card are demo creative, not approved Harvey brand assets.
+3. Continue to Card & note. The default recipient messages use generated lettering images based on the supplied physical handwriting. Edits switch to a text preview until new artwork is generated. The card uses original Harvey brand assets, an adapted official office photograph, and a homepage QR; the composition is local demo creative, not an approved Harvey print design. See `harvey-card-artwork.md` for prompts and provenance.
 4. Review the public Chicago office address. Select the acknowledgment to use it only for the simulated shipment. This does not establish recipient acceptance or permission to send a real gift.
 5. Review the $133.99 illustrative total: $89.99 gift + $8 inbound + $15 card/preparation + $12 outbound + $9 estimated tax. Only the gift is a sourced retailer price. The overall demo limit is $150; the gift-price ceiling is $120.
 6. Approve and confirm. The browser records a local approval snapshot and deducts demo credits. No order or payment is sent.

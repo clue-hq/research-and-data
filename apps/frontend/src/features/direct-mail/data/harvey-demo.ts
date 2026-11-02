@@ -1,8 +1,33 @@
-import { MailerSchema, StateSchema, requireMailer, estimate, type DirectMailState, type Stage } from "../model/direct-mail";
+import { MailerSchema, StateSchema, requireMailer, estimate, type CardAsset, type HandwritingStyle, type DirectMailState, type Stage } from "../model/direct-mail";
 
 /** A sourced recording fixture. No backend, merchant or carrier writes are connected. */
 import { HARVEY_DEMO_ID, HARVEY_PROJECT_ID, HARVEY_ACCOUNT_ID, HARVEY_PROJECT_URL, HARVEY_DELIVERED_ID, HARVEY_PINSENT_ID } from "../model/harvey-demo-context";
 export { HARVEY_DEMO_ID } from "../model/harvey-demo-context";
+
+const jasonMessage = {
+  note: "Hi Jason,\n\nA small addition to your workshop. I saw that you enjoy woodworking and thought this might earn a place on the bench.\n\nCongrats on building Benesch’s innovation team. I’d love to compare notes on one legal workflow where Harvey could help, with your lawyers in control.",
+  signature: "The Harvey team",
+};
+const hayleyMessage = {
+  note: "Hi Hayley,\n\nA small desk companion for the ideas ahead. Congratulations on your knowledge and AI remit at Pinsent Masons.\n\nI’d welcome a working session on one firm-knowledge workflow, with your lawyers reviewing every answer.",
+  signature: "Shank Keshri\nThe Harvey team",
+};
+const harveyCard: CardAsset = {
+  id: "card-harvey-demo", name: "Harvey · Studio card", version: 3,
+  frontUrl: "/direct-mail/harvey-demo/card-front.png", backUrl: null, paper: "cream",
+  writingArea: { x: 9, y: 10, width: 82, height: 82 }, productionReady: true,
+  branding: { name: "Harvey", logoUrl: "/direct-mail/harvey-demo/harvey-logo.svg", markUrl: "/direct-mail/harvey-demo/harvey-mark.png", line: "AI for legal work", qrImageUrl: "/direct-mail/harvey-demo/harvey-qr.svg", qrDestination: "https://www.harvey.ai/" },
+  messageArtworks: [
+    { ...jasonMessage, styleId: "style-harvey-handprint", url: "/direct-mail/harvey-demo/card-message-jason.png" },
+    { ...hayleyMessage, styleId: "style-harvey-handprint", url: "/direct-mail/harvey-demo/card-message-hayley.png" },
+  ],
+};
+// Generated artwork reproduces the supplied physical handwriting. This bundled font is
+// only the text-edit fallback; matching artwork is checked against note + signature.
+const harveyHandwriting: HandwritingStyle = {
+  id: "style-harvey-handprint", name: "Card handwriting", version: 1,
+  family: "Clue Handprint", sourceUrl: "/direct-mail/patrick-hand.ttf", productionReady: true,
+};
 
 export function createHarveyMailer() {
   return MailerSchema.parse({
@@ -24,15 +49,14 @@ export function createHarveyMailer() {
       { id: "woodpeckers-3d", name: "3D Multi-Marking Square", variant: "Inch · Machined aluminum", merchant: "Woodpeckers", priceCents: 6999, image: "/direct-mail/harvey-demo/multi-marking-square.jpg", rationale: "A smaller workshop companion for carrying layout lines around an edge and marking angles. Relevant to the same woodworking interest at a lower price.", available: true, arrival: "Merchant availability confirmed at checkout", recommended: false, productUrl: "https://woodpeck.com/products/3d-multi-marking-square?variant=43543744217147", observedAt: "2026-11-01" },
     ],
     selectedGiftId: "woodpeckers-641",
-    note: "Hi Jason,\n\nA small addition to your workshop. I saw that you enjoy woodworking and thought this might earn a place on the bench.\n\nCongrats on building Benesch’s innovation team. I’d love to compare notes on one legal workflow where Harvey could help, with your lawyers in control.",
-    signature: "The Harvey team", cardId: "card-harvey-demo", styleId: "style-warm",
+    ...jasonMessage, cardId: harveyCard.id, styleId: harveyHandwriting.id,
     address: { name: "Jason Dirkx", company: "Benesch", line1: "71 South Wacker Drive", line2: "Suite 1600", city: "Chicago", region: "IL", postalCode: "60606", country: "United States" },
     addressConfirmed: false, budgetCents: 15000,
     inboundCents: 800, preparationCents: 1500, outboundCents: 1200, taxCents: 900,
     stage: "needs_review", updatedAt: "2026-11-01T20:00:00Z", deliveryEstimate: "Shown after merchant confirmation",
     approval: null, priorApprovals: [], inbound: null, outbound: null, events: [], photos: [], exception: null, proposalRequest: null,
     sourceLabel: "Real account research and retailer products · Ordering, costs beyond the gift price, and delivery are simulated.",
-    assets: [{ id: "harvey-benesch-landing-page", kind: "microsite", title: "Benesch landing page · Existing project", url: HARVEY_PROJECT_URL, status: "review", scope: "account", source: "Open the existing design conversation in the deployed app. This demo does not publish or attach a QR code." }],
+    assets: [{ id: "harvey-benesch-landing-page", kind: "microsite", title: "Benesch landing page · Existing project", url: HARVEY_PROJECT_URL, status: "review", scope: "account", source: "Open the existing design conversation in the deployed app. This demo does not publish the page or connect it to the card’s homepage QR code." }],
   });
 }
 
@@ -40,7 +64,22 @@ export function createHarveyMailer() {
 export function withHarveyDemo(input: DirectMailState): DirectMailState {
   const state = structuredClone(input);
   if (!state.mailers.some(m => m.id === HARVEY_DEMO_ID)) state.mailers.unshift(createHarveyMailer());
-  if (!state.cards.some(c => c.id === "card-harvey-demo")) state.cards.push({ id: "card-harvey-demo", name: "Harvey · Personal note", version: 1, frontUrl: "/direct-mail/harvey-demo/card.svg", backUrl: null, paper: "white", writingArea: { x: 9, y: 10, width: 82, height: 82 }, productionReady: true });
+  const oldCard = state.cards.find(c => c.id === harveyCard.id);
+  const replacePlaceholder = oldCard && oldCard.version < harveyCard.version && ["/direct-mail/harvey-demo/card.svg", harveyCard.frontUrl].includes(oldCard.frontUrl);
+  if (!oldCard) state.cards.push(structuredClone(harveyCard));
+  else if (replacePlaceholder) Object.assign(oldCard, structuredClone(harveyCard));
+  if (!state.styles.some(s => s.id === harveyHandwriting.id)) state.styles.push(structuredClone(harveyHandwriting));
+  // Explicit visual reset of the two local recording fixtures, including their simulated
+  // approval previews. Never apply this to real approval history or other mailers.
+  // Preserve text edits, selected products, prices, credits and fulfillment progress.
+  for (const mailer of state.mailers.filter(m => [HARVEY_DEMO_ID, HARVEY_DELIVERED_ID].includes(m.id))) {
+    if (replacePlaceholder && mailer.cardId === harveyCard.id && mailer.styleId === "style-warm") mailer.styleId = harveyHandwriting.id;
+    const approval = mailer.approval;
+    if (approval?.card.id === harveyCard.id && approval.card.version < harveyCard.version && ["/direct-mail/harvey-demo/card.svg", harveyCard.frontUrl].includes(approval.card.frontUrl)) {
+      approval.card = structuredClone(harveyCard);
+      if (["style-warm", harveyHandwriting.id].includes(approval.style.id)) approval.style = structuredClone(harveyHandwriting);
+    }
+  }
   if (!state.giftBudgets?.some(b => b.projectId === HARVEY_PROJECT_ID)) (state.giftBudgets ??= []).push({ projectId: HARVEY_PROJECT_ID, revision: 1, minimumCents: 7000, preferredCents: 10000, ceilingCents: 12000, locked: true });
   if (!state.mailers.some(m => m.id === HARVEY_DELIVERED_ID)) state.mailers.push(createDeliveredHarveyMailer(state));
   return StateSchema.parse(state);
@@ -100,8 +139,7 @@ export function createDeliveredHarveyMailer(state: DirectMailState) {
     recipient: { name: "Hayley Harris", role: "Global Chief Knowledge & AI Adoption Officer", company: "Pinsent Masons", initials: "HH" },
     insight: { title: "Turning firm knowledge into everyday practice", detail: "Pinsent Masons appointed Hayley to lead its knowledge strategy and the selection and deployment of legal generative AI. The gift opens a working-session conversation about one knowledge workflow, alongside the firm’s existing tools. No personal hobby is inferred.", source: "Pinsent Masons · Appointment announcement", sourceUrl: "https://www.pinsentmasons.com/about-us/announcements/pinsent-masons-appoints-first-global-chief-knowledge-and-ai-adoption-officer", date: "2026-06-22", excerpt: "Hayley will be responsible for delivering the firm’s knowledge strategy and the selection and deployment of legal generative AI tools." },
     gifts, selectedGiftId: "squire-emerald",
-    note: "Hi Hayley,\n\nA small desk companion for the ideas ahead. Congratulations on your knowledge and AI remit at Pinsent Masons.\n\nI’d welcome a working session on one firm-knowledge workflow, with your lawyers reviewing every answer.",
-    signature: "Shank Keshri\nThe Harvey team",
+    ...hayleyMessage,
     address: { name: "Hayley Harris", company: "Pinsent Masons", line1: "30 Crown Place", line2: "Earl Street", city: "London", region: "", postalCode: "EC2A 4ES", country: "United Kingdom" },
     addressConfirmed: true, inboundCents: 800, preparationCents: 1500, outboundCents: 3500, taxCents: 650, budgetCents: 15000,
     stage: "delivered", updatedAt: "2026-10-30T14:24:00Z", deliveryEstimate: "Delivered 30 Oct · Office reception",
