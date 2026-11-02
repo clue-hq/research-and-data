@@ -68,3 +68,10 @@
 - Verified HTTP 200 at the custom address and opened the gift/card review in a separate browser tab. New origins have separate browser storage; original localhost drafts were not migrated, cleared or reloaded.
 - HTTP custom host is for local presentation, not a public deployment or TLS setup. Browser APIs restricted to secure contexts are not covered by this verification.
 - No source Harvey/V2 changes, ordering, approvals, or push.
+
+## Recording sidebar parity
+
+- Verified the deployed project's name and four chat titles/order through a read-only browser visit. Added a fixture-only sidebar snapshot through the existing repository seam; reused the existing sidebar tokens, folder icons, row spacing and hover controls.
+- Source chat links open their verified deployed conversations in a separate tab. No chat content was fabricated/copied and no live mutation occurred. Default fixture catalogs and HTTP repositories remain unchanged.
+- Browser confirmed the local custom-host queue displays the single expanded project and four matching chats. Proof: `/private/tmp/illumio-sidebar-matched.png`. A stale browser binding was recovered by resetting the CUA session; the current tab was not reloaded.
+- Design-system build, production build/TypeScript, seven existing sidebar/controller tests and isolated adapter assertions passed. Lint: zero errors, the same 11 existing warnings. Changes stay in the Illumio checkout; no push.

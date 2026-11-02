@@ -92,7 +92,9 @@ export function ProjectSidebarTree({
                         <Link
                           aria-current={active ? "page" : undefined}
                           className={`${styles.conversationRow} ${active ? styles.conversationRowActive : ""}`}
-                          href={conversation.href}
+                          href={conversation.sourceHref ?? conversation.href}
+                          target={conversation.sourceHref ? "_blank" : undefined}
+                          rel={conversation.sourceHref ? "noopener noreferrer" : undefined}
                           key={conversation.id}
                           onClick={controller.closeMenu}
                           prefetch={false}

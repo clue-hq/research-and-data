@@ -2,6 +2,7 @@
 
 import { useMaterialsEnabled } from "@/features/account-materials/hooks/use-materials-enabled";
 import { withWalkthroughChat } from "./walkthrough-chat.repository";
+import { withIllumioSidebar } from "./illumio-sidebar.fixture";
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { FIXTURE_TRANSPORT, type ChatTransport } from "./chat-api";
 import { createChatRepositories, type ChatRepositories } from "./chat-repositories";
@@ -75,5 +76,10 @@ export function useChatViewerIdentity(): ChatViewerIdentity {
 export function useChatRepositories(): ChatRepositories {
   const transport = useChatTransport();
   const walkthrough=useMaterialsEnabled();
-  return useMemo(() => {const repositories=createChatRepositories(transport);return walkthrough && transport.mode==="fixture" ? withWalkthroughChat(repositories) : repositories;}, [transport,walkthrough]);
+  return useMemo(() => {
+    const repositories = createChatRepositories(transport);
+    return walkthrough && transport.mode === "fixture"
+      ? withIllumioSidebar(withWalkthroughChat(repositories))
+      : repositories;
+  }, [transport, walkthrough]);
 }

@@ -15,6 +15,8 @@ export const SidebarConversationStatusSchema = ThreadStatusSchema;
 
 export const SidebarConversationSchema = z.object({
   href: z.string().startsWith("/"),
+  /** Optional read-only source link for a local recording's navigation snapshot. */
+  sourceHref: z.string().url().startsWith("https://app.cluehq.ai/projects/").optional(),
   id: z.string().min(1),
   pinned: z.boolean().default(false),
   status: SidebarConversationStatusSchema.default("idle"),
