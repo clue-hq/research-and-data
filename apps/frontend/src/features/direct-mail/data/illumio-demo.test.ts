@@ -70,3 +70,25 @@ test("card front refresh preserves edits and requires review without changing ap
   custom.cards[0].frontUrl = "/custom-front.png";
   assert.deepEqual(parseIllumioDemo(custom), custom, "custom fronts are retained");
 });
+
+test("display copy refresh preserves custom content, selections and approved records", () => {
+  const oldReason = "A collection that can be shared with the team, with several different challenges in one box. Choose it for a shared break rather than an individual desk piece.";
+  const state = createIllumioDemo();
+  const mailer = state.mailers[0];
+  mailer.gifts[2].rationale = oldReason;
+  mailer.gifts[0].rationale = "A customized recommendation";
+  mailer.insight.detail = "Custom research context";
+  mailer.note = "An edited note";
+  mailer.selectedGiftId = mailer.gifts[2].id;
+  mailer.addressConfirmed = true;
+  const refreshed = parseIllumioDemo(state);
+  assert.equal(refreshed.mailers[0].gifts[2].rationale, createIllumioDemo().mailers[0].gifts[2].rationale);
+  const expected = structuredClone(state);
+  expected.mailers[0].gifts[2].rationale = refreshed.mailers[0].gifts[2].rationale;
+  assert.deepEqual(refreshed, expected, "only the old built-in wording changes");
+  assert.deepEqual(parseIllumioDemo(refreshed), refreshed, "refresh is idempotent");
+  const reviewed = reviewMailer(state, DEMO_ID, mailer.revision);
+  const approved = approveMailers(reviewed, [{ id: DEMO_ID, revision: reviewed.mailers[0].revision }]).state;
+  assert.ok(approved.mailers[0].approval);
+  assert.deepEqual(parseIllumioDemo(approved), approved, "approved records and credit history are unchanged");
+});

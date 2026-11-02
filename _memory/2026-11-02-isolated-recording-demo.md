@@ -32,3 +32,12 @@
 - Browser verified the table without horizontal overflow at the current desktop width, the landing-page preview, and the Review link; screenshot saved at `/private/tmp/illumio-queue-formatted.png`.
 - Design-system build, production build/TypeScript and whitespace checks passed. Lint: zero errors, 11 existing unrelated warnings. Initial build command ran from repo root and failed because the frontend package lives under apps/frontend; rerun there passed. No new tests added for this presentation-only change.
 - Browser binding was stale; resetting the CUA session restored access. No push or deployment.
+
+## Gift review cleanup
+
+- Removed the duplicate accompanying-message section from gift selection; the editable note and card review remain in the next step. Shortened built-in research and recommendation copy.
+- Gift cards now place retailer links immediately below photos, use the design-system green Recommended badge, and align price/selection footers. Native radio inputs support keyboard arrows; links remain separate interactive controls.
+- Exact previous fixture wording refreshes on load without replacing custom text, selected products, notes, approved records or credit history. Added a regression for that boundary.
+- Browser verified selection, keyboard navigation, links directly below all three photos, no card overflow, and progression to the unchanged note step. Restored the recommended selection and left the gift review open on port 3000. Proof: `/private/tmp/illumio-gift-review-refined.png`.
+- Design-system build, production build/TypeScript, 12 focused tests and whitespace checks passed. Lint: 0 errors, 11 pre-existing warnings. The new regression initially used the pre-review revision for approval; corrected the test to use the returned revision and reran successfully. CUA stale binding recovered with a session reset.
+- Source V2 worktree remains clean; no production changes, ordering, pushing or deployment.

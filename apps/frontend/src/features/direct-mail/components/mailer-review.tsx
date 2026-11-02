@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
 import { DEMO_ID } from "../model/recording-demo-context";
-import { ArrowLeft, Check, ChevronRight } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Check, ChevronRight } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/ui/select-field";
 import { money, noteFits, selectedGift, type Mailer } from "../model/direct-mail";
@@ -10,7 +11,7 @@ import { useMailerEditor } from "../hooks/use-mailer-editor";
 import { ApprovalDialog, CostBreakdown, MailDialog, MailStatus } from "./mail-ui";
 import { ProductImage } from "./product-image";
 import { MailerPreview } from "./mailer-preview";
-import { MailBadge, MailerConnections, NoteTemplates } from "./mail-context";
+import { MailerConnections, NoteTemplates } from "./mail-context";
 import styles from "./direct-mail.module.css";
 
 export function MailerReview({ controller: c, saved, queueHref, initialStep = 0, onBack, onOpenPage }: { controller: DirectMailController; saved: Mailer; queueHref: string; initialStep?:number; onBack?:()=>void; onOpenPage?:()=>void }) {
@@ -23,13 +24,25 @@ export function MailerReview({ controller: c, saved, queueHref, initialStep = 0,
     <nav className={styles.tabs} aria-label="Mailer review steps">{["Choose a gift", "Card & note", "Review & approve"].map((label, index) => <button key={label} className={styles.tab} aria-current={e.step === index ? "page" : undefined} disabled={c.pending || e.changedElsewhere} onClick={() => void e.go(index)}><span className={styles.caption}>{index + 1}</span> {label}</button>)}</nav>
     <div className={styles.reviewLayout}><div>
       {e.step === 0 ? <>
-        <section className={styles.evidence}><div className={styles.between}><span className={styles.caption}>THE RESEARCH BEHIND THE GIFT</span><MailBadge>Existing account research</MailBadge></div><h2 className="font-medium mt-2 mb-1">{m.insight.title}</h2><p className={`${styles.small} ${styles.subtle}`}>{m.insight.detail}</p><details><summary>View source · {m.insight.source}</summary><blockquote>{m.insight.excerpt}</blockquote><p className={`${styles.caption} mt-2`}>Research date: {m.insight.date}</p>{m.insight.sourceUrl ? <a className={`${styles.small} ${styles.textLink}`} href={m.insight.sourceUrl} target="_blank" rel="noreferrer">Open research source ↗</a> : null}</details></section>
+        <section className={styles.evidence} aria-label="Why these gifts"><h2 className={styles.evidenceTitle}>Why these gifts</h2><p className={styles.evidenceSummary}>{m.insight.detail}</p><details><summary>{m.insight.source}</summary><blockquote>{m.insight.excerpt}</blockquote><p className={`${styles.caption} mt-2`}>Research date: {m.insight.date}</p>{m.insight.sourceUrl ? <a className={`${styles.small} ${styles.textLink}`} href={m.insight.sourceUrl} target="_blank" rel="noreferrer">Open research source ↗</a> : null}</details></section>
         <div className={`${styles.between} mb-4`}><h2 className="font-medium">Three gifts for {m.recipient.name.split(" ")[0]}</h2>{recordingDemo ? <span className={styles.caption}>Retailer prices checked Nov 2, 2026</span> : <button className={`${styles.small} ${styles.textLink}`} onClick={() => e.setRequest("gifts")}>Give the agent feedback</button>}</div>
         {m.proposalRequest ? <div className={styles.notice}><p className="font-medium">Recommendation changes requested</p><p className={`${styles.small} ${styles.subtle} mt-1`}>{m.proposalRequest.feedback || "Find another thoughtful direction for this recipient."} Your current gift and note are preserved.</p><div className={`${styles.row} mt-3`}><Button variant="outline" size="sm" disabled={c.pending} onClick={() => void e.resolveRequest(true)}>Load sample recommendations</Button><Button variant="transparent" size="sm" disabled={c.pending} onClick={() => void e.resolveRequest(false)}>Keep current options</Button></div></div> : null}
-        <div className={styles.gifts} role="group" aria-label="Gift options">{m.gifts.map((g) => <article key={g.id} className={styles.giftContainer}><button type="button" role="radio" aria-checked={m.selectedGiftId === g.id} className={styles.gift} disabled={!g.available || c.pending} onClick={() => e.edit({ selectedGiftId: g.id })}>
-          <ProductImage src={g.image} alt={g.name} /><div className={styles.giftBody}><div className={styles.between}><span className={styles.caption}>{g.merchant}</span>{g.recommended ? <MailBadge>Recommended</MailBadge> : null}</div><span className="font-medium">{g.name}</span><span className={styles.caption}>{g.variant}</span><p className={`${styles.small} ${styles.subtle}`}>{g.rationale}</p><span className={styles.caption}>Arrival at Clue: {g.arrival}</span><div className={styles.giftChoice}><span>{money(g.priceCents)}</span><span className={styles.radio} /></div></div>
-        </button>{g.productUrl ? <a className={`${styles.caption} ${styles.textLink} mt-2`} href={g.productUrl} target="_blank" rel="noreferrer">View at {g.merchant} ↗</a> : <span className={`${styles.caption} mt-2`}>Merchant link pending</span>}</article>)}</div><p className={`${styles.caption} mt-3`}>Gift price only. Shipping and preparation are included in the final review.</p>
-        <section className={styles.section}><h2>The accompanying message</h2><p className={`${styles.small} ${styles.subtle} whitespace-pre-wrap`}>{m.note}</p>{m.sourceLabel ? <p className={`${styles.caption} mt-2`}>{m.sourceLabel}</p> : null}</section>
+        <div className={styles.gifts} role="radiogroup" aria-label="Gift options">{m.gifts.map((g) => {
+          const selected = m.selectedGiftId === g.id;
+          const optionId = `gift-${m.id}-${g.id}`;
+          return <article key={g.id} className={styles.giftContainer} data-selected={selected} data-disabled={!g.available || c.pending}>
+            <label htmlFor={optionId} className={styles.giftSelect}><span className="sr-only">Select {g.name}</span></label>
+            <div className={styles.giftPhoto}><ProductImage src={g.image} alt={g.name} />{g.recommended ? <Badge className={styles.recommended}>Recommended</Badge> : null}</div>
+            {g.productUrl ? <a className={styles.giftMerchant} href={g.productUrl} target="_blank" rel="noreferrer" aria-label={`View ${g.name} at ${g.merchant}`}>View at {g.merchant}<ArrowUpRight size={14} aria-hidden="true" /></a> : <span className={styles.giftMerchant}>Merchant link pending</span>}
+            <div className={styles.giftBody}>
+              <h3 id={`${optionId}-name`} className={styles.giftName}>{g.name}</h3>
+              <p className={styles.giftVariant}>{g.variant}</p>
+              <p className={styles.giftReason}>{g.rationale}</p>
+              <div className={styles.giftChoice}><span className={styles.giftPrice}>{money(g.priceCents)}</span><span className={styles.giftSelection}>{!g.available ? "Unavailable" : selected ? "Selected" : "Select gift"}<input id={optionId} type="radio" name={`gift-${m.id}`} aria-labelledby={`${optionId}-name`} checked={selected} disabled={!g.available || c.pending} onChange={() => e.edit({ selectedGiftId: g.id })} /></span></div>
+              <p className={styles.giftAvailability}>{g.arrival}</p>
+            </div>
+          </article>;
+        })}</div><p className={`${styles.caption} mt-3`}>Gift prices in USD. Shipping and preparation shown at review.</p>
       </> : null}
       {e.step === 1 ? <div className={styles.stack}><div><h2 className="font-medium mb-1">Make the note personal</h2><p className={`${styles.small} ${styles.subtle}`}>Choose the card and handwriting, then make the message your own.</p></div><div className={styles.twoColumns}>
         <div className={styles.field}><label htmlFor="mailer-card">Card</label><SelectField id="mailer-card" ariaLabel="Card design" value={m.cardId} options={c.data!.cards.map((item) => ({ value: item.id, label: `${item.name}${item.productionReady ? "" : " · Pending validation"}` }))} onValueChange={(value) => e.edit({ cardId: value })} /></div>

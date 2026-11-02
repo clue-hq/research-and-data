@@ -27,14 +27,14 @@ export function createIllumioMailer() {
     recipient: { name: "Ann Barron-DiCamillo", role: "EVP & Global Chief Information Security Officer", company: "U.S. Bank", initials: "AB" },
     insight: {
       title: "A new puzzle every day",
-      detail: "At a K–12 STEM symposium in 2014, Ann described the appeal of cybersecurity as working on new puzzles every day. This brass mechanical puzzle is a creative response to that public remark, not evidence of a private hobby. The business conversation remains U.S. Bank’s AWS migration and consistent breach containment across cloud and data-center applications.",
+      detail: "Ann described cybersecurity as solving new puzzles every day at a 2014 STEM event. These mechanical puzzles connect to that public remark.",
       source: "WashingtonExec · K–12 STEM symposium, 2014", sourceUrl: "https://washingtonexec.com/exec-profiles/open-possibilities-around-stem-google-homeland-security-leaders-encourage-students-k-12-stem-symposium", date: "2026-11-02",
       excerpt: "The most exciting thing for cybersecurity professionals in our field is getting to work on new puzzles every day.",
     },
     gifts: [
-      { id: "craighill-jack-brass", name: "Craighill Jack Puzzle", variant: "Solid brass · Six interlocking pieces", merchant: "Craighill", priceCents: 9800, image: `${media}/jack-puzzle.jpg`, rationale: "A crafted brass puzzle inspired by Ann’s own description of cyber work: a new puzzle every day. Six precision-machined pieces make a memorable desk object, with a personal note connecting the idea to her words.", available: true, arrival: "In stock · Delivery date at checkout", recommended: true, productUrl: "https://craighill.co/products/jack-puzzle?variant=46559121309933", observedAt: "2026-11-02" },
-      { id: "archimedes-gear", name: "Archimedes’ Gear", variant: "Interlocking magnetic pin puzzle", merchant: "Project Genius", priceCents: 2999, image: `${media}/archimedes-gear.jpg`, rationale: "A compact mechanical challenge at a lower price. Its hidden magnetic mechanism offers another way to bring Ann’s public puzzle-solving remark into the gift.", available: true, arrival: "In stock · Delivery date at checkout", recommended: false, productUrl: "https://projectgeniusinc.com/products/archimedes-gear?variant=44024825151684", observedAt: "2026-11-02" },
-      { id: "museum-puzzles", name: "Museum Collection", variant: "30 wood and metal puzzles", merchant: "Project Genius", priceCents: 3499, image: `${media}/museum-collection.jpg`, rationale: "A collection that can be shared with the team, with several different challenges in one box. Choose it for a shared break rather than an individual desk piece.", available: true, arrival: "In stock · Delivery date at checkout", recommended: false, productUrl: "https://projectgeniusinc.com/products/museum-collection?variant=44024685985988", observedAt: "2026-11-02" },
+      { id: "craighill-jack-brass", name: "Craighill Jack Puzzle", variant: "Solid brass · Six interlocking pieces", merchant: "Craighill", priceCents: 9800, image: `${media}/jack-puzzle.jpg`, rationale: "A brass desk puzzle that connects to Ann’s own words about cyber work.", available: true, arrival: "In stock · Delivery date at checkout", recommended: true, productUrl: "https://craighill.co/products/jack-puzzle?variant=46559121309933", observedAt: "2026-11-02" },
+      { id: "archimedes-gear", name: "Archimedes’ Gear", variant: "Interlocking magnetic pin puzzle", merchant: "Project Genius", priceCents: 2999, image: `${media}/archimedes-gear.jpg`, rationale: "A compact magnetic challenge at a lower price.", available: true, arrival: "In stock · Delivery date at checkout", recommended: false, productUrl: "https://projectgeniusinc.com/products/archimedes-gear?variant=44024825151684", observedAt: "2026-11-02" },
+      { id: "museum-puzzles", name: "Museum Collection", variant: "30 wood and metal puzzles", merchant: "Project Genius", priceCents: 3499, image: `${media}/museum-collection.jpg`, rationale: "A set of puzzles to share with the team.", available: true, arrival: "In stock · Delivery date at checkout", recommended: false, productUrl: "https://projectgeniusinc.com/products/museum-collection?variant=44024685985988", observedAt: "2026-11-02" },
     ],
     selectedGiftId: "craighill-jack-brass", ...annMessage, cardId: card.id, styleId: handwriting.id,
     address: { name: "Ann Barron-DiCamillo", company: "U.S. Bank", line1: "800 Nicollet Mall", line2: "", city: "Minneapolis", region: "MN", postalCode: "55402", country: "United States" },
@@ -52,9 +52,26 @@ export function createIllumioDemo() {
   });
 }
 
-/** Refresh only the previous built-in front; keep edits and frozen approvals intact. */
+// Exact previous seed copy only; custom research and approved records stay intact.
+const previousDemoCopy = [
+  "At a K–12 STEM symposium in 2014, Ann described the appeal of cybersecurity as working on new puzzles every day. This brass mechanical puzzle is a creative response to that public remark, not evidence of a private hobby. The business conversation remains U.S. Bank’s AWS migration and consistent breach containment across cloud and data-center applications.",
+  "A crafted brass puzzle inspired by Ann’s own description of cyber work: a new puzzle every day. Six precision-machined pieces make a memorable desk object, with a personal note connecting the idea to her words.",
+  "A compact mechanical challenge at a lower price. Its hidden magnetic mechanism offers another way to bring Ann’s public puzzle-solving remark into the gift.",
+  "A collection that can be shared with the team, with several different challenges in one box. Choose it for a shared break rather than an individual desk piece."
+];
+
+/** Refresh built-in artwork and display copy without replacing user edits or approvals. */
 export function parseIllumioDemo(value: unknown) {
   const state = StateSchema.parse(value);
+  const demo = state.mailers.find(m => m.id === DEMO_ID);
+  if (demo && !demo.approval) {
+    const latest = createIllumioMailer();
+    if (demo.insight.detail === previousDemoCopy[0]) demo.insight.detail = latest.insight.detail;
+    latest.gifts.forEach((gift, index) => {
+      const previousGift = demo.gifts.find(g => g.id === gift.id);
+      if (previousGift?.rationale === previousDemoCopy[index + 1]) previousGift.rationale = gift.rationale;
+    });
+  }
   const previous = state.cards.find(c => c.id === card.id);
   if (previous?.version === 2 && previous.frontUrl === `${media}/illumio-hq.webp`) {
     previous.frontUrl = card.frontUrl;
