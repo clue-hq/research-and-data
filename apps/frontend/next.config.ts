@@ -8,6 +8,8 @@ const CANVASKIT_STUB = "./src/features/design-editor/engine/scene/empty-module.t
 const localInstance = localWorkspaceInstance();
 
 const nextConfig: NextConfig = {
+  // Loopback-only presentation address for this worktree's local Illumio demo.
+  allowedDevOrigins: ["illumio.clue.test"],
   // The script runs in an opaque-origin sandboxed srcdoc. Anonymous CORS is
   // required for its pinned SRI; this public file carries no user credentials.
   async headers() {

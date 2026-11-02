@@ -60,3 +60,11 @@
 - Full frontend suite: 3,731 passed, 5 skipped, zero failures. Final focused editor/fixture suite: 15 passed. Design-system build and production build/TypeScript passed; lint has zero errors and 11 existing warnings. Browser verified immediate book/LEGO note switching, restored the recommended gift, opened alternatives/feedback, and progressed through Continue. Proof: `/private/tmp/illumio-gift-matched-note.png`.
 - Initial npm test hit tsx IPC sandbox restrictions; approved local-IPC rerun passed. An edit script first used the wrong cwd and was rerun at repo root. Inline ESM evaluation was incompatible with tsx's CommonJS output; CommonJS evaluation succeeded. Auto-review blocked reloading the user's tab due to unsaved-edit risk; verification used a separate tab, preserving the original. Superseded generated drafts were left outside the repo.
 - Source Harvey/V2 worktree stayed clean; no production changes, approval, ordering, sends, or push. Port 3000 left at gift selection with the three requested controls enabled.
+
+## Local presentation hostname
+
+- Added `illumio.clue.test` mapped to IPv6 loopback in this Mac's `/etc/hosts`, through the macOS administrator prompt. Port 3000 remains the same loopback-only preview process; original localhost address still works.
+- Added the exact hostname to Next's `allowedDevOrigins` so development assets and hot reload can use it. No wildcard or network binding expansion.
+- Verified HTTP 200 at the custom address and opened the gift/card review in a separate browser tab. New origins have separate browser storage; original localhost drafts were not migrated, cleared or reloaded.
+- HTTP custom host is for local presentation, not a public deployment or TLS setup. Browser APIs restricted to secure contexts are not covered by this verification.
+- No source Harvey/V2 changes, ordering, approvals, or push.
