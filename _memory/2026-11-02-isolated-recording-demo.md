@@ -24,3 +24,11 @@
 - 33 focused tests passed, including migration/approval regression. Browser verified both inline/enlarged front and Front / Message toggles; left the new front open on port 3000. No changes to source V2 worktree.
 - Source discovery: architect/gallery pages returned HTTP403 and a gallery thumbnail returned404; official CDN/reference image downloads worked. No authentication or access controls were changed.
 - Closing checks: production build/type checking passed; lint passed with 0 errors and the same 11 unrelated warnings. Diff whitespace check passed. All work remains local.
+
+## Queue formatting
+
+- Formatting-only revision of the local Direct Mail queue: standard 14px primary text, 13px secondary text, larger account/product images, clearer material controls, right-aligned estimate, and the existing outline-button treatment for Review/Track. Removed redundant row wording.
+- Kept account-level materials distinct from recipient mailers; no fixture data, approvals, branding, or new accounts changed. Source V2 worktree stayed clean.
+- Browser verified the table without horizontal overflow at the current desktop width, the landing-page preview, and the Review link; screenshot saved at `/private/tmp/illumio-queue-formatted.png`.
+- Design-system build, production build/TypeScript and whitespace checks passed. Lint: zero errors, 11 existing unrelated warnings. Initial build command ran from repo root and failed because the frontend package lives under apps/frontend; rerun there passed. No new tests added for this presentation-only change.
+- Browser binding was stale; resetting the CUA session restored access. No push or deployment.
