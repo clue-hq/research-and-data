@@ -81,3 +81,22 @@ Revision validation: 32 focused tests, design-system build and production build 
 Generation prompt: create one premium flat 3:2 postcard front at 1536 × 1024. Preserve the Harvey reference’s warm ivory textured paper, 3.6% side margins, 5.6% top margin, photo ending at 81% height and blank footer. Replace its photo with an editorial eye-level reinterpretation of Illumio’s actual office: upright verticals, honey oak feature wall, white reception desk, polished concrete, right-side glass wall, soft grey chairs, natural daylight, a plant and one discreet motion-blurred figure. Retain source office identity and avoid Harvey’s arches, CGI sheen, orange graphics, excessive floor/ceiling or identifiable faces. Leave the footer empty for the separately rendered official logo and brand line. No surrounding mockup, perspective, border shadow or generated footer text.
 
 Final v3 checks: production build and TypeScript passed; lint had zero errors and 11 pre-existing unrelated warnings. No push or deployment.
+
+## November 2 — gifts grounded in distinct insights
+
+`data/illumio-gift-research.ts` holds the public research and five-product catalog. Three suggestions appear at a time, each linked to its supporting insight. The Jack Puzzle remains the recommended selection. A fourth insight supplies business context rather than forcing another gift metaphor.
+
+Sources checked November 2, 2026:
+
+- Puzzle remark: [WashingtonExec, 2014](https://washingtonexec.com/exec-profiles/open-possibilities-around-stem-google-homeland-security-leaders-encourage-students-k-12-stem-symposium).
+- Her early HTML project: [Citi interview transcript, 04:17–06:14](https://www.citigroup.com/rcs/citigpa/storage/public/GTH_S5_E2_transcript-FINAL.pdf). The transcript has two speakers named Ann; this passage is Ann Barron-DiCamillo, not Ann Johnson.
+- Encouraging technical careers and hands-on learning: [CyberScoop interview, 2017](https://cyberscoop.com/top-women-in-cybersecurity-ann-barron-dicamillo/).
+- Partnerships and resilience: [U.S. Bank CISO interview, 2026](https://www.usbank.com/about-us-bank/news-and-stories/article-library/cybersecurity-awareness-month-insights-with-new-ciso-ann-barron-dicamillo.html).
+- New product: [This Is for Everyone, hardcover, $30](https://www.barnesandnoble.com/w/this-is-for-everyone-tim-berners-lee/1146657388?ean=9780374612467). `web-memoir.jpg` is the [publisher's cover](https://mpd-biblio-covers.imgix.net/9780374612467.jpg?w=700).
+- New product: [LEGO The Evolution of STEM, $79.99](https://www.lego.com/en-us/product/the-evolution-of-stem-21355), listed available and retiring soon. `lego-stem.jpg` is the [retailer product photograph](https://target.scene7.com/is/image/Target/GUEST_6c3559b3-b32e-48a1-8a27-1c14bcfa39f8?hei=1000&wid=1000).
+
+Connections between research and gifts are suggestions, not evidence of hobbies, ownership or buying preferences. Retail prices exclude the separately displayed illustrative preparation, delivery and tax amounts.
+
+“More options” lets reviewers select another researched product while retaining the current selection and the recommended option for comparison. Displaced options remain in the catalog. “Ask for different gifts” stores feedback locally; it does not start live research, and the repository refuses to substitute generic synthetic research into this sourced scenario.
+
+Changing a gift never overwrites a customized note. If the note still contains another gift's exact suggested copy, review requires a change. The note step provides fitting copy for the chosen product. Only the original puzzle note has generated handwriting artwork; new text uses the existing handwriting preview until artwork is prepared. Approvals, credit history and in-progress mailers are preserved during the targeted seed migration.

@@ -13,11 +13,13 @@ export const CardAssetSchema = z.object({
   messageArtworks: z.array(z.object({ note: z.string(), signature: z.string(), styleId: z.string(), url: z.string() })).optional(),
 });
 export const StyleSchema = z.object({ id: z.string(), name: z.string(), version: z.number().int().positive(), family: z.string(), sourceUrl: z.string().nullable(), productionReady: z.boolean() });
-export const GiftSchema = z.object({ id: z.string(), name: z.string(), variant: z.string(), merchant: z.string(), priceCents: Cents.nullable(), image: z.string(), rationale: z.string(), available: z.boolean(), arrival: z.string(), recommended: z.boolean(), productUrl: WebUrlSchema.optional(), observedAt: z.string().optional() });
+export const GiftSchema = z.object({ id: z.string(), name: z.string(), variant: z.string(), merchant: z.string(), priceCents: Cents.nullable(), image: z.string(), rationale: z.string(), available: z.boolean(), arrival: z.string(), recommended: z.boolean(), productUrl: WebUrlSchema.optional(), observedAt: z.string().optional(), insightId: z.string().optional(), suggestedNote: z.string().optional() });
 export const AddressSchema = z.object({ name: z.string(), company: z.string(), line1: z.string(), line2: z.string(), city: z.string(), region: z.string(), postalCode: z.string(), country: z.string() });
 export const StageSchema = z.enum(["researching", "needs_review", "ready", "approved", "ordered", "inbound", "received", "quality_check", "preparing", "ready_to_ship", "shipped", "delivered", "attention", "canceled"]);
 export type Stage = z.infer<typeof StageSchema>;
 const InsightSchema = z.object({ title: z.string(), detail: z.string(), source: z.string(), date: z.string(), excerpt: z.string(), sourceUrl: WebUrlSchema.optional() });
+export const GiftInsightSchema = InsightSchema.extend({ id: z.string(), kind: z.enum(["gift", "conversation"]), sourceDate: z.string() });
+export type GiftInsight = z.infer<typeof GiftInsightSchema>;
 const EventSchema = z.object({ id: z.string(), title: z.string(), detail: z.string(), at: z.string(), kind: z.enum(["standard", "exception"]) });
 const ShipmentSchema = z.object({ carrier: z.string(), trackingNumber: z.string(), trackingUrl: z.string().nullable(), expected: z.string(), status: z.string() }).nullable();
 const ApprovalSchema = z.object({ page: OutreachPageSchema.optional(), revision: z.number(), at: z.string(), gift: GiftSchema, note: z.string(), signature: z.string(), card: CardAssetSchema, style: StyleSchema, address: AddressSchema, estimatedCents: Cents, budgetCents: Cents });
@@ -28,6 +30,7 @@ export const MailerSchema = z.object({
   accountId: z.string(), contactId: z.string(),
   recipient: z.object({ name: z.string(), role: z.string(), company: z.string(), initials: z.string() }),
   insight: InsightSchema, gifts: z.array(GiftSchema).length(3), selectedGiftId: z.string().nullable(),
+  giftInsights: z.array(GiftInsightSchema).optional(), alternativeGifts: z.array(GiftSchema).optional(),
   note: z.string(), signature: z.string(), cardId: z.string(), styleId: z.string(),
   address: AddressSchema, addressConfirmed: z.boolean(), budgetCents: Cents,
   inboundCents: Cents.nullable(), preparationCents: Cents.nullable(), outboundCents: Cents.nullable(), taxCents: Cents.nullable(),
@@ -56,6 +59,10 @@ export type ApprovalResult = { id: string; ok: boolean; message: string };
 export const stageLabels: Record<Stage, string> = { researching: "Researching", needs_review: "Needs review", ready: "Ready to approve", approved: "Approved", ordered: "Gift ordered", inbound: "On its way to Clue", received: "Received at Clue", quality_check: "Quality inspection", preparing: "Package preparation", ready_to_ship: "Ready to ship", shipped: "Shipped", delivered: "Delivered", attention: "Needs attention", canceled: "Canceled" };
 export function isDraft(mailer: Mailer) { return mailer.stage === "needs_review" || mailer.stage === "ready"; }
 export function selectedGift(mailer: Mailer) { return mailer.gifts.find((gift) => gift.id === mailer.selectedGiftId) ?? null; }
+export function noteNeedsGiftUpdate(mailer: Mailer) {
+  const suggestion = selectedGift(mailer)?.suggestedNote;
+  return !!suggestion && mailer.note !== suggestion && [...mailer.gifts, ...(mailer.alternativeGifts ?? [])].some(g => g.suggestedNote === mailer.note);
+}
 export function money(cents: number | null) { return cents === null ? "Not quoted" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(cents / 100); }
 export function estimate(mailer: Mailer): number | null {
   const amounts = [selectedGift(mailer)?.priceCents ?? null, mailer.inboundCents, mailer.preparationCents, mailer.outboundCents, mailer.taxCents];
@@ -109,6 +116,7 @@ export function readiness(mailer: Mailer, state: DirectMailState): string[] {
   if (!card?.productionReady) issues.push("Choose a card approved for production.");
   if (!style?.productionReady) issues.push("Choose a handwriting style approved for production.");
   if (!mailer.note.trim()) issues.push("Write a note.");
+  else if (noteNeedsGiftUpdate(mailer)) issues.push("Update the note to match the selected gift.");
   else if (/\{\{.*?\}\}/s.test(mailer.note)) issues.push("Resolve the note's template fields before approving.");
   else if (!noteFits(mailer.note, mailer.signature, card, style)) issues.push("Adjust the note to fit the writing area and supported handwriting characters.");
   if (!mailer.signature.trim()) issues.push("Add a sender signature.");
@@ -137,7 +145,16 @@ export function updateMailer(state: DirectMailState, id: string, revision: numbe
   const mailer = requireMailer(next, id, revision);
   if (!isDraft(mailer)) throw new Error("An approved or in-progress mailer cannot be edited.");
   const patch = MailerPatchSchema.parse(input);
-  if (patch.selectedGiftId && !mailer.gifts.some((gift) => gift.id === patch.selectedGiftId)) throw new Error("That gift is no longer an option.");
+  if (patch.selectedGiftId && !mailer.gifts.some((gift) => gift.id === patch.selectedGiftId)) {
+    const alternative = mailer.alternativeGifts?.find(g => g.id === patch.selectedGiftId);
+    if (!alternative?.available) throw new Error("That gift is no longer an option.");
+    // Keep the current choice and the recommendation available for comparison.
+    const replaceIndex = mailer.gifts.findLastIndex(g => g.id !== mailer.selectedGiftId && !g.recommended);
+    if (replaceIndex < 0) throw new Error("No gift option can be replaced.");
+    const displaced = mailer.gifts[replaceIndex];
+    mailer.gifts[replaceIndex] = alternative;
+    mailer.alternativeGifts = [...mailer.alternativeGifts!.filter(g => g.id !== alternative.id), displaced];
+  }
   Object.assign(mailer, patch, { revision: revision + 1, reviewedRevision: null, stage: "needs_review", updatedAt: new Date().toISOString() });
   if (patch.address && patch.addressConfirmed !== true) mailer.addressConfirmed = false;
   if (mailer.exception?.action === "address" && mailer.addressConfirmed && hasReceivingAddress(mailer)) mailer.exception = null;

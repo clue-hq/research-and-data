@@ -73,6 +73,11 @@ export function useMailerEditor(c: DirectMailController, saved: Mailer, initialS
     const current = await save();
     if (current) await c.run(() => c.repository.resolveProposal(current.id, current.revision, apply));
   }
+  async function selectAlternative(id: string) {
+    const current = await save();
+    if (!current) return false;
+    return !!await c.run(() => c.repository.patch(current.id, current.revision, { selectedGiftId: id }));
+  }
   return { mailer, step, go, edit, save, dirty: !!draft, changedElsewhere, recoveryError, discard: () => replaceBuffer(null), issues,
-    estimate: estimate(mailer), approval, setApproval, approvalError, review, approve, request, setRequest, feedback, setFeedback, submitRequest, resolveRequest };
+    estimate: estimate(mailer), approval, setApproval, approvalError, review, approve, request, setRequest, feedback, setFeedback, submitRequest, resolveRequest, selectAlternative };
 }

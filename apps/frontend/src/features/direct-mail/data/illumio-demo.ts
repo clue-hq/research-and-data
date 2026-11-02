@@ -1,10 +1,11 @@
 import { MailerSchema, StateSchema, type CardAsset, type HandwritingStyle } from "../model/direct-mail";
 import { DEMO_ID, DEMO_PROJECT_ID, DEMO_ACCOUNT_ID, DEMO_PROJECT_URL } from "../model/recording-demo-context";
 import { advanceRecordingDemo, resetRecordingDemo } from "./recording-simulation";
+import { annGiftCatalog, annGiftInsights, annPuzzleNote } from "./illumio-gift-research";
 
 const media = "/direct-mail/illumio-demo";
 export const annMessage = {
-  note: "Hi Ann,\n\nYou once described cyber as a new puzzle every day. Here’s one with no incident report attached.\n\nAs U.S. Bank moves more apps to AWS, let’s compare notes on keeping a breach from moving with them.",
+  note: annPuzzleNote,
   signature: "The Illumio team",
 };
 const handwriting: HandwritingStyle = { id: "style-illumio-handprint", name: "Card handwriting", version: 1, family: "Clue Handprint", sourceUrl: "/direct-mail/patrick-hand.ttf", productionReady: true };
@@ -31,11 +32,8 @@ export function createIllumioMailer() {
       source: "WashingtonExec · K–12 STEM symposium, 2014", sourceUrl: "https://washingtonexec.com/exec-profiles/open-possibilities-around-stem-google-homeland-security-leaders-encourage-students-k-12-stem-symposium", date: "2026-11-02",
       excerpt: "The most exciting thing for cybersecurity professionals in our field is getting to work on new puzzles every day.",
     },
-    gifts: [
-      { id: "craighill-jack-brass", name: "Craighill Jack Puzzle", variant: "Solid brass · Six interlocking pieces", merchant: "Craighill", priceCents: 9800, image: `${media}/jack-puzzle.jpg`, rationale: "A brass desk puzzle that connects to Ann’s own words about cyber work.", available: true, arrival: "In stock · Delivery date at checkout", recommended: true, productUrl: "https://craighill.co/products/jack-puzzle?variant=46559121309933", observedAt: "2026-11-02" },
-      { id: "archimedes-gear", name: "Archimedes’ Gear", variant: "Interlocking magnetic pin puzzle", merchant: "Project Genius", priceCents: 2999, image: `${media}/archimedes-gear.jpg`, rationale: "A compact magnetic challenge at a lower price.", available: true, arrival: "In stock · Delivery date at checkout", recommended: false, productUrl: "https://projectgeniusinc.com/products/archimedes-gear?variant=44024825151684", observedAt: "2026-11-02" },
-      { id: "museum-puzzles", name: "Museum Collection", variant: "30 wood and metal puzzles", merchant: "Project Genius", priceCents: 3499, image: `${media}/museum-collection.jpg`, rationale: "A set of puzzles to share with the team.", available: true, arrival: "In stock · Delivery date at checkout", recommended: false, productUrl: "https://projectgeniusinc.com/products/museum-collection?variant=44024685985988", observedAt: "2026-11-02" },
-    ],
+    gifts: annGiftCatalog.slice(0, 3),
+    alternativeGifts: annGiftCatalog.slice(3), giftInsights: annGiftInsights,
     selectedGiftId: "craighill-jack-brass", ...annMessage, cardId: card.id, styleId: handwriting.id,
     address: { name: "Ann Barron-DiCamillo", company: "U.S. Bank", line1: "800 Nicollet Mall", line2: "", city: "Minneapolis", region: "MN", postalCode: "55402", country: "United States" },
     addressConfirmed: false, budgetCents: 15000, inboundCents: 800, preparationCents: 1500, outboundCents: 1200, taxCents: 900,
@@ -67,10 +65,33 @@ export function parseIllumioDemo(value: unknown) {
   if (demo && !demo.approval) {
     const latest = createIllumioMailer();
     if (demo.insight.detail === previousDemoCopy[0]) demo.insight.detail = latest.insight.detail;
-    latest.gifts.forEach((gift, index) => {
-      const previousGift = demo.gifts.find(g => g.id === gift.id);
-      if (previousGift?.rationale === previousDemoCopy[index + 1]) previousGift.rationale = gift.rationale;
-    });
+    for (const gift of [...demo.gifts, ...(demo.alternativeGifts ?? [])]) {
+      const originalIndex = ["craighill-jack-brass", "archimedes-gear", "museum-puzzles"].indexOf(gift.id);
+      const current = annGiftCatalog.find(g => g.id === gift.id);
+      if (current && originalIndex >= 0 && gift.rationale === previousDemoCopy[originalIndex + 1]) gift.rationale = current.rationale;
+      // Suggested copy is a catalog template; never overwrite the recipient's actual note.
+      if (current && gift.insightId === current.insightId) gift.suggestedNote = current.suggestedNote;
+    }
+    for (const insight of demo.giftInsights ?? []) {
+      const verified = annGiftInsights.find(i => i.id === insight.id);
+      if (verified && ["I volunteered for the assignment", "Take risks and grab opportunities when you see them"].includes(insight.excerpt)) insight.excerpt = verified.excerpt;
+      if (verified && insight.detail === "Ann has spoken to K–12 students about STEM and encouraged women to explore technical roles and learn by doing.") insight.detail = verified.detail;
+    }
+    // Upgrade only the known initial trio. Preserve selected alternatives and edited product descriptions.
+    if (!demo.giftInsights && demo.gifts.every(g => ["craighill-jack-brass", "archimedes-gear", "museum-puzzles"].includes(g.id))) {
+      const existing = demo.gifts;
+      const candidates = annGiftCatalog.map(g => {
+        const old = existing.find(item => item.id === g.id);
+        return old ? { ...g, ...old, insightId: g.insightId, suggestedNote: g.suggestedNote } : g;
+      });
+      const selected = candidates.find(g => g.id === demo.selectedGiftId);
+      const primary = candidates.slice(0, 3);
+      if (selected && !primary.some(g => g.id === selected.id)) primary[2] = selected;
+      demo.gifts = primary;
+      demo.alternativeGifts = candidates.filter(g => !primary.some(p => p.id === g.id));
+      demo.giftInsights = structuredClone(annGiftInsights);
+      demo.revision++; demo.reviewedRevision = null; demo.stage = "needs_review";
+    }
   }
   const previous = state.cards.find(c => c.id === card.id);
   if (previous?.version === 2 && previous.frontUrl === `${media}/illumio-hq.webp`) {

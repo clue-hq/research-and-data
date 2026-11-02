@@ -132,6 +132,7 @@ export function createDirectMailRepository(store: DirectMailStore, pilotLoader?:
       const mailer = requireMailer(state, id, revision);
       if (!isDraft(mailer) || !mailer.proposalRequest) throw new Error("No recommendation request is pending.");
       if (apply) {
+        if (mailer.giftInsights?.length) throw new Error("Live gift search is not connected in this preview. Choose a researched alternative or keep the current options.");
         if (mailer.proposalRequest.kind === "insight") mailer.insight = { ...mailer.insight, title: "Making space for thoughtful planning", detail: "The team is setting aside focused time to turn customer observations into practical next steps.", excerpt: "Alternate synthetic insight: the next planning session will focus on fewer, more considered account campaigns." };
         mailer.gifts = structuredClone(demoGifts).map((gift, index) => ({ ...gift, id: `${gift.id}-${revision}`, name: ["Pocket planning journal", "Morning coffee ritual set", "Everyday travel cup"][index], variant: ["A6 · Charcoal · Dot grid", "Ceramic · White · 2 pieces", "12 oz · Cream"][index], priceCents: [2400, 4200, 3400][index] }));
         mailer.selectedGiftId = null;
