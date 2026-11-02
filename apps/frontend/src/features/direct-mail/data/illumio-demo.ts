@@ -1,7 +1,7 @@
 import { MailerSchema, StateSchema, type CardAsset, type HandwritingStyle } from "../model/direct-mail";
 import { DEMO_ID, DEMO_PROJECT_ID, DEMO_ACCOUNT_ID, DEMO_PROJECT_URL } from "../model/recording-demo-context";
 import { advanceRecordingDemo, resetRecordingDemo } from "./recording-simulation";
-import { annGiftCatalog, annGiftInsights, annPuzzleNote } from "./illumio-gift-research";
+import { annGiftCatalog, annGiftInsights, annPuzzleNote, previousAnnNotes } from "./illumio-gift-research";
 
 const media = "/direct-mail/illumio-demo";
 export const annMessage = {
@@ -10,11 +10,14 @@ export const annMessage = {
 };
 const handwriting: HandwritingStyle = { id: "style-illumio-handprint", name: "Card handwriting", version: 1, family: "Clue Handprint", sourceUrl: "/direct-mail/patrick-hand.ttf", productionReady: true };
 const card: CardAsset = {
-  id: "card-illumio-demo", name: "Illumio · A new puzzle", version: 3,
+  id: "card-illumio-demo", name: "Illumio · Personal note", version: 3,
   frontUrl: `${media}/card-front-office-v3.png`, backUrl: null, paper: "cream",
   writingArea: { x: 7, y: 18, width: 84, height: 67 }, productionReady: true,
   branding: { name: "Illumio", logoUrl: `${media}/illumio-logo.svg`, markUrl: `${media}/illumio-mark.png`, line: "Stop breaches from spreading.", qrImageUrl: `${media}/illumio-qr.svg`, qrDestination: "https://www.illumio.com/illumio-platform" },
-  messageArtworks: [{ ...annMessage, styleId: handwriting.id, url: `${media}/card-message-ann-puzzle.png` }],
+  messageArtworks: [
+    { note: previousAnnNotes[0], signature: annMessage.signature, styleId: handwriting.id, url: `${media}/card-message-ann-puzzle.png` },
+    ...annGiftCatalog.map(g => ({ note: g.suggestedNote!, signature: annMessage.signature, styleId: handwriting.id, url: `${media}/card-message-${g.id}-v2.png` })),
+  ],
 };
 
 /** Publicly sourced research and retail products; approval and fulfillment remain local. */
@@ -92,6 +95,16 @@ export function parseIllumioDemo(value: unknown) {
       demo.giftInsights = structuredClone(annGiftInsights);
       demo.revision++; demo.reviewedRevision = null; demo.stage = "needs_review";
     }
+    // Only replace exact superseded suggestions. A user-authored note is never migrated.
+    const selectedNote = annGiftCatalog.find(g => g.id === demo.selectedGiftId)?.suggestedNote;
+    if (selectedNote && previousAnnNotes.includes(demo.note)) {
+      demo.note = selectedNote;
+      demo.revision++; demo.reviewedRevision = null; demo.stage = "needs_review";
+    }
+    for (const [id, note] of Object.entries(demo.giftNotes ?? {})) {
+      const replacement = annGiftCatalog.find(g => g.id === id)?.suggestedNote;
+      if (replacement && previousAnnNotes.includes(note)) demo.giftNotes![id] = replacement;
+    }
   }
   const previous = state.cards.find(c => c.id === card.id);
   if (previous?.version === 2 && previous.frontUrl === `${media}/illumio-hq.webp`) {
@@ -103,6 +116,15 @@ export function parseIllumioDemo(value: unknown) {
         mailer.revision += 1;
         mailer.reviewedRevision = null;
         mailer.stage = "needs_review";
+      }
+    }
+  }
+  if (previous?.version === card.version && previous.frontUrl === card.frontUrl && demo && !demo.approval) {
+    // Append exact-text renders; customized art and approved snapshots remain unchanged.
+    if (previous.name === "Illumio · A new puzzle") previous.name = card.name;
+    for (const artwork of card.messageArtworks!) {
+      if (!previous.messageArtworks?.some(a => a.note === artwork.note && a.signature === artwork.signature && a.styleId === artwork.styleId)) {
+        (previous.messageArtworks ??= []).push(artwork);
       }
     }
   }

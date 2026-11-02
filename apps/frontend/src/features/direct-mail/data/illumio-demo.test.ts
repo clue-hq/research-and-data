@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync } from "node:fs";
-import { annGiftCatalog } from "./illumio-gift-research";
+import { annGiftCatalog, previousAnnNotes } from "./illumio-gift-research";
 import { createDirectMailRepository } from "./direct-mail.repository";
 import { createIllumioDemo, illumioSimulation, parseIllumioDemo } from "./illumio-demo";
 import { DEMO_ID, DEMO_ACCOUNT_ID, demoMaterials } from "../model/recording-demo-context";
@@ -22,6 +22,8 @@ test("Illumio starts with exactly one sourced account and all local preview asse
     assert.ok(existsSync(`public${gift.image}`));
     const selected = updateMailer(state, m.id, m.revision, { selectedGiftId: gift.id, note: gift.suggestedNote!, addressConfirmed: true });
     assert.deepEqual(readiness(selected.mailers[0], selected), [], `${gift.name} has a fitting note and complete estimate`);
+    const artwork = matchingCardArtwork(state.cards[0], state.styles[0], selected.mailers[0].note, m.signature);
+    assert.ok(artwork && existsSync(`public${artwork.url}`), `${gift.name} has matching handwritten artwork`);
   }
   for (const material of demoMaterials) assert.ok(existsSync(`public${material.image}`));
   const card = state.cards[0], style = state.styles[0];
@@ -142,9 +144,12 @@ test("choosing an alternative keeps the recommendation and prior choice while up
   assert.equal(original.mailers[0].selectedGiftId, "craighill-jack-brass");
 });
 
-test("changing gift retains custom notes and blocks the old gift's suggested wording from approval", () => {
+test("gift selection changes the note atomically; explicit mismatched wording still blocks approval", () => {
   let state = createIllumioDemo();
   state = updateMailer(state, DEMO_ID, 1, { selectedGiftId: "web-memoir", addressConfirmed: true });
+  assert.match(state.mailers[0].note, /first HTML project/);
+  assert.equal(noteNeedsGiftUpdate(state.mailers[0]), false);
+  state = updateMailer(state, DEMO_ID, state.mailers[0].revision, { note: annGiftCatalog[0].suggestedNote! });
   assert.equal(noteNeedsGiftUpdate(state.mailers[0]), true);
   assert.ok(readiness(state.mailers[0], state).includes("Update the note to match the selected gift."));
   assert.throws(() => reviewMailer(state, DEMO_ID, state.mailers[0].revision), /note/);
@@ -154,6 +159,18 @@ test("changing gift retains custom notes and blocks the old gift's suggested wor
   state = updateMailer(state, DEMO_ID, state.mailers[0].revision, { note: "My own note", selectedGiftId: "lego-stem" });
   assert.equal(state.mailers[0].note, "My own note");
   assert.equal(noteNeedsGiftUpdate(state.mailers[0]), false);
+});
+
+test("refreshing built-in messages fixes a stale gift-note pairing without overwriting custom notes", () => {
+  const old = createIllumioDemo();
+  old.mailers[0].selectedGiftId = "lego-stem";
+  old.mailers[0].note = previousAnnNotes[0];
+  const next = parseIllumioDemo(old);
+  assert.match(next.mailers[0].note, /learn by doing/);
+  assert.equal(next.mailers[0].revision, old.mailers[0].revision + 1);
+  assert.deepEqual(parseIllumioDemo(next), next);
+  old.mailers[0].note = "My edited message";
+  assert.equal(parseIllumioDemo(old).mailers[0].note, "My edited message");
 });
 
 test("alternative requests preserve sourced gifts and cannot load generic simulated research", async () => {

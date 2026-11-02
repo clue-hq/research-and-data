@@ -18,7 +18,7 @@ export function CardFace({ card, style, note = "", signature = "", face = "messa
       <img src={card.branding.logoUrl} alt={card.branding.name || card.name} />
       <span>{card.branding.line}</span>
     </div> : null}
-    {card.branding && face === "message" && artwork ? <>
+    {card.branding && face === "message" ? <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img className={styles.cardBrandMark} src={card.branding.markUrl} alt={card.branding.name || card.name} />
       <div className={styles.cardQr}>

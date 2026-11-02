@@ -1,9 +1,15 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { estimate, readiness, type Mailer, type MailerPatch } from "../model/direct-mail";
+import { estimate, giftSelectionPatch, isDraft, readiness, type Mailer, type MailerPatch } from "../model/direct-mail";
 import type { DirectMailController } from "./use-direct-mail";
-import { readPendingDraft, writePendingDraft } from "../data/direct-mail.drafts";
+import { draftBase, draftConflicts, readPendingDraft, writePendingDraft } from "../data/direct-mail.drafts";
+
+function completeGiftPatch(saved: Mailer, patch?: MailerPatch): MailerPatch {
+  return patch?.selectedGiftId && patch.note === undefined
+    ? { ...giftSelectionPatch(saved, patch.selectedGiftId), ...patch }
+    : patch ?? {};
+}
 
 export function useMailerEditor(c: DirectMailController, saved: Mailer, initialStep = 0) {
   const [draft, setDraft] = useState(() => readPendingDraft(saved.id));
@@ -15,7 +21,8 @@ export function useMailerEditor(c: DirectMailController, saved: Mailer, initialS
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [request, setRequest] = useState<"gifts" | "insight" | null>(null);
   const [feedback, setFeedback] = useState("");
-  const mailer = { ...saved, ...draft?.patch };
+  const [conflict, setConflict] = useState<{ saved: Mailer; fields: (keyof MailerPatch)[] } | null>(null);
+  const mailer = { ...saved, ...completeGiftPatch(saved, draft?.patch) };
   const changedElsewhere = draft !== null && draft.revision !== saved.revision;
   const issues = c.data ? readiness(mailer, c.data) : [];
   function replaceBuffer(next: typeof draft) {
@@ -25,7 +32,9 @@ export function useMailerEditor(c: DirectMailController, saved: Mailer, initialS
   }
   function edit(patch: MailerPatch) {
     const current = draftRef.current;
-    const next = { revision: current?.revision ?? saved.revision, patch: { ...current?.patch, ...patch } };
+    const currentMailer = { ...saved, ...completeGiftPatch(saved, current?.patch) };
+    const selection = patch.selectedGiftId ? giftSelectionPatch(currentMailer, patch.selectedGiftId) : {};
+    const next = { revision: current?.revision ?? saved.revision, base: current?.base ?? (current ? undefined : draftBase(saved)), patch: { ...completeGiftPatch(saved, current?.patch), ...selection, ...patch } };
     replaceBuffer(next);
     // Invalidate a reviewed record immediately, including for other open views.
     // Further typing stays in the recovery buffer until explicitly saved.
@@ -35,13 +44,21 @@ export function useMailerEditor(c: DirectMailController, saved: Mailer, initialS
     if (saving.current) return null;
     saving.current = true;
     try {
-      const result = await c.run(() => c.repository.patch(saved.id, submitted.revision, submitted.patch));
+      const submission = { ...submitted, patch: completeGiftPatch(saved, submitted.patch) };
+      const result = await c.run(async () => {
+        const latest = (await c.repository.read()).mailers.find(item => item.id === saved.id)!;
+        if (!isDraft(latest)) throw new Error("This mailer has already been approved. Your unsaved edits are preserved.");
+        const fields = draftConflicts(submission, latest);
+        if (fields.length) { setConflict({ saved: latest, fields }); return null; }
+        return c.repository.patch(saved.id, latest.revision, submission.patch);
+      });
       if (!result) return null;
       const record = result.mailers.find((item) => item.id === saved.id)!;
+      setConflict(null);
       if (draftRef.current === submitted) { replaceBuffer(null); return record; }
       // A keystroke arrived after the request started: retain it and use the
       // successful write's revision as its base. Never advance review yet.
-      if (draftRef.current) replaceBuffer({ ...draftRef.current, revision: record.revision });
+      if (draftRef.current) replaceBuffer({ ...draftRef.current, revision: record.revision, base: draftBase(record) });
       return null;
     } finally { saving.current = false; }
   }
@@ -78,6 +95,12 @@ export function useMailerEditor(c: DirectMailController, saved: Mailer, initialS
     if (!current) return false;
     return !!await c.run(() => c.repository.patch(current.id, current.revision, { selectedGiftId: id }));
   }
-  return { mailer, step, go, edit, save, dirty: !!draft, changedElsewhere, recoveryError, discard: () => replaceBuffer(null), issues,
+  async function keepDraft() {
+    if (!conflict || !draftRef.current) return;
+    const next = { ...draftRef.current, revision: conflict.saved.revision, base: draftBase(conflict.saved) };
+    replaceBuffer(next);
+    await persist(next);
+  }
+  return { mailer, step, go, edit, save, dirty: !!draft, changedElsewhere, conflict, setConflict, keepDraft, recoveryError, discard: () => { replaceBuffer(null); setConflict(null); }, issues,
     estimate: estimate(mailer), approval, setApproval, approvalError, review, approve, request, setRequest, feedback, setFeedback, submitRequest, resolveRequest, selectAlternative };
 }

@@ -31,7 +31,7 @@ export const MailerSchema = z.object({
   recipient: z.object({ name: z.string(), role: z.string(), company: z.string(), initials: z.string() }),
   insight: InsightSchema, gifts: z.array(GiftSchema).length(3), selectedGiftId: z.string().nullable(),
   giftInsights: z.array(GiftInsightSchema).optional(), alternativeGifts: z.array(GiftSchema).optional(),
-  note: z.string(), signature: z.string(), cardId: z.string(), styleId: z.string(),
+  note: z.string(), giftNotes: z.record(z.string(), z.string()).optional(), signature: z.string(), cardId: z.string(), styleId: z.string(),
   address: AddressSchema, addressConfirmed: z.boolean(), budgetCents: Cents,
   inboundCents: Cents.nullable(), preparationCents: Cents.nullable(), outboundCents: Cents.nullable(), taxCents: Cents.nullable(),
   stage: StageSchema, updatedAt: z.string(), deliveryEstimate: z.string(),
@@ -51,7 +51,7 @@ export type HandwritingStyle = z.infer<typeof StyleSchema>;
 export function matchingCardArtwork(card: CardAsset, style: HandwritingStyle | undefined, note: string, signature: string) {
   return card.messageArtworks?.find(a => a.note === note && a.signature === signature && a.styleId === style?.id);
 }
-export const MailerPatchSchema = MailerSchema.pick({ selectedGiftId: true, note: true, signature: true, cardId: true, styleId: true, address: true, addressConfirmed: true, budgetCents: true }).partial().strict();
+export const MailerPatchSchema = MailerSchema.pick({ selectedGiftId: true, note: true, giftNotes: true, signature: true, cardId: true, styleId: true, address: true, addressConfirmed: true, budgetCents: true }).partial().strict();
 export type MailerPatch = z.infer<typeof MailerPatchSchema>;
 export type ApprovalItem = { id: string; revision: number };
 export type ApprovalResult = { id: string; ok: boolean; message: string };
@@ -59,6 +59,14 @@ export type ApprovalResult = { id: string; ok: boolean; message: string };
 export const stageLabels: Record<Stage, string> = { researching: "Researching", needs_review: "Needs review", ready: "Ready to approve", approved: "Approved", ordered: "Gift ordered", inbound: "On its way to Clue", received: "Received at Clue", quality_check: "Quality inspection", preparing: "Package preparation", ready_to_ship: "Ready to ship", shipped: "Shipped", delivered: "Delivered", attention: "Needs attention", canceled: "Canceled" };
 export function isDraft(mailer: Mailer) { return mailer.stage === "needs_review" || mailer.stage === "ready"; }
 export function selectedGift(mailer: Mailer) { return mailer.gifts.find((gift) => gift.id === mailer.selectedGiftId) ?? null; }
+/** Selecting a gift selects its message too. Keep custom wording with its own gift. */
+export function giftSelectionPatch(mailer: Mailer, id: string): MailerPatch {
+  if (id === mailer.selectedGiftId) return { selectedGiftId: id };
+  const gift = [...mailer.gifts, ...(mailer.alternativeGifts ?? [])].find(g => g.id === id);
+  if (!gift?.suggestedNote) return { selectedGiftId: id };
+  return { selectedGiftId: id, note: mailer.giftNotes?.[id] ?? gift.suggestedNote,
+    giftNotes: { ...mailer.giftNotes, ...(mailer.selectedGiftId ? { [mailer.selectedGiftId]: mailer.note } : {}) } };
+}
 export function noteNeedsGiftUpdate(mailer: Mailer) {
   const suggestion = selectedGift(mailer)?.suggestedNote;
   return !!suggestion && mailer.note !== suggestion && [...mailer.gifts, ...(mailer.alternativeGifts ?? [])].some(g => g.suggestedNote === mailer.note);
@@ -144,7 +152,8 @@ export function updateMailer(state: DirectMailState, id: string, revision: numbe
   const next = structuredClone(state);
   const mailer = requireMailer(next, id, revision);
   if (!isDraft(mailer)) throw new Error("An approved or in-progress mailer cannot be edited.");
-  const patch = MailerPatchSchema.parse(input);
+  const parsed = MailerPatchSchema.parse(input);
+  const patch = { ...(parsed.selectedGiftId ? giftSelectionPatch(mailer, parsed.selectedGiftId) : {}), ...parsed };
   if (patch.selectedGiftId && !mailer.gifts.some((gift) => gift.id === patch.selectedGiftId)) {
     const alternative = mailer.alternativeGifts?.find(g => g.id === patch.selectedGiftId);
     if (!alternative?.available) throw new Error("That gift is no longer an option.");
