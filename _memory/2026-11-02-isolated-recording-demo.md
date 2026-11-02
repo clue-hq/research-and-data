@@ -16,3 +16,11 @@
 - Focused suite: 32 tests passed. Browser confirmed new gift selection, photographic front and message-side flipping. Design-system and production builds passed; lint has zero errors and the same 11 pre-existing warnings.
 - Tool recovery: CUA returned an unavailable browser binding; resetting its JS session restored the existing tab. One stale accessibility target was refreshed before continuing. An official webpage returned HTTP403 to urllib; its linked public CDN photograph downloaded successfully.
 - Closing verification: queue displays the new selected product and $142 total; original source V2 worktree remains clean. Saved browser screenshots show the photographic front and enlarged message controls. No approval or purchase was performed during this revision.
+
+## Front quality revision
+
+- Replaced the low-resolution overhead photo with versioned generated photographic artwork based on public office references. Matches the approved reference's cream texture, frame and footer; provenance explicitly distinguishes generated composition from documentary photography.
+- Targeted v2-to-v3 card migration preserves customized fronts, message edits, approval snapshots and credit history. Unapproved mailers require review again after the visual change; migration is idempotent.
+- 33 focused tests passed, including migration/approval regression. Browser verified both inline/enlarged front and Front / Message toggles; left the new front open on port 3000. No changes to source V2 worktree.
+- Source discovery: architect/gallery pages returned HTTP403 and a gallery thumbnail returned404; official CDN/reference image downloads worked. No authentication or access controls were changed.
+- Closing checks: production build/type checking passed; lint passed with 0 errors and the same 11 unrelated warnings. Diff whitespace check passed. All work remains local.

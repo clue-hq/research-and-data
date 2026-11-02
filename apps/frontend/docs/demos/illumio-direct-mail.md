@@ -28,7 +28,7 @@ Observed November 2, 2026. Account and recipient IDs are in `recording-demo-cont
 
 ## Card artwork
 
-The front uses an unchanged official office photograph from [Illumio’s careers page](https://www.illumio.com/company/careers), framed with the cream border and footer proportions of the Harvey postcard. The optional `frontLayout: photograph` composes the original image in the card component without raster modification. Original wordmark and brand line are rendered separately. The updated back uses the built-in imagegen tool to match the original handwriting reference with the new puzzle message; it is not an editable font or a claim of exact pen reproduction. Logo and real QR remain separate overlays. Both the inline card and enlarged dialog share Front / Message controls and the same selected side.
+The v3 front is generated photographic artwork based on the office reference from [Illumio’s careers page](https://www.illumio.com/company/careers) and [the published architectural series](https://officesnapshots.com/2021/06/07/illumio-offices-sunnyvale/). It reinterprets the office at eye level with warm daylight and the cream paper/frame proportions of the Harvey postcard. It is not an unedited or current documentary photograph of headquarters. The original wordmark and brand line are rendered separately. The earlier unchanged overhead photograph remains available for old snapshots. The updated back uses the built-in imagegen tool to match the original handwriting reference with the new puzzle message; it is not an editable font or a claim of exact pen reproduction. Logo and real QR remain separate overlays. Both the inline card and enlarged dialog share Front / Message controls and the same selected side.
 
 The message image is bound to the exact note, signature and handwriting style. Text edits invalidate the image match and use the existing editable font preview, so a stale image cannot conceal edits.
 
@@ -69,3 +69,15 @@ The Illumio team
 ```
 
 Revision validation: 32 focused tests, design-system build and production build passed; lint has zero errors and 11 existing unrelated warnings. Browser verified the photographic front, both enlarged side controls, exact generated message and the queue’s updated $142 total. The source Harvey worktree is unchanged.
+
+## Front v3 — reference-matched office composition
+
+- Asset: `public/direct-mail/illumio-demo/card-front-office-v3.png` (1536 × 1024), created with built-in imagegen using three references: the existing Harvey front for layout/paper, official Illumio reception photograph, and a public office-interior photograph from the Studio G / Emily Hagopian series.
+- Generated architectural reinterpretation; the warm wood wall, white desk, glazing and grey lounge chairs derive from the source office. The camera viewpoint, daylight and composition are generated. Do not describe this as an untouched office photograph.
+- The native footer retains the official Illumio wordmark and “Stop breaches from spreading.” The back, exact-text image matching, logo and working QR are unchanged.
+- A narrow parser migration upgrades only the built-in v2 front. Custom fronts and message edits survive. Affected unapproved drafts require fresh review; frozen approvals and financial history are preserved. The migration is idempotent.
+- Browser verified the full-size front, inline preview, and both side buttons on port 3000. Source Harvey worktree remained clean. 33 focused tests passed.
+
+Generation prompt: create one premium flat 3:2 postcard front at 1536 × 1024. Preserve the Harvey reference’s warm ivory textured paper, 3.6% side margins, 5.6% top margin, photo ending at 81% height and blank footer. Replace its photo with an editorial eye-level reinterpretation of Illumio’s actual office: upright verticals, honey oak feature wall, white reception desk, polished concrete, right-side glass wall, soft grey chairs, natural daylight, a plant and one discreet motion-blurred figure. Retain source office identity and avoid Harvey’s arches, CGI sheen, orange graphics, excessive floor/ceiling or identifiable faces. Leave the footer empty for the separately rendered official logo and brand line. No surrounding mockup, perspective, border shadow or generated footer text.
+
+Final v3 checks: production build and TypeScript passed; lint had zero errors and 11 pre-existing unrelated warnings. No push or deployment.

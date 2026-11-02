@@ -13,5 +13,16 @@
     "museum-collection.jpg": "https://cdn.shopify.com/s/files/1/0664/1251/1428/files/MuseumCollection_2.jpg?v=1732750208"
   },
   "ad": "User-supplied U.S. Bank 1 1 LinkedIn ad (1).png; copied without changes",
-  "cardArtwork": "Front uses an unchanged photograph from Illumio\u2019s careers page, framed in the native card layout. Updated back generated from the original handwriting image; logo and functional QR remain separate overlays."
+  "cardArtwork": "Front v3 is generated photographic artwork inspired by the official Illumio office and public architectural references, matching the Harvey card composition. It is not an unedited photograph of Illumio headquarters. Handwriting back uses the original handwriting reference; official logo and functional QR remain separate overlays.",
+  "generatedFront": {
+    "file": "card-front-office-v3.png",
+    "mode": "Built-in imagegen, reference-based composition",
+    "references": [
+      "https://www.illumio.com/company/careers",
+      "https://officesnapshots.com/2021/06/07/illumio-offices-sunnyvale/",
+      "Existing Harvey card front for paper texture and frame proportions"
+    ],
+    "architecturalReferenceCredit": "Studio G Architects; reference photography by Emily Hagopian",
+    "purpose": "Local demo postcard artwork, not a fulfillment photograph"
+  }
 }

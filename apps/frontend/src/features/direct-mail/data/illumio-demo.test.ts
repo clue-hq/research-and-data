@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync } from "node:fs";
-import { createIllumioDemo, illumioSimulation } from "./illumio-demo";
+import { createIllumioDemo, illumioSimulation, parseIllumioDemo } from "./illumio-demo";
 import { DEMO_ID, DEMO_ACCOUNT_ID, demoMaterials } from "../model/recording-demo-context";
 import { approveMailers, estimate, matchingCardArtwork, reviewMailer, updateMailer } from "../model/direct-mail";
 
@@ -45,4 +45,28 @@ test("Illumio approval, fulfillment and replay preserve the selected product and
   assert.equal(state.creditBalanceCents, 200000);
   assert.equal(state.mailers[0].addressConfirmed, false);
   assert.throws(() => illumioSimulation.reset(state, "mailer-harvey-benesch-jason", revision), /demo/);
+});
+
+test("card front refresh preserves edits and requires review without changing approved snapshots", () => {
+  const previous = createIllumioDemo();
+  Object.assign(previous.cards[0], { version: 2, frontUrl: "/direct-mail/illumio-demo/illumio-hq.webp", frontLayout: "photograph" });
+  previous.mailers[0].note = "An edited note";
+  previous.mailers[0].addressConfirmed = true;
+  const reviewed = reviewMailer(previous, DEMO_ID, previous.mailers[0].revision);
+  const refreshed = parseIllumioDemo(reviewed);
+  assert.equal(reviewed.cards[0].version, 2, "input is not mutated");
+  assert.equal(refreshed.cards[0].version, 3);
+  assert.equal(refreshed.cards[0].frontLayout, undefined);
+  assert.equal(refreshed.mailers[0].note, "An edited note");
+  assert.equal(refreshed.mailers[0].stage, "needs_review");
+  assert.equal(refreshed.mailers[0].reviewedRevision, null);
+  assert.equal(refreshed.mailers[0].revision, reviewed.mailers[0].revision + 1);
+  assert.deepEqual(parseIllumioDemo(refreshed), refreshed, "refresh is idempotent");
+
+  const approved = approveMailers(reviewed, [{ id: DEMO_ID, revision: reviewed.mailers[0].revision }]).state;
+  assert.deepEqual(parseIllumioDemo(approved).mailers, approved.mailers);
+  assert.deepEqual(parseIllumioDemo(approved).creditEntries, approved.creditEntries);
+  const custom = structuredClone(previous);
+  custom.cards[0].frontUrl = "/custom-front.png";
+  assert.deepEqual(parseIllumioDemo(custom), custom, "custom fronts are retained");
 });

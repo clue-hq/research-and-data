@@ -9,8 +9,8 @@ export const annMessage = {
 };
 const handwriting: HandwritingStyle = { id: "style-illumio-handprint", name: "Card handwriting", version: 1, family: "Clue Handprint", sourceUrl: "/direct-mail/patrick-hand.ttf", productionReady: true };
 const card: CardAsset = {
-  id: "card-illumio-demo", name: "Illumio · A new puzzle", version: 2,
-  frontUrl: `${media}/illumio-hq.webp`, frontLayout: "photograph", backUrl: null, paper: "cream",
+  id: "card-illumio-demo", name: "Illumio · A new puzzle", version: 3,
+  frontUrl: `${media}/card-front-office-v3.png`, backUrl: null, paper: "cream",
   writingArea: { x: 7, y: 18, width: 84, height: 67 }, productionReady: true,
   branding: { name: "Illumio", logoUrl: `${media}/illumio-logo.svg`, markUrl: `${media}/illumio-mark.png`, line: "Stop breaches from spreading.", qrImageUrl: `${media}/illumio-qr.svg`, qrDestination: "https://www.illumio.com/illumio-platform" },
   messageArtworks: [{ ...annMessage, styleId: handwriting.id, url: `${media}/card-message-ann-puzzle.png` }],
@@ -50,6 +50,25 @@ export function createIllumioDemo() {
   return StateSchema.parse({ schemaVersion: 1, cards: [card], styles: [handwriting], mailers: [createIllumioMailer()], creditBalanceCents: 200000, creditEntries: [],
     giftBudgets: [{ projectId: DEMO_PROJECT_ID, revision: 1, minimumCents: 2500, preferredCents: 10000, ceilingCents: 12000, locked: true }],
   });
+}
+
+/** Refresh only the previous built-in front; keep edits and frozen approvals intact. */
+export function parseIllumioDemo(value: unknown) {
+  const state = StateSchema.parse(value);
+  const previous = state.cards.find(c => c.id === card.id);
+  if (previous?.version === 2 && previous.frontUrl === `${media}/illumio-hq.webp`) {
+    previous.frontUrl = card.frontUrl;
+    previous.version = card.version;
+    delete previous.frontLayout;
+    for (const mailer of state.mailers) {
+      if (mailer.cardId === card.id && !mailer.approval && ["needs_review", "ready"].includes(mailer.stage)) {
+        mailer.revision += 1;
+        mailer.reviewedRevision = null;
+        mailer.stage = "needs_review";
+      }
+    }
+  }
+  return state;
 }
 
 export const illumioSimulation = {
