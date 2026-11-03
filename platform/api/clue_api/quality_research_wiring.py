@@ -122,6 +122,11 @@ from clue_api.arv2.quality_json_dossier import (
     validate_dossier_handoff,
 )
 from clue_api.arv2.quality_mapping import QualityProviderWriter
+from clue_api.arv2.quality_markdown_dossier import (
+    DOSSIER_PATH,
+    INDEX_PATH,
+    uses_markdown_dossier,
+)
 from clue_api.arv2.quality_media_tool import SubmitTranscriptClaimTool
 from clue_api.arv2.quality_narrative import SubmitValueNarrativeTool
 from clue_api.arv2.quality_owned_narrative import (
@@ -325,7 +330,9 @@ def quality_profiles(
         engine_tool_ceiling=frozenset(authority),
         required_roles=active_roles,
         selected_profile_versions={
-            role: ("v27-person" if person else "v31")
+            role: ("v27-person" if person else "v32")
+            if version >= 32 and role == AgentRole.ACCOUNT_RESEARCH
+            else ("v27-person" if person else "v31")
             if version >= 31 and role == AgentRole.ACCOUNT_RESEARCH
             else ("v27-person" if person else "v30")
             if version >= 30 and role == AgentRole.ACCOUNT_RESEARCH
@@ -1126,7 +1133,7 @@ class ResearchUnitRuntime:
                     "objective": objective,
                     **(
                         {"completion_contract": COMPLETION_INSTRUCTIONS}
-                        if uses_json_dossier(self.scope)
+                        if uses_json_dossier(self.scope) and not uses_markdown_dossier(self.scope)
                         else {}
                     ),
                     "context_id": str(self.context_id),
@@ -1270,6 +1277,9 @@ class ResearchUnitRuntime:
                                 "Headings belong in section.items[].h2."
                             ) from exc
                         return
+                    if uses_markdown_dossier(self.scope):
+                        await self._finish_markdown_dossier(lease, model_input)
+                        return
                     if uses_json_dossier(self.scope):
                         # The researcher supplies judgment; storage supplies bookkeeping.
                         entries = await lease.backend.list_entries("outputs")
@@ -1311,6 +1321,8 @@ class ResearchUnitRuntime:
                 before_work=bindings.before_work,
                 required_output_path="outputs/reconciliation.json"
                 if self.reconciliation is not None
+                else DOSSIER_PATH
+                if uses_markdown_dossier(self.scope)
                 else None
                 if uses_json_dossier(self.scope)
                 else "outputs/research.json",
@@ -1321,6 +1333,8 @@ class ResearchUnitRuntime:
                 # artifact. It cannot acquire evidence, launch jobs, import claims or publish
                 # pages outside the reconciliation transaction.
                 governed = tuple(tool for tool in governed if tool.name == "finalize_turn")
+            elif uses_markdown_dossier(self.scope):
+                governed = (*governed, self._commit_dossier_tool(lease, execution))
             elif uses_json_dossier(self.scope):
                 for tool in governed:
                     if tool.name == "finalize_turn":
@@ -1379,6 +1393,75 @@ class ResearchUnitRuntime:
                 await asyncio.shield(settle_runtime())
                 self.runtime_owner = None
             await self.workspaces.release_saved(lease)
+
+    async def _read_optional(self, lease: Any, path: str) -> str | None:
+        entries = await lease.backend.list_entries(path.rsplit("/", 1)[0])
+        return await lease.backend.read_text(path) if any(e.path == path for e in entries) else None
+
+    def _commit_dossier_tool(self, lease: Any, execution: Any) -> Any:
+        """Research trial (recipe 32+): commit the markdown dossier as a version."""
+        from langchain_core.tools import StructuredTool
+
+        from clue_api.arv2 import quality_markdown_dossier as md
+
+        async def commit_dossier(message: str) -> str:
+            dossier = await self._read_optional(lease, DOSSIER_PATH)
+            if not dossier:
+                return json.dumps({"committed": False, "problems": [f"/{DOSSIER_PATH} is empty."]})
+            async with self.connections() as conn:
+                result = await md.commit(
+                    conn,
+                    self.storage,
+                    self.scope,
+                    UUID(str(execution)),
+                    message=message,
+                    dossier=dossier,
+                    index_raw=await self._read_optional(lease, INDEX_PATH),
+                )
+            return json.dumps(result)
+
+        return StructuredTool.from_function(
+            coroutine=commit_dossier,
+            name="commit_dossier",
+            description=(
+                "Save /outputs/dossier.md and /outputs/dossier-index.json as a new version, with a "
+                "one-line message saying what changed and why. Checks the dossier's shape only "
+                "(headings, finding numbers, cited sources, index references) and returns any "
+                "problems to fix. Your last commit is the published version."
+            ),
+        )
+
+    async def _finish_markdown_dossier(self, lease: Any, model_input: Any) -> None:
+        """Research trial (recipe 32+): publish the last commit and write the unit report."""
+        from clue_api.arv2 import quality_markdown_dossier as md
+        from clue_api.arv2.quality_completion import completion_notes
+        from clue_api.arv2.quality_results import committee_references
+
+        raw = await self._read_optional(lease, "outputs/research.json")
+        notes = completion_notes(raw, model_input.user_message)
+        async with self.connections() as conn:
+            delivery = await md.publish(
+                conn,
+                self.storage,
+                self.scope,
+                dossier=await self._read_optional(lease, DOSSIER_PATH),
+                index_raw=await self._read_optional(lease, INDEX_PATH),
+            )
+            report = ResearchUnitReport(
+                context_id=self.context_id,
+                job_id=self.scope.job_id,
+                **notes.model_dump(),
+                committee_assessment_ids=await committee_references(
+                    conn, self.scope, self.context_id
+                ),
+                delivery=delivery,
+            )
+        if raw is None:
+            await lease.backend.write_text("outputs/research.json", report.model_dump_json())
+        else:
+            await lease.backend.edit_text(
+                "outputs/research.json", old=raw, new=report.model_dump_json()
+            )
 
     async def reconciliation_output(self, outcome: AgentTurnOutcome) -> dict[str, Any]:
         if outcome.status is not AgentExecutionStatus.COMPLETED or outcome.finalization_ref is None:

@@ -1878,8 +1878,12 @@ class Arv2AccountResearchWorkHandler:
 
         scope = composition.scope
         context_id = composition.run.context_id
+        from clue_api.arv2.quality_markdown_dossier import uses_markdown_dossier
+
         if (
             not page_writer_runtime.writes_pages_separately(scope)
+            # Research trial (recipe 32+): a markdown dossier has no claims to write pages from.
+            or uses_markdown_dossier(scope)
             or result.status != "completed"
             or result.report is None
             or context_id is None
@@ -1953,7 +1957,10 @@ class Arv2AccountResearchWorkHandler:
             measured = await coverage(
                 conn, composition.scope, composition.run.context_id, deferred=result.deferred_pages
             )
-            if measured["needs_review"]:
+            from clue_api.arv2.quality_markdown_dossier import uses_markdown_dossier
+
+            # Research trial (recipe 32+): no claims or pages by design; coverage cannot judge it.
+            if measured["needs_review"] and not uses_markdown_dossier(composition.scope):
                 status = "needs_review"
             finalization = {
                 "coverage": cast(JsonValue, measured),
