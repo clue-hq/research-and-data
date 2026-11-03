@@ -1142,6 +1142,13 @@ class ResearchUnitRuntime:
                         if uses_json_dossier(self.scope) and not uses_markdown_dossier(self.scope)
                         else {}
                     ),
+                    # Research trial: nothing else tells the agent today's date, so it took the
+                    # newest document timestamp it saw (2026-11-03 finding).
+                    **(
+                        {"research_date": started.date().isoformat()}
+                        if uses_markdown_dossier(self.scope)
+                        else {}
+                    ),
                     "context_id": str(self.context_id),
                     "job_id": str(self.scope.job_id),
                 },
