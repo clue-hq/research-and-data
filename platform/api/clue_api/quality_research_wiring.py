@@ -1407,7 +1407,17 @@ class ResearchUnitRuntime:
         from clue_api.arv2.quality_results import committee_references
 
         raw = await read_optional(lease.backend, "outputs/research.json")
-        notes = completion_notes(raw, model_input.user_message)
+        # The researcher's notes are free-form; keep only the fields the unit report carries.
+        try:
+            parsed = json.loads(raw) if raw is not None else None
+        except ValueError:
+            parsed = None
+        kept = (
+            json.dumps({k: parsed[k] for k in ("summary", "gaps") if k in parsed})
+            if isinstance(parsed, dict)
+            else raw
+        )
+        notes = completion_notes(kept, model_input.user_message)
         async with self.connections() as conn:
             delivery = await md.publish(
                 conn,
@@ -1476,7 +1486,9 @@ class ResearchUnitRuntime:
             return None
         async with self.connections() as conn:
             await validate_report(conn, self.scope, self.context_id, reports[0])
-            if outcome.status is AgentExecutionStatus.COMPLETED:
+            if outcome.status is AgentExecutionStatus.COMPLETED and not uses_markdown_dossier(
+                self.scope
+            ):
                 await validate_dossier_handoff(
                     conn, self.storage, self.scope, self.context_id, reports[0].claim_ids
                 )
