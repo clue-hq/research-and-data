@@ -18,8 +18,10 @@ résumé or "Wikipedia" piles, readable at campaign scale (50–60 accounts, 5+ 
 ## Setup
 
 - Worktree `research-trial`, local branch `trial/research-quality` (cut from `dd9a7d74a`, never
-  pushed). Own `.venv` and `.env`; shares the addis-ababa lane database (`clue_addis-ababa`,
-  container `clue-pg-papeete`, port 55040) and its `.artifacts` storage.
+  pushed). Own `.venv` and `.env`.
+- Own database `clue_research_trial` in container `clue-pg-papeete` (port 55040), cloned from
+  `clue_addis-ababa` on 2026-11-03 at migration `802fa1e6c449`, with every earlier round's rows.
+  File storage is still addis-ababa's `.artifacts` (the clone's rows point at those files).
 - No app stack. Rounds run through `trial/worker.py` and `trial/launch.py`; output is read with
   `trial/dump_run.py` and `trial/render_output.py`.
 - Customer data stays out of the repo. Research output lives in the session scratchpad.

@@ -3,7 +3,7 @@
     set -a; source ../.env; set +a
     uv run python trial/import_pallet_context.py <export.json>
 
-Refuses unless CLUE_DATABASE_URL names the addis-ababa lane database. Writes the document blobs
+Refuses unless CLUE_DATABASE_URL names the research-trial database (clue_research_trial). Writes the document blobs
 into the lane's filesystem storage under their original keys. Re-running is a no-op
 (ON CONFLICT DO NOTHING).
 """
@@ -15,8 +15,8 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 URL = os.environ["CLUE_DATABASE_URL"]
-if not URL.endswith("/clue_addis-ababa"):
-    sys.exit(f"refused: CLUE_DATABASE_URL is not the addis-ababa lane database")
+if not URL.endswith("/clue_research_trial"):
+    sys.exit(f"refused: CLUE_DATABASE_URL is not the research-trial database (clue_research_trial)")
 STORAGE_ROOT = Path(os.environ["CLUE_STORAGE_FS_ROOT"])
 
 ORDER = ["platform_user", "workspace", "brand", "product", "project", "project_product",

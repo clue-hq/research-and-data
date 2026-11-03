@@ -7,8 +7,8 @@ import os, sys
 import psycopg
 
 URL = os.environ["CLUE_DATABASE_URL"]
-if not URL.endswith("/clue_addis-ababa"):
-    sys.exit("refused: not the addis-ababa lane database")
+if not URL.endswith("/clue_research_trial"):
+    sys.exit("refused: not the research-trial database (clue_research_trial)")
 PROJECT = os.environ.get("TRIAL_PROJECT", "prj_bcbca9a562a15149875c552222ee7c8f")
 KEYS = {"brokers": "freight-brokers-net-new", "shippers": "enterprise-shippers-net-new"}
 

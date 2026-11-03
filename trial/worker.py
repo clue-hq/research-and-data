@@ -16,8 +16,8 @@ from clue_api.arv2 import quality_catalog, quality_person_release
 from clue_api.arv2.account_research_driver import Arv2AccountResearchWorkHandler
 
 URL = os.environ["CLUE_DATABASE_URL"]
-if not URL.endswith("/clue_addis-ababa"):
-    sys.exit("refused: the trial worker only runs against the addis-ababa lane database")
+if not URL.endswith("/clue_research_trial"):
+    sys.exit("refused: the trial worker only runs against the research-trial database (clue_research_trial)")
 
 log = logging.getLogger("trial.worker")
 print(f"trial worker: prompts from {quality_catalog.ROOT}", flush=True)
