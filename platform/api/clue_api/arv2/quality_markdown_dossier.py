@@ -18,15 +18,18 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from pydantic import Field, JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.quality_authority import resolve_authority
 from clue_api.arv2.quality_evidence import list_sources
+from clue_api.arv2.quality_tools import _ResearchWriteTool
 from clue_api.quality_research_artifacts import ResearchArtifacts
 from clue_obs import get_logger
 from clue_storage import StorageBackend, read_verified_artifact, retain_artifact
+from clue_toolbelt import ToolContext, ToolInput, ToolOutput, ToolResult
 
 log = get_logger("arv2.markdown_dossier")
 
@@ -253,3 +256,57 @@ async def publish(
         "dossier_artifact_key": latest["artifact_key"],
         "findings": len(latest["findings"]),
     }
+
+
+async def read_optional(backend: Any, path: str) -> str | None:
+    entries = await backend.list_entries(path.rsplit("/", 1)[0])
+    return await backend.read_text(path) if any(e.path == path for e in entries) else None
+
+
+class CommitInput(ToolInput):
+    message: str = Field(min_length=1, description="One line: what changed and why.")
+
+
+class CommitReceipt(ToolOutput):
+    result: dict[str, JsonValue]
+
+
+class CommitDossierTool(_ResearchWriteTool):
+    """The runner binds this turn's workspace (``workspace``) before the agent starts."""
+
+    name = "commit_dossier"
+    input_model = CommitInput
+    output_model = CommitReceipt
+    model_description = (
+        "Save /outputs/dossier.md and /outputs/dossier-index.json as a new version, with a "
+        "one-line message saying what changed and why. Checks the dossier's shape only "
+        "(headings, finding numbers, cited sources, index references) and returns any problems "
+        "to fix. Your last commit is the published version."
+    )
+    workspace: Any = None
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        args = CommitInput.model_validate(inputs)
+        authority = await self.authority(ctx)
+        if not uses_markdown_dossier(self.scope) or authority.role != "account_research":
+            raise ValueError("commit_dossier belongs to this job's account researcher")
+        if self.workspace is None:
+            raise ValueError("commit_dossier has no workspace bound for this turn")
+        dossier = await read_optional(self.workspace, DOSSIER_PATH)
+        if not dossier:
+            result: dict[str, Any] = {
+                "committed": False,
+                "problems": [f"/{DOSSIER_PATH} is empty."],
+            }
+        else:
+            async with ctx.conn_factory() as conn:
+                result = await commit(
+                    conn,
+                    self.storage,
+                    self.scope,
+                    authority.execution_id,
+                    message=args.message,
+                    dossier=dossier,
+                    index_raw=await read_optional(self.workspace, INDEX_PATH),
+                )
+        return ToolResult(tool=self.name, version=self.version, references={"result": result})

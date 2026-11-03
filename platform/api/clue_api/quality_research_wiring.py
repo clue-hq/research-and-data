@@ -125,6 +125,8 @@ from clue_api.arv2.quality_mapping import QualityProviderWriter
 from clue_api.arv2.quality_markdown_dossier import (
     DOSSIER_PATH,
     INDEX_PATH,
+    CommitDossierTool,
+    read_optional,
     uses_markdown_dossier,
 )
 from clue_api.arv2.quality_media_tool import SubmitTranscriptClaimTool
@@ -264,6 +266,7 @@ def quality_tools(
         UpdateDossierFindingsToolV2,
         ValidateDossierTool,
         FinishDossierTool,
+        CommitDossierTool,
     ):
         tool = cls(scope, storage, purge_unevidenced=purge)
         registry.register(tool, make_default=tool.version == "1")
@@ -292,6 +295,7 @@ def quality_profiles(
                 "update_dossier_findings",
                 "validate_dossier",
                 "finish_dossier",
+                "commit_dossier",
                 "read_narrative_inputs",
                 "write_research_narrative",
             }
@@ -1311,6 +1315,10 @@ class ResearchUnitRuntime:
                             conn, self.storage, self.scope, self.context_id, report.claim_ids
                         )
 
+            if uses_markdown_dossier(self.scope):
+                cast(
+                    CommitDossierTool, self.tools.get("commit_dossier", "1")
+                ).workspace = lease.backend
             governed = GovernedAgentToolFactory(
                 request=request,
                 resolved_profile=resolved,
@@ -1333,8 +1341,6 @@ class ResearchUnitRuntime:
                 # artifact. It cannot acquire evidence, launch jobs, import claims or publish
                 # pages outside the reconciliation transaction.
                 governed = tuple(tool for tool in governed if tool.name == "finalize_turn")
-            elif uses_markdown_dossier(self.scope):
-                governed = (*governed, self._commit_dossier_tool(lease, execution))
             elif uses_json_dossier(self.scope):
                 for tool in governed:
                     if tool.name == "finalize_turn":
@@ -1394,58 +1400,21 @@ class ResearchUnitRuntime:
                 self.runtime_owner = None
             await self.workspaces.release_saved(lease)
 
-    async def _read_optional(self, lease: Any, path: str) -> str | None:
-        entries = await lease.backend.list_entries(path.rsplit("/", 1)[0])
-        return await lease.backend.read_text(path) if any(e.path == path for e in entries) else None
-
-    def _commit_dossier_tool(self, lease: Any, execution: Any) -> Any:
-        """Research trial (recipe 32+): commit the markdown dossier as a version."""
-        from langchain_core.tools import StructuredTool
-
-        from clue_api.arv2 import quality_markdown_dossier as md
-
-        async def commit_dossier(message: str) -> str:
-            dossier = await self._read_optional(lease, DOSSIER_PATH)
-            if not dossier:
-                return json.dumps({"committed": False, "problems": [f"/{DOSSIER_PATH} is empty."]})
-            async with self.connections() as conn:
-                result = await md.commit(
-                    conn,
-                    self.storage,
-                    self.scope,
-                    UUID(str(execution)),
-                    message=message,
-                    dossier=dossier,
-                    index_raw=await self._read_optional(lease, INDEX_PATH),
-                )
-            return json.dumps(result)
-
-        return StructuredTool.from_function(
-            coroutine=commit_dossier,
-            name="commit_dossier",
-            description=(
-                "Save /outputs/dossier.md and /outputs/dossier-index.json as a new version, with a "
-                "one-line message saying what changed and why. Checks the dossier's shape only "
-                "(headings, finding numbers, cited sources, index references) and returns any "
-                "problems to fix. Your last commit is the published version."
-            ),
-        )
-
     async def _finish_markdown_dossier(self, lease: Any, model_input: Any) -> None:
         """Research trial (recipe 32+): publish the last commit and write the unit report."""
         from clue_api.arv2 import quality_markdown_dossier as md
         from clue_api.arv2.quality_completion import completion_notes
         from clue_api.arv2.quality_results import committee_references
 
-        raw = await self._read_optional(lease, "outputs/research.json")
+        raw = await read_optional(lease.backend, "outputs/research.json")
         notes = completion_notes(raw, model_input.user_message)
         async with self.connections() as conn:
             delivery = await md.publish(
                 conn,
                 self.storage,
                 self.scope,
-                dossier=await self._read_optional(lease, DOSSIER_PATH),
-                index_raw=await self._read_optional(lease, INDEX_PATH),
+                dossier=await read_optional(lease.backend, DOSSIER_PATH),
+                index_raw=await read_optional(lease.backend, INDEX_PATH),
             )
             report = ResearchUnitReport(
                 context_id=self.context_id,

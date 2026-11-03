@@ -35,6 +35,10 @@ tools:
   version: '3'
   input_schema_sha256: ef617834b216510968399c0cb039025f8b3b1ec61637a9d316cb2dd07e73a5f8
   output_schema_sha256: 8562ad1929f0bfc870ee5f6e8008a85bea0f3e2dbd150e65a05d41d0b3085ac9
+- name: commit_dossier
+  version: '1'
+  input_schema_sha256: 15129c12226cfd866237a3d82f9de572fce341662080e641a73209ec373a8cc6
+  output_schema_sha256: 9915e183380099fa9923b27042c2ceaef362c5edf28b3d7c72db7a7028935fb2
 model:
   model_id: x-ai/grok-4.6
   timeout_s: 120.0
