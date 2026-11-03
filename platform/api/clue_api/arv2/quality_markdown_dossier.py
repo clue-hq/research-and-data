@@ -48,6 +48,20 @@ HEADINGS = (
     "What could stop a deal",
     "Open questions",
 )
+# Recipe 36+ (founder ruling 2026-11-04): signals gathered and read together, and how the account
+# sells to its own customers, which the seller's pitch has to protect.
+HEADINGS_V36 = (
+    "Verdict",
+    "What they do",
+    "How they sell and whom they serve",
+    "Buying signals and timing",
+    "How the work is done today",
+    "What they use now and its problems",
+    "How the seller could prove itself here",
+    "Who decides and who to approach first",
+    "What could stop a deal",
+    "Open questions",
+)
 VERDICTS = {"pursue", "pursue_with_conditions", "deprioritise"}
 _FINDING = re.compile(r"^### (F\d{3,}) · \S", re.MULTILINE)
 _SOURCE = re.compile(r"\[(/evidence/[^\]\s]+)\]")
@@ -61,17 +75,27 @@ def uses_markdown_dossier(scope: JobScope) -> bool:
     )
 
 
-def check(dossier: str, index_raw: str | None, source_paths: set[str]) -> list[str]:
+def headings_for(scope: JobScope) -> tuple[str, ...]:
+    recipe = int((scope.input_refs or {}).get("quality_recipe_version", 5))
+    return HEADINGS_V36 if recipe >= 36 else HEADINGS
+
+
+def check(
+    dossier: str,
+    index_raw: str | None,
+    source_paths: set[str],
+    required: tuple[str, ...] = HEADINGS,
+) -> list[str]:
     """Contract problems only, each phrased so the agent can fix it."""
     problems: list[str] = []
     headings = [h.strip() for h in re.findall(r"^## (.+)$", dossier, re.MULTILINE)]
-    missing = [h for h in HEADINGS if h not in headings]
+    missing = [h for h in required if h not in headings]
     if missing:
         problems.append(
             "Missing headings (use them word for word as '## <heading>'): " + ", ".join(missing)
         )
-    elif [h for h in headings if h in HEADINGS] != list(HEADINGS):
-        problems.append("Put the nine headings in the order the skill gives.")
+    elif [h for h in headings if h in required] != list(required):
+        problems.append("Put the headings in the order the skill gives.")
     ids = _FINDING.findall(dossier)
     if not ids:
         problems.append("No findings. Each finding starts '### F001 · <title>'.")
@@ -178,7 +202,7 @@ async def commit(
     authority = await resolve_authority(conn, scope, execution_id)
     inventory = await list_sources(conn, authority.grant, limit=0)
     paths = {r["path"] for r in inventory["sources"] if r.get("available") and r.get("path")}
-    problems = check(dossier, index_raw, paths)
+    problems = check(dossier, index_raw, paths, headings_for(scope))
     if not message.strip():
         problems.append("Give the commit a one-line message saying what changed and why.")
     if problems:

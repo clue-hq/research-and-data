@@ -46,6 +46,7 @@ résumé or "Wikipedia" piles, readable at campaign scale (50–60 accounts, 5+ 
 | 2026-11-03 | Dossier versions: the agent commits at milestones with a one-line message; the last commit of a run is published. Saves are not versions. |
 | 2026-11-03 | No code check of quoted words. Quote fidelity is the agent's job, set by prompt and skill. Code checks only the dossier's contract (headings, anchors, cited sources exist, index anchors exist). |
 | 2026-11-03 | Every run researches all eleven coverage areas in the account-dossier skill, whether or not the hypotheses and four questions are already answered. The questions say where to dig deepest; they never make an area skippable. |
+| 2026-11-04 | The dossier stays organised by the seller's questions, not by the display pages. From recipe 36 it has ten headings: "What changed recently" becomes "Buying signals and timing" (signals for and against buying now, dated, with what each suggests), and "How they sell and whom they serve" is added. |
 | 2026-11-03 | No Exa Agent Ultra for now: up to $20 and ~30 min per run, about ten times a whole research job and longer than the investigation. The gain is in the agent's own digging. |
 
 ## Roadmap
