@@ -67,11 +67,16 @@ _FINDING = re.compile(r"^### (F\d{3,}) · \S", re.MULTILINE)
 _SOURCE = re.compile(r"\[(/evidence/[^\]\s]+)\]")
 
 
+# The markdown-dossier trial ran on recipes 32–36; recipe 37 returns to the JSON dossier and claim
+# import of recipe 31 with the trial's research rules (2026-11-04 decision).
+MARKDOWN_RECIPES = range(32, 37)
+
+
 def uses_markdown_dossier(scope: JobScope) -> bool:
     return (
         scope.catalog_version == "v4"
         and not scope.person_subject_id
-        and int((scope.input_refs or {}).get("quality_recipe_version", 5)) >= 32
+        and int((scope.input_refs or {}).get("quality_recipe_version", 5)) in MARKDOWN_RECIPES
     )
 
 

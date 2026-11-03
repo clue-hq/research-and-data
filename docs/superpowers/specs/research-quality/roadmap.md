@@ -1,6 +1,6 @@
 # Research quality: roadmap and where we stand
 
-Last updated: 2026-11-03.
+Last updated: 2026-11-04.
 
 ## Goal
 
@@ -47,6 +47,8 @@ résumé or "Wikipedia" piles, readable at campaign scale (50–60 accounts, 5+ 
 | 2026-11-03 | No code check of quoted words. Quote fidelity is the agent's job, set by prompt and skill. Code checks only the dossier's contract (headings, anchors, cited sources exist, index anchors exist). |
 | 2026-11-03 | Every run researches all eleven coverage areas in the account-dossier skill, whether or not the hypotheses and four questions are already answered. The questions say where to dig deepest; they never make an area skippable. |
 | 2026-11-04 | The dossier stays organised by the seller's questions, not by the display pages. From recipe 36 it has ten headings: "What changed recently" becomes "Buying signals and timing" (signals for and against buying now, dated, with what each suggests), and "How they sell and whom they serve" is added. |
+| 2026-11-04 | Next work, in order: the page writer's guides, person research, and the r31 agent with the new research rules (recipe 37). The dossier platform build is not started; the evidence so far (ledger, 2026-11-04) is that the writer and the claim-path input are not what make the pages poor. |
+| 2026-11-04 | Writer-guide rules are guidance in the prompt, never enforced by code. No item counts: the guides' "up to 3" per-section limits go, and a Personal angle is asked for "when the research supports one", with no number. A length per point is allowed (for example, why-they-fit about 80–90 words). |
 | 2026-11-03 | No Exa Agent Ultra for now: up to $20 and ~30 min per run, about ten times a whole research job and longer than the investigation. The gain is in the agent's own digging. |
 
 ## Roadmap
@@ -54,12 +56,13 @@ résumé or "Wikipedia" piles, readable at campaign scale (50–60 accounts, 5+ 
 | # | Stage | Status |
 |---|---|---|
 | 1 | Rounds 1, 2, 2b, 6 on rules | Done (see ledger) |
-| 2 | Writer fix: repetition and length. | Parked until the dossier settles |
-| 3 | Dossier trial: narrative dossier with fixed headings, anchors and quoted citations; a small typed index with ranked key facts; agent commits versions. No claim import, no pages. Compared with round 2b's research output on quality, depth and research time. | Built 2026-11-03 (r32: `508f991a5`, `d452da636`); r33 ran 2026-11-03; dossiers under founder review |
-| 4 | Round 4: committee rules (persona map roles, the IT slot, directory-only people). Independent of the dossier; can run with stage 3. | Planned |
-| 5 | Decision point: if the dossier trial wins, write the design note and amend the "typed claim, never a free-text dossier" principle for research narrative. If not, stay on claims and reopen round 3. | Founder |
-| 6 | Build, one shippable step at a time: (a) pages cite dossier anchors; (b) typed index, quote check, personal-data index, versions with erasure; (c) move the other readers (Head of ABM read tools, reconciliation, coverage), then stop importing findings as claims. Rough size 4–6 weeks. | After 5 |
-| 7 | Person research on the same dossier pattern, with round 5's research rules (public footprint not résumé; LinkedIn facts cite the post; AI Ark email). | After 6 |
+| 2 | Dossier trial (markdown dossier, recipes 32–36): research rules and format tested on NTG and Nav. | Done 2026-11-04. Research rules kept; the format is not taken to production for now (ledger, 2026-11-04 entries) |
+| 3 | **r31 agent with the new research rules (recipe 37):** r31's JSON dossier, claim import, page brief and page writer unchanged; prompt v36 and skill v17 add only the research rules from r34–r36 (order, all eleven areas, stop when nothing new turns up, deep-call sources as evidence and dig deeper, open results about people and problems, lasting record, one caveat where it matters, research date). Run on NTG and Nav, then MODE Global. | Built 2026-11-04, awaiting founder go to run |
+| 4 | **Page writer guides** (contact-page, account-pages, research-page-writing), from the founder's feedback on the hand-done Illumio pages. Each point opens with the person's own words, then one line "Why it signals [seller]"; never put own wording in quotation marks (wrong/right example); translations marked "(our translation: …)"; sell honestly where the account already has part of the offer; "Why this person" without title, start date, tenure or reporting line; openers mix work and personal hooks; angles labelled Professional or Personal, each with Insight and Proof and move, a Personal angle when the research supports one; why-they-fit about 80–90 words, ICP checklist moved out of it; why-now and how-to-approach with dated events and the person's words. Guidance only, no code limits, no item counts. Tested first on the three Illumio dossiers (harness copied to `trial/pwexp/`, untracked), then on recipe 37's NTG and Nav dossiers. | Next: draft wording for founder review |
+| 5 | **Person research (round 5) and committee rules**: LinkedIn activity, not the profile (own posts, comments, About; exact quotes with dates); cite the post URL, the profile only for identity; no résumé findings (career is context); check what the account already has in place and whether it is already the seller's customer; confirm the current employer for anyone who moved in the past year; prefer people with a public voice for the committee and record why another was dropped; record what could not be found and why. | After 4 |
+| 6 | Decisions outside prompts: a LinkedIn-activity tool for the research agent (without one the LinkedIn rule mostly finds nothing); automatic work-email lookup when someone joins the committee; a way for the agent to ask the workspace owner for help. | Founder, when stage 5 starts |
+| 7 | Storage decision: claim store as today, claims plus a synthesis document, or the dossier platform build. Decided on the writer's results with the new guides (stage 4) across inputs. | After 4 |
+| — | Separate lane: discovery picks weaker accounts (Pallet's came from discovery; Illumio's were hand-picked for strong signals). Judge new pages on Pallet's strongest account, MODE Global, as well as NTG and Nav. | Noted |
 
 ## Parked
 
@@ -69,5 +72,5 @@ résumé or "Wikipedia" piles, readable at campaign scale (50–60 accounts, 5+ 
 - Persona linkage in the seller's data (`lineage_unresolved`).
 - Empty `evidence_span` on research claims.
 - Langfuse cuts every field at 8,000 characters; never judge what the agent saw from a trace.
-- Remove the leftover "also worth knowing" line from prompt v31 in the next version.
+- Remove the leftover "also worth knowing" line from prompt v31 (still in v36, which is a pure port).
 - Frontend additions ("what changed" flag, full-dossier link) need a design ruling.
