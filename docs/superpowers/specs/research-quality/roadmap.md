@@ -42,14 +42,17 @@ résumé or "Wikipedia" piles, readable at campaign scale (50–60 accounts, 5+ 
 | 2026-11-03 | The claim store stays for structured facts. Research findings are to move to versioned dossiers with a small derived index — subject to the dossier trial. |
 | 2026-11-03 | Round 3 (fewer, richer findings as claims) is dropped. |
 | 2026-11-03 | The Exa deep call stays as one early background sweep. |
+| 2026-11-03 | Writer fix parked; round 6 stays as it is. The page writer is revisited after the dossier settles, and then only with words-per-point guidance — no item counts, no code limits. |
+| 2026-11-03 | Dossier versions: the agent commits at milestones with a one-line message; the last commit of a run is published. Saves are not versions. |
+| 2026-11-03 | No code check of quoted words. Quote fidelity is the agent's job, set by prompt and skill. Code checks only the dossier's contract (headings, anchors, cited sources exist, index anchors exist). |
 
 ## Roadmap
 
 | # | Stage | Status |
 |---|---|---|
 | 1 | Rounds 1, 2, 2b, 6 on rules | Done (see ledger) |
-| 2 | Writer fix: repetition and length. Rules only, tested by rewriting pages from round 6 research. | Next |
-| 3 | Dossier trial: narrative dossier with fixed headings, anchors and quoted citations; ranked key facts (~10 per account, 5–7 per person) in the page brief. Claims still imported in the background. Compared with round 6 on page quality, length, research time and nothing missing. | Planned |
+| 2 | Writer fix: repetition and length. | Parked until the dossier settles |
+| 3 | Dossier trial: narrative dossier with fixed headings, anchors and quoted citations; a small typed index with ranked key facts; agent commits versions. No claim import, no pages. Compared with round 2b's research output on quality, depth and research time. | Next: prompt v32 + skill v13 drafts in review |
 | 4 | Round 4: committee rules (persona map roles, the IT slot, directory-only people). Independent of the dossier; can run with stage 3. | Planned |
 | 5 | Decision point: if the dossier trial wins, write the design note and amend the "typed claim, never a free-text dossier" principle for research narrative. If not, stay on claims and reopen round 3. | Founder |
 | 6 | Build, one shippable step at a time: (a) pages cite dossier anchors; (b) typed index, quote check, personal-data index, versions with erasure; (c) move the other readers (Head of ABM read tools, reconciliation, coverage), then stop importing findings as claims. Rough size 4–6 weeks. | After 5 |
