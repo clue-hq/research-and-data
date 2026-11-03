@@ -64,6 +64,23 @@ résumé or "Wikipedia" piles, readable at campaign scale (50–60 accounts, 5+ 
 | 7 | Storage decision: claim store as today, claims plus a synthesis document, or the dossier platform build. Decided on the writer's results with the new guides (stage 4) across inputs. | After 4 |
 | — | Separate lane: discovery picks weaker accounts (Pallet's came from discovery; Illumio's were hand-picked for strong signals). Judge new pages on Pallet's strongest account, MODE Global, as well as NTG and Nav. | Noted |
 
+## How we find out which part is at fault (cheap, in order)
+
+1. **Good research, the platform's writer.** Run the unchanged page writer on the hand-made Illumio
+   research, on a copy, never production (it would overwrite the demo pages). If its pages are
+   poor, the writer is at fault, because the research is known to be good. **Done 2026-11-04** (by
+   another session, $2.90, harness in `trial/pwexp/`): all 18 pages passed the checks with no
+   invented facts; short of the approved style only where its guides lack the rules. The writer and
+   the claim-path input are not what make the pages poor.
+2. **Agent research, pages hand-written with the founder's rules.** Write the pages by hand from an
+   agent dossier (r36's or recipe 37's NTG or Nav). If the account pages come out strong, account
+   research is good enough and the fix is the writer; the contact pages show how much person
+   research holds them back. **Open.**
+3. **Then the storage question** (stage 7). With the Illumio rules in the writer's guides, run it on
+   (a) claims as today, (b) claims plus a short synthesis document (verdict, signals, obstacles),
+   and (c) the dossier. If (c) clearly wins, build the dossier platform. If (b) comes close, the
+   cheaper path is the claim store plus a synthesis document. **After stage 4.**
+
 ## Parked
 
 - High-effort comparison run.
