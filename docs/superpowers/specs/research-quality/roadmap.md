@@ -52,7 +52,7 @@ résumé or "Wikipedia" piles, readable at campaign scale (50–60 accounts, 5+ 
 |---|---|---|
 | 1 | Rounds 1, 2, 2b, 6 on rules | Done (see ledger) |
 | 2 | Writer fix: repetition and length. | Parked until the dossier settles |
-| 3 | Dossier trial: narrative dossier with fixed headings, anchors and quoted citations; a small typed index with ranked key facts; agent commits versions. No claim import, no pages. Compared with round 2b's research output on quality, depth and research time. | Built 2026-11-03 (r32: `508f991a5`, `d452da636`); awaiting the go to run |
+| 3 | Dossier trial: narrative dossier with fixed headings, anchors and quoted citations; a small typed index with ranked key facts; agent commits versions. No claim import, no pages. Compared with round 2b's research output on quality, depth and research time. | Built 2026-11-03 (r32: `508f991a5`, `d452da636`); r33 ran 2026-11-03; dossiers under founder review |
 | 4 | Round 4: committee rules (persona map roles, the IT slot, directory-only people). Independent of the dossier; can run with stage 3. | Planned |
 | 5 | Decision point: if the dossier trial wins, write the design note and amend the "typed claim, never a free-text dossier" principle for research narrative. If not, stay on claims and reopen round 3. | Founder |
 | 6 | Build, one shippable step at a time: (a) pages cite dossier anchors; (b) typed index, quote check, personal-data index, versions with erasure; (c) move the other readers (Head of ABM read tools, reconciliation, coverage), then stop importing findings as claims. Rough size 4–6 weeks. | After 5 |
