@@ -39,6 +39,18 @@ first story, before the rewrite.
 | Someone has left: nominate a replacement | The agent is told who left and why, then waits for that research. |
 | A late finisher triggers a newer brief, then a page rewrite | See "Late finisher". |
 | No deadlocks | See "Why this cannot deadlock". |
+| Research decisions live in prompts and skills, not code | Code gives the agent full flexibility; the agent decides. See "What is code and what is the agent's". |
+
+## What is code and what is the agent's
+
+**The agent decides, through prompts and skills, with no code limit or refusal:** whether someone has
+left or still fits; whether, whom and how many to nominate as replacements; when to name a seat as a gap;
+which leads to check and how far; what to do about a failed or unfinished person; the verdict and the
+brief; whether a late finding changes anything.
+
+**Code only runs the machinery:** releasing slots, offering the next turn when people settle, the
+30-minute wait, the retry limit on crashing jobs, and correctness checks. These are not research
+judgements: they keep the pipeline moving when something is broken, and the agent is told what happened.
 
 ## The main finding: no paused state is needed
 
@@ -90,8 +102,8 @@ evidence, `search_web`, `fetch_page`, and the nomination tools.
 > nothing to find.
 >
 > If someone has left the company, look for whoever holds that responsibility now, check where they
-> work today, and nominate them, saying who left and why. If you find no suitable person, name the seat
-> as a gap. Check a lead only if it could change your verdict or approach; do not repeat your research.
+> work today, and nominate them, saying who left and why. If that person turns out to have left too, decide again:
+> look further, or name the seat as a gap. Check a lead only if it could change your verdict or approach; do not repeat your research.
 > If your research was blocked, say so plainly instead of writing a confident verdict.
 
 The first-turn prompt loses its "write /outputs/page-brief.md" section and asks for a provisional
@@ -121,13 +133,21 @@ without counting, as `_REQUEUE_SQL`'s `uncount` allows.
 
 ## Replacement
 
+This is entirely the agent's decision, set by the review instruction. Code adds no limit.
+
 - The person agent reports that someone has left, as it does today.
-- The agent gets it in the review input and nominates a replacement, within this rule.
-- Re-nominating the same person reuses the existing job, so the same person cannot loop.
-- **One replacement per seat.** If the replacement has also left, the seat is named as a gap. This is
-  my addition: your reasoning stops the same person repeating, but a second candidate can also be stale.
-- To confirm while building: the nomination tool accepts a parent job that has finished, and the
-  committee cap does not count someone who left.
+- The account agent reads that in the review input, decides what to do, and can nominate anyone it
+  judges suitable, as many as it judges right, saying who left and why.
+- If a replacement has also left, the agent decides again: look further, or name the gap.
+- Code must not get in the way. Two things to change or confirm while building: the nomination tool must
+  accept a parent job that has finished, and the committee cap must not stop a replacement. Today the
+  cap counts every nominee, so someone who left would block their own replacement.
+
+Re-nominating the same person already reuses the existing job.
+
+**The trade-off.** No code stops a long chain of replacements. Each one needs a fresh finding that
+someone left, so this should be rare, and the runs will show whether the prompt needs adjusting. The
+committee cap stays as the job's setting for how many current people to research.
 
 ## Late finisher
 
@@ -149,7 +169,7 @@ each review and each page step runs and ends. Waiting exists only as a condition
 | Parent looks paused | The parent is `completed` or `needs_review`, and release only refuses `suspended` or `not_started`. |
 | Wait check needs a slot | It runs in the sweep. |
 | Review bumps its own revision, forever | See below. |
-| Replacement chain | One replacement per seat. |
+| Replacement chain | Each round ends its turn and frees its slot, so a chain costs money and time but cannot block. The prompt guides it; there is no code limit. |
 | No workers | Nothing runs and no timer fires for people not started. Everything continues on restart. |
 
 **Revision loop.** Importing or correcting claims can signal a new revision through
@@ -197,8 +217,8 @@ Forced on trial accounts, each ending in pages or a clear `needs_review`:
 6. Make the review fail: pages from the fallback, `needs_review`.
 7. Refuse Exa: an honest blocked result, with no crash.
 8. Limit to one job slot: the whole run still finishes. This is the direct deadlock test.
-9. A person who has left: a replacement is nominated, researched and reviewed. A second one who has
-   left becomes a gap.
+9. A person who has left: a replacement is nominated, researched and reviewed. A second who has left:
+   the agent decides, and the flow still finishes.
 10. A review with no new input: no further review.
 
 Then rerun NTG and Nav and compare with recipe 39: does Drew's Vooma role reach the verdict and pages?
@@ -213,8 +233,8 @@ the first turn.
 ## Questions for the founder
 
 1. **Late finisher:** I read your replies as a newer brief, then a page rewrite. Correct?
-2. **One replacement per seat:** agreed?
-3. **Three attempts:** is that the right starting number?
+2. **Three attempts:** is that the right starting number? This limit is code, because it applies only to
+   jobs that crash, not to a research decision.
 
 ## Left to the builder
 
