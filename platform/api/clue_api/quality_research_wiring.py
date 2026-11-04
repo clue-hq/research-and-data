@@ -334,7 +334,9 @@ def quality_profiles(
         engine_tool_ceiling=frozenset(authority),
         required_roles=active_roles,
         selected_profile_versions={
-            role: ("v27-person" if person else "v37")
+            role: ("v28-person" if person else "v38")
+            if version >= 39 and role == AgentRole.ACCOUNT_RESEARCH
+            else ("v27-person" if person else "v37")
             if version >= 38 and role == AgentRole.ACCOUNT_RESEARCH
             else ("v27-person" if person else "v36")
             if version >= 37 and role == AgentRole.ACCOUNT_RESEARCH
@@ -1150,11 +1152,13 @@ class ResearchUnitRuntime:
                         if uses_json_dossier(self.scope) and not uses_markdown_dossier(self.scope)
                         else {}
                     ),
-                    # Research trial (account jobs, recipe 32+): nothing else tells the agent
-                    # today's date, so it took the newest document timestamp it saw (2026-11-03).
+                    # Research trial (account jobs, recipe 32+; person jobs, recipe 39+): nothing
+                    # else tells the agent today's date, so it took the newest document timestamp
+                    # it saw (2026-11-03).
                     **(
                         {"research_date": started.date().isoformat()}
-                        if at_least(self.scope, 32) and not self.scope.person_subject_id
+                        if at_least(self.scope, 39)
+                        or (at_least(self.scope, 32) and not self.scope.person_subject_id)
                         else {}
                     ),
                     "context_id": str(self.context_id),

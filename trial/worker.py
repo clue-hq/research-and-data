@@ -7,7 +7,8 @@ It reads prompts and skills from this worktree's platform/agents/catalog/researc
 With TRIAL_HOLD_PERSON_JOBS=1, nominated people get their job rows as usual but no person job is
 offered to the queue, so only account research (and its pages) runs. Nothing else is changed.
 With TRIAL_RELEASE_PERSON_JOBS=<job id,job id>, those person jobs alone are offered; every other
-held job in the database stays held.
+held job in the database stays held. With TRIAL_RELEASE_PERSON_WORKSPACE=<workspace id>, that
+workspace's person jobs run as in production, and every other workspace's stay held.
 """
 import logging
 import os
@@ -30,7 +31,12 @@ if os.environ.get("TRIAL_HOLD_PERSON_JOBS") == "1":
     async def _no_person_jobs(*args, **kwargs):
         return []
 
+    release_workspace = os.environ.get("TRIAL_RELEASE_PERSON_WORKSPACE")
+    offer_committee = Arv2AccountResearchWorkHandler._offer_committee
+
     async def _hold_committee(self, composition, committee):
+        if composition.run.workspace_id == release_workspace:
+            return await offer_committee(self, composition, committee)
         print(f"trial worker: holding {len(committee.jobs)} person job(s) of "
               f"{composition.job.job_id}", flush=True)
 
@@ -39,9 +45,15 @@ if os.environ.get("TRIAL_HOLD_PERSON_JOBS") == "1":
 
     async def _released_person_jobs(*args, **kwargs):
         ready = await all_ready_person_jobs(*args, **kwargs)
-        return [job for job in ready if str(job["job_id"]) in released]
+        return [
+            job
+            for job in ready
+            if str(job["job_id"]) in released or job["workspace_id"] == release_workspace
+        ]
 
-    quality_person_release.ready_person_jobs = _released_person_jobs if released else _no_person_jobs
+    quality_person_release.ready_person_jobs = (
+        _released_person_jobs if released or release_workspace else _no_person_jobs
+    )
     Arv2AccountResearchWorkHandler._offer_committee = _hold_committee
     print(f"trial worker: person jobs are HELD, except {sorted(released)}", flush=True)
 

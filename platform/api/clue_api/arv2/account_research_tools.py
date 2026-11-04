@@ -1186,6 +1186,7 @@ class SearchWebArgs(_Args):
     num_results: int = Field(8, ge=1, le=10)
     include_domains: list[str] | None = None
     start_published_date: str | None = None
+    end_published_date: str | None = None
 
 
 class LookupCompanyArgs(_Args):
@@ -1601,6 +1602,7 @@ async def _search_web(runtime: ToolRuntime, args: SearchWebArgs) -> dict[str, An
             "num_results": args.num_results,
             "include_domains": args.include_domains,
             "start_published_date": args.start_published_date,
+            "end_published_date": args.end_published_date,
         }
         if uses_person_exa_brief(runtime.scope):
             contents = person_search_contents()

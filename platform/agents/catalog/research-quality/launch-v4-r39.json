@@ -1,0 +1,28 @@
+{
+  "catalog_version": "v4",
+  "recipe_version": 39,
+  "resources": {
+    "provider-requests/account-deep/v1/exa-system.md": "283426f186e5f41c847b79f501e9a08dd01d02833976984bc618b22a22a0d83e",
+    "provider-requests/account-deep/v1/request-config.json": "fcc059b0b22ae43063ab8ff4c524357d0c1ec03de0b2ca42423b15bb2f33163f",
+    "provider-requests/person-deep/v1/exa-system.md": "f5add6a444e962aaa431425d29599c8593291e31b0d81dcd9ee10c9661f52c6a",
+    "provider-requests/person-deep/v1/request-config.json": "efa29f22347258deaa5cda957c7d4b2af8fc54911e784ba27e0788e54592a7bc",
+    "skills/governed-evidence/v3/SKILL.md": "8a7395a71f1c85e29b6519604c36819f8da553747cea45957211edebf787de22",
+    "prompts/quality-research-claims/v15/SYSTEM.md": "0bddd7b35e4f75db4d07e26c05e4b9a0bd69fd8870468f31633a40579cc05294",
+    "prompts/quality-research-narrative/v15/SYSTEM.md": "8932ca816dd726e6a9ce838c2bf74f00c98c2001099823d6eb74bb5f6df6775d",
+    "skills/governed-evidence/v5/SKILL.md": "ac9b6e1fd47f96191f395f75f47a851aeda66ea107f7794e859406c76b6e2380",
+    "skills/claim-ready-account-dossier/v3/SKILL.md": "bfb005463a5a3ecea0785113a85a70c91e2b26033cfec67a63da6359f7db1bbf",
+    "profiles/quality-research-claims/v19/profile.yaml": "c6ed5bf71ede3cd2f9cce8452403e7e479d862ad1aaccb53e212e3edcdfe3340",
+    "profiles/quality-research-narrative/v19/profile.yaml": "33410a4f30dda0dd51894de7b972ad8499445cf6cd239b459a865de363d7b800",
+    "skills/account-dossier/v17/SKILL.md": "5a9e7fe4df88c5be58e5f27b816e84b0648e1ee9531def2619fcc5dc43ade7a2",
+    "prompts/quality-account-research/v38/SYSTEM.md": "cfba7955cc8b2c36788dd17f2b86259d768d937a3736acd0480783b8ce6f2600",
+    "profiles/quality-account-research/v38/profile.yaml": "9a1942c32d02cd92e1c8d44baaef5d3643dd64436c260a9fccca93f5205b74db",
+    "recipe-v39.json": "4e989fd5759bfb36d7f5618d70ec9a2996a18cdbe18b802a07024a219e1cea5d",
+    "prompts/quality-person-research/v28-person/SYSTEM.md": "701d852e310e45e6990edee278f6e373f4e8b2fa636aba50d4e2cff02aeb3c15",
+    "profiles/quality-person-research/v28-person/profile.yaml": "6b5ad04780a4edce545d308d9b030823e233bc6847f33aa4852948e392c807cf",
+    "skills/person-dossier/v7/SKILL.md": "f32f0497903770049d8c1e3f4decfefdb0ec0bdee6ee6c5e12be4daeb7d50a08",
+    "skills/person-depth-charter/v2/SKILL.md": "1f9eca3e20933cd9dcd6bb756739d3877bb01edc1e464eb07c5a33478b40086c",
+    "skills/claim-ready-person-dossier/v4/SKILL.md": "bf7a01b076e77378056785951965852cda3c0d4d94aa1f3ac1175ab7669c4d51",
+    "skills/person-research-briefing/v6/SKILL.md": "967b03aa1a1e1870d150e8e17c69739edf89b34bdc5b276de1fa6b4753eabf4f"
+  },
+  "review_policy": "advisory"
+}
