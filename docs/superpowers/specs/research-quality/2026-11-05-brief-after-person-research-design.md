@@ -1,6 +1,6 @@
 # Account brief after person research: design
 
-Status: draft for founder review, 2026-11-05. Nothing here is built. Trial lane only; taking it to
+Status: approved by the founder, 2026-11-05. Not built yet; plan in `docs/superpowers/plans/2026-11-05-brief-after-person-research.md`. Trial lane only; taking it to
 production is a separate decision.
 
 ## Why
@@ -35,7 +35,7 @@ first story, before the rewrite.
 | Option D | The brief is written after person research, not before and again after. |
 | Reps do not need account pages before person research finishes | No first account pages. |
 | Stop waiting after 30 minutes without progress on a started person | The job is not killed. |
-| Crash retries get a limit | Proposed: 3 attempts in a row without progress. |
+| Crash retries get a limit | 3 attempts in a row without progress. |
 | Someone has left: nominate a replacement | The agent is told who left and why, then waits for that research. |
 | A late finisher triggers a newer brief, then a page rewrite | See "Late finisher". |
 | No deadlocks | See "Why this cannot deadlock". |
@@ -93,7 +93,7 @@ With no nominations at all, nothing is unsettled, so step 3 follows at once.
 The review turn needs more tools than the old continuation, which kept only `finalize_turn`: reading
 evidence, `search_web`, `fetch_page`, and the nomination tools.
 
-## Draft instruction for the review turn (for founder review)
+## Instruction for the review turn (approved)
 
 > Your people's research is finished, or as finished as it will get. Read /work/review/input.json. It
 > tells you, for each person, what was found, what could not be reached, and whether they are still
@@ -229,12 +229,6 @@ Removes one account page write and any second brief. Adds one review turn per ac
 price is unknown: it re-reads about 75,000 tokens of context, likely without the cache after a long wait.
 We measure this on the first run. On recipe 39's NTG, pages would have arrived about 33 minutes after
 the first turn.
-
-## Questions for the founder
-
-1. **Late finisher:** I read your replies as a newer brief, then a page rewrite. Correct?
-2. **Three attempts:** is that the right starting number? This limit is code, because it applies only to
-   jobs that crash, not to a research decision.
 
 ## Left to the builder
 
