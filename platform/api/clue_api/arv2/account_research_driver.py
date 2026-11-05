@@ -105,13 +105,14 @@ from clue_api.arv2.provider_ledger import (
     LedgerStamp,
     drain_provider_calls,
 )
-from clue_api.arv2.quality_generation import FINAL_PAGE_STEP, initial_settle_event_id
-from clue_api.arv2.quality_person_release import RELEASE_AT_NOMINATION, parent_dossier_ready
 from clue_api.arv2.quality_generation import (
     BRIEF_AFTER_PEOPLE,
+    FINAL_PAGE_STEP,
+    initial_settle_event_id,
     no_progress_attempts,
     review_waits_for_people,
 )
+from clue_api.arv2.quality_person_release import RELEASE_AT_NOMINATION, parent_dossier_ready
 from clue_api.arv2.quality_recipe import at_least
 from clue_api.arv2.quality_results import QualityJobOutcome, QualityJobRunner
 from clue_api.arv2.sinks import LedgerSink
@@ -915,7 +916,7 @@ class Arv2AccountResearchWorkHandler:
         """
         from clue_api.arv2 import page_writer_runtime
         from clue_api.arv2.quality_generation import pending_continuations, reconcile_generation
-        from clue_api.arv2.quality_review import review_input
+        from clue_api.arv2.quality_review import review_input, review_unit_key
 
         scope = composition.scope
         context_id = composition.run.context_id
@@ -924,13 +925,12 @@ class Arv2AccountResearchWorkHandler:
         try:
             async with self._connection() as conn:
                 review = await review_input(conn, self._storage, scope, context_id)
+                unit_key = await review_unit_key(conn, scope, generation_id, revision)
                 previous = await page_writer_runtime.latest_review_before(
                     conn,
                     self._storage,
                     scope,
-                    execution_id=research_execution_id(
-                        scope.job_id, scope.restart_count, f"review:{generation_id}:{revision}"
-                    ),
+                    execution_id=research_execution_id(scope.job_id, scope.restart_count, unit_key),
                 )
                 if previous is not None:
                     review = {**review, "_source_execution": str(previous)}
@@ -941,7 +941,7 @@ class Arv2AccountResearchWorkHandler:
                     context_id=context_id,
                     runtime=runtime,
                     model_id=composition.model_id,
-                    unit_key=f"review:{generation_id}:{revision}",
+                    unit_key=unit_key,
                     review=review,
                     objective=(
                         "Your people's research is ready. Read the account-review skill and "

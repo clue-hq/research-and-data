@@ -47,6 +47,11 @@ def research_execution_id(
     return uuid5(NAMESPACE_URL, f"research-quality:{job_id}:restart:{restart_count}")
 
 
+def research_turn_id(execution_id: UUID) -> UUID:
+    """The agent turn a research execution runs as."""
+    return uuid5(NAMESPACE_URL, f"research-quality-turn:{execution_id}")
+
+
 class ResearchRestartRequired(RuntimeError):
     """The job's saved conversation cannot be continued; the driver gives it a fresh one."""
 

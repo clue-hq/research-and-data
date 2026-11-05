@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_claims import CURRENT_TITLE_FIELD, JobScope
+from clue_api.arv2.job_resume import research_execution_id, research_turn_id
 from clue_api.arv2.quality_json_dossier import read_json_dossier
 from clue_core import EntityId, decode_jsonb
 from clue_research.claimstore import WorkspaceScope, claims_for
@@ -66,6 +67,33 @@ async def _findings(
         for section in saved.get("document", {}).get("sections", [])
         for finding in section.get("findings", [])
     ]
+
+
+async def review_unit_key(
+    conn: AsyncConnection, scope: JobScope, generation_id: UUID, revision: int
+) -> str:
+    """The turn this review runs as.
+
+    A turn the agent ended itself without finishing is saved as final and would only replay, so a
+    retry gets a turn of its own. Any other failure saves nothing final: the same turn continues
+    from where it stopped, and a finished review replays rather than being paid for again.
+    """
+    base = f"review:{generation_id}:{revision}"
+    key, retries = base, 0
+    while True:
+        execution = research_execution_id(scope.job_id, scope.restart_count, key)
+        status = (
+            await conn.execute(
+                text("""SELECT f.status FROM agent_finalization_commit c
+                JOIN agent_finalization f ON f.id=c.finalization_id
+                WHERE c.turn_id=:turn AND c.workspace_id=:ws"""),
+                {"turn": research_turn_id(execution), "ws": scope.workspace_id},
+            )
+        ).scalar_one_or_none()
+        if status is None or status == "completed":
+            return key
+        retries += 1
+        key = f"{base}:retry-{retries}"
 
 
 async def review_input(

@@ -16,7 +16,7 @@ from dataclasses import replace
 from decimal import ROUND_CEILING, Decimal
 from pathlib import Path
 from typing import Any, cast
-from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
+from uuid import UUID, uuid4
 
 from langchain_core.messages import SystemMessage
 from langchain_core.runnables import RunnableConfig
@@ -78,7 +78,11 @@ from clue_api.arv2.account_research_catalog import (
 )
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.account_research_tools import ToolRuntime
-from clue_api.arv2.job_resume import ResearchRestartRequired, research_execution_id
+from clue_api.arv2.job_resume import (
+    ResearchRestartRequired,
+    research_execution_id,
+    research_turn_id,
+)
 from clue_api.arv2.quality_authority import resolve_authority
 from clue_api.arv2.quality_committee_tool import (
     NominateBriefedCommitteeTool,
@@ -1077,7 +1081,7 @@ class ResearchUnitRuntime:
         # check, so a turn that completed (and whose job failed later) is never re-paid because
         # the deployment changed since.
         committed = await self.turns.load_committed_outcome(
-            turn_id=uuid5(NAMESPACE_URL, f"research-quality-turn:{execution}"),
+            turn_id=research_turn_id(execution),
             workspace_id=self.scope.workspace_id,
         )
         if committed is not None:
@@ -1197,7 +1201,7 @@ class ResearchUnitRuntime:
                 "agent-turn-input",
             )
             request = AgentTurnRequest(
-                turn_id=uuid5(NAMESPACE_URL, f"research-quality-turn:{execution}"),
+                turn_id=research_turn_id(execution),
                 thread_id=thread,
                 constitution=AgentConstitution(
                     workspace_id=self.scope.workspace_id,
