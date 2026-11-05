@@ -194,4 +194,5 @@ class QualityJobRunner(Protocol):
         model_id: str,
         unit_key: str | None = None,
         reconciliation: dict[str, Any] | None = None,
+        review: dict[str, Any] | None = None,
     ) -> QualityJobOutcome: ...

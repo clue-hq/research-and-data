@@ -786,6 +786,10 @@ class Arv2AccountResearchWorkHandler:
 
         from clue_api.arv2 import page_writer_runtime
 
+        if at_least(scope, BRIEF_AFTER_PEOPLE):
+            return await self._review_then_pages(
+                work, composition, generation_id, revision, assert_lease
+            )
         if page_writer_runtime.writes_pages_separately(scope):
             return await self._rewrite_account(
                 work, scope, context_id, generation_id, revision, assert_lease
@@ -880,6 +884,79 @@ class Arv2AccountResearchWorkHandler:
                 )
             return WorkResult(outcome="failed", references={"error": str(error)[:400]})
 
+    async def _review_then_pages(
+        self,
+        work: WorkContext,
+        composition: _Composition,
+        generation_id: UUID,
+        revision: int,
+        assert_lease: Callable[[AsyncConnection], Awaitable[None]],
+    ) -> WorkResult:
+        """Recipe 40: resume the account agent to write its one brief, then write the pages.
+
+        The slot is held only while the agent runs. If the agent cannot finish, the same revision
+        is retried, and after the last attempt the pages are written from the verdict summary and
+        the account lands ``needs_review``.
+        """
+        from clue_api.arv2 import page_writer_runtime
+        from clue_api.arv2.quality_review import review_input
+
+        scope = composition.scope
+        context_id = composition.run.context_id
+        assert self._quality_runner is not None and context_id is not None
+        brief_written = False
+        try:
+            async with self._connection() as conn:
+                review = await review_input(conn, self._storage, scope, context_id)
+            runtime = self._tool_runtime(composition)
+            async with self._jobs:
+                outcome = await self._quality_runner(
+                    scope=scope,
+                    context_id=context_id,
+                    runtime=runtime,
+                    model_id=composition.model_id,
+                    unit_key=f"review:{generation_id}:{revision}",
+                    review=review,
+                    objective=(
+                        "Your people's research is ready. Read the account-review skill and "
+                        "follow it."
+                    ),
+                )
+            if outcome.status != "completed":
+                raise RuntimeError(outcome.failure_code or "review_incomplete")
+            async with self._connection() as conn:
+                brief_written = (
+                    await page_writer_runtime.brief_of_execution(
+                        conn, self._storage, scope, outcome.execution_id
+                    )
+                    is not None
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            log.exception(
+                "arv2.quality.review_failed",
+                generation_id=str(generation_id),
+                revision=revision,
+                attempt=work.task_attempt,
+            )
+            if work.task_attempt < self._settings.arv2_job_max_attempts_no_progress:
+                return WorkResult(
+                    outcome="failed",
+                    references={"error": str(error)[:400]},
+                    requeue=True,
+                    requeue_after=timedelta(seconds=30),
+                )
+        return await self._rewrite_account(
+            work,
+            scope,
+            context_id,
+            generation_id,
+            revision,
+            assert_lease,
+            needs_review=not brief_written,
+        )
+
     async def _rewrite_account(
         self,
         work: WorkContext,
@@ -888,6 +965,8 @@ class Arv2AccountResearchWorkHandler:
         generation_id: UUID,
         revision: int,
         assert_lease: Callable[[AsyncConnection], Awaitable[None]],
+        *,
+        needs_review: bool = False,
     ) -> WorkResult:
         """Recipe 25+: rewrite the account's pages with its people's findings, under the lease.
 
@@ -923,6 +1002,7 @@ class Arv2AccountResearchWorkHandler:
                     revision=revision,
                     models=self._page_writer,
                     **({"deferred": deferred} if deferred else {}),
+                    **({"needs_review": True} if needs_review else {}),
                 )
             return WorkResult(outcome="completed", references=cast(dict[str, JsonValue], result))
         except asyncio.CancelledError:

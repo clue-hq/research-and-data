@@ -696,6 +696,21 @@ async def write_reconciliation_files(
         await lease.backend.write_text(instructions_path, reconciliation["_editorial_system"])
 
 
+async def write_review_input(
+    *,
+    lease: AgentWorkspaceLease,
+    review: dict[str, Any],
+    source_snapshot: dict[str, JsonValue],
+) -> None:
+    """Write what a review turn reads, unless this turn already has it (a resumed turn keeps its
+    own)."""
+    path = "work/review/input.json"
+    if path not in {e.path for e in await lease.backend.list_entries("work")}:
+        await lease.backend.write_text(
+            path, json.dumps({**review, "source_snapshot": source_snapshot}, ensure_ascii=False)
+        )
+
+
 class ResearchUnitRuntime:
     """One job's detached C5 composition. Construct after its immutable context is persisted."""
 
@@ -714,9 +729,12 @@ class ResearchUnitRuntime:
         unit_key: str | None = None,
         checkpointer_factory: CheckpointerFactory = postgres_agent_checkpointer,
         reconciliation: dict[str, Any] | None = None,
+        review: dict[str, Any] | None = None,
     ):
         self.scope, self.context_id = scope, context_id
         self.reconciliation = reconciliation
+        #: Recipe 40: what the account agent reads when it resumes to review its people's research.
+        self.review = review
         self._spill_sinks: dict[ExecutionId, SpillSink] = {}
         self.runtime_owner: UUID | None = None
         self.execution_id = ExecutionId(
@@ -1074,7 +1092,7 @@ class ResearchUnitRuntime:
                 ),
             )
         continuation_config = None
-        if self.reconciliation is not None:
+        if self.reconciliation is not None or self.review is not None:
             # The source identity is derived from the authorized parent job, never model input.
             source_execution = ExecutionId(
                 research_execution_id(self.scope.job_id, self.scope.restart_count)
@@ -1198,7 +1216,7 @@ class ResearchUnitRuntime:
                 if prior.status is AgentExecutionStatus.COMPLETED:
                     await self.complete(execution)
                 return prior
-            if self.reconciliation is not None:
+            if self.reconciliation is not None or self.review is not None:
                 # Preserve the original workspace notes and native compaction archive.
                 # Current evidence remains a live, authorized research_backend view. The source
                 # run's folders are restored from its snapshot, so this works on any worker (F3).
@@ -1219,11 +1237,18 @@ class ResearchUnitRuntime:
                     )
                 finally:
                     await self.workspaces.release_saved(source_lease)
-                await write_reconciliation_files(
-                    lease=lease,
-                    reconciliation=self.reconciliation,
-                    source_snapshot=source_snapshot,
-                )
+                if self.reconciliation is not None:
+                    await write_reconciliation_files(
+                        lease=lease,
+                        reconciliation=self.reconciliation,
+                        source_snapshot=source_snapshot,
+                    )
+                else:
+                    await write_review_input(
+                        lease=lease,
+                        review=cast(dict[str, Any], self.review),
+                        source_snapshot=source_snapshot,
+                    )
             owner = uuid4()
             async with self.connections() as conn:
                 remaining_runtime = await begin_runtime(conn, self.operation_scope, owner=owner)
@@ -1286,6 +1311,9 @@ class ResearchUnitRuntime:
 
             async def completion_guard(model_input: Any) -> None:
                 if model_input.status is FinalizeStatus.COMPLETED:
+                    if self.review is not None:
+                        # The brief is the agent's; required_output_path checks that it exists.
+                        return
                     if self.reconciliation is not None:
                         from clue_api.arv2.quality_reconciliation import parse_updates
 
@@ -1352,6 +1380,8 @@ class ResearchUnitRuntime:
                 before_work=bindings.before_work,
                 required_output_path="outputs/reconciliation.json"
                 if self.reconciliation is not None
+                else "outputs/page-brief.md"
+                if self.review is not None
                 else DOSSIER_PATH
                 if uses_markdown_dossier(self.scope)
                 else None
@@ -1539,6 +1569,7 @@ def build_quality_job_runner(
         model_id: str,
         unit_key: str | None = None,
         reconciliation: dict[str, Any] | None = None,
+        review: dict[str, Any] | None = None,
     ) -> QualityJobOutcome:
         active_workspaces = workspaces or build_agent_workspace_factory(
             storage=storage, settings=settings
@@ -1567,12 +1598,17 @@ def build_quality_job_runner(
                 ),
                 unit_key=unit_key,
                 reconciliation=reconciliation,
+                review=review,
             )
             result = await owner.run(objective=objective, model_id=model_id)
             reply = (
                 await owner.reconciliation_output(result) if reconciliation is not None else None
             )
-            report = None if reconciliation is not None else await owner.report(result)
+            report = (
+                None
+                if reconciliation is not None or review is not None
+                else await owner.report(result)
+            )
             return QualityJobOutcome(
                 execution_id=result.execution_id,
                 status=result.status.value,

@@ -452,32 +452,42 @@ async def _account_dossier_for_person(
     return {}
 
 
-async def page_brief(conn: AsyncConnection, storage: StorageBackend, scope: JobScope) -> str | None:
-    """The account researcher's /outputs/page-brief.md from this job's saved agent workspace
-    (research trial, guide v3); the job's saved verdict summary when the file is missing."""
-    thread = (
+async def brief_of_execution(
+    conn: AsyncConnection, storage: StorageBackend, scope: JobScope, execution_id: UUID
+) -> str | None:
+    """The /outputs/page-brief.md this turn saved, if it saved one."""
+    key = (
         await conn.execute(
-            text("""SELECT 'research-quality-' || e.execution_id::text FROM arv2_quality_execution e
-            WHERE e.workspace_id=:ws AND e.job_id=:job AND e.role='account_research'
-            ORDER BY e.created_at DESC LIMIT 1"""),
-            {"ws": scope.workspace_id, "job": scope.job_id},
+            text("""SELECT manifest_artifact_key FROM agent_workspace_snapshot
+            WHERE workspace_id=:ws AND thread_id=:thread"""),
+            {"ws": scope.workspace_id, "thread": f"research-quality-{execution_id}"},
         )
     ).scalar_one_or_none()
-    if thread is not None:
-        key = (
-            await conn.execute(
-                text("""SELECT manifest_artifact_key FROM agent_workspace_snapshot
-                WHERE workspace_id=:ws AND thread_id=:thread"""),
-                {"ws": scope.workspace_id, "thread": thread},
-            )
-        ).scalar_one_or_none()
-        if key is not None:
-            manifest = json.loads(await storage.get(key))
-            for entry in manifest.get("entries", []):
-                if entry.get("path") == "outputs/page-brief.md":
-                    blob = f"{scope.workspace_id}/agent-workspace/{entry['sha256']}"
-                    body = await storage.get(blob)
-                    return body.decode("utf-8")
+    if key is None:
+        return None
+    manifest = json.loads(await storage.get(key))
+    for entry in manifest.get("entries", []):
+        if entry.get("path") == "outputs/page-brief.md":
+            blob = f"{scope.workspace_id}/agent-workspace/{entry['sha256']}"
+            return (await storage.get(blob)).decode("utf-8")
+    return None
+
+
+async def page_brief(conn: AsyncConnection, storage: StorageBackend, scope: JobScope) -> str | None:
+    """The account researcher's newest /outputs/page-brief.md from this job's saved agent workspaces
+    (research trial, guide v3); the job's saved verdict summary when there is none."""
+    executions = (
+        await conn.execute(
+            text("""SELECT e.execution_id FROM arv2_quality_execution e
+            WHERE e.workspace_id=:ws AND e.job_id=:job AND e.role='account_research'
+            ORDER BY e.created_at DESC"""),
+            {"ws": scope.workspace_id, "job": scope.job_id},
+        )
+    ).scalars()
+    for execution_id in executions.all():
+        brief = await brief_of_execution(conn, storage, scope, execution_id)
+        if brief is not None:
+            return brief
     summary = (
         await conn.execute(
             text("SELECT finalization_json->>'summary' FROM arv2_research_job WHERE job_id=:job"),
@@ -841,6 +851,7 @@ async def rewrite_account_pages(
     revision: int,
     models: PageWriterModels,
     deferred: Sequence[JobScope] = (),
+    needs_review: bool = False,
 ) -> dict[str, Any]:
     """Rewrite the account's pages once its people have settled, and settle that revision.
 
@@ -869,6 +880,7 @@ async def rewrite_account_pages(
             revision=revision,
             models=models,
             deferred=deferred,
+            needs_review=needs_review,
         )
     async with conn_factory() as conn:
         own = await read_json_dossier(conn, storage, scope, context_id)
@@ -925,6 +937,7 @@ async def _final_page_step(
     revision: int,
     models: PageWriterModels,
     deferred: Sequence[JobScope],
+    needs_review: bool = False,
 ) -> dict[str, Any]:
     async with conn_factory() as conn:
         own = await read_json_dossier(conn, storage, scope, context_id)
@@ -981,7 +994,7 @@ async def _final_page_step(
             generation_id=generation_id,
             expected_revision=revision,
             processed_snapshot=True,
-            needs_review=not imported or bool(failed),
+            needs_review=needs_review or not imported or bool(failed),
         )
     return {
         "generation_id": str(generation_id),

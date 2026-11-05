@@ -169,7 +169,9 @@ def test_initial_terminal_history_late_people_and_replay(tmp_path):
     run_async(case())
 
 
-async def _waiting_account(conn, tmp_path, *, recipe=40, child_status="in_progress", idle_minutes=0):
+async def _waiting_account(
+    conn, tmp_path, *, recipe=40, child_status="in_progress", idle_minutes=0
+):
     """An account whose first turn settled at ``recipe``, with one person in ``child_status``."""
     op, scope, cid = await setup(conn, FsStorage(tmp_path))
     generation = await ensure_generation(conn, op, context_id=cid)
@@ -255,9 +257,7 @@ def test_recent_activity_keeps_the_account_waiting(tmp_path):
         from tests.arv2.test_quality_execution_db import execution
 
         async with rollback_conn() as conn:
-            op, scope, generation, child = await _waiting_account(
-                conn, tmp_path, idle_minutes=120
-            )
+            op, scope, generation, child = await _waiting_account(conn, tmp_path, idle_minutes=120)
             cid = generation.context_id
             person = OperationScope(op.workspace_id, op.run_id, child, op.account_id)
             eid = await execution(conn, op, scope.project_id)
