@@ -15,7 +15,7 @@ from sqlalchemy import text
 
 from clue_api.arv2 import page_writer_runtime
 from clue_api.arv2.account_research_driver import Arv2AccountResearchWorkHandler
-from clue_api.arv2.account_research_store import create_job, read_job
+from clue_api.arv2.account_research_store import create_job, read_job, read_run
 from clue_api.arv2.quality_committee_tool import (
     NominateBriefedWebCommitteeTool,
     NominateBriefedWebInput,
@@ -23,6 +23,7 @@ from clue_api.arv2.quality_committee_tool import (
 from clue_api.arv2.quality_execution import Allowance, bind_execution
 from clue_api.arv2.quality_generation import (
     continuation_work_id,
+    ensure_generation,
     pending_continuations,
     read_generation,
     reconcile_generation,
@@ -31,7 +32,7 @@ from clue_api.arv2.quality_generation import (
     signal,
 )
 from clue_api.arv2.quality_person_release import ready_person_jobs
-from clue_api.arv2.quality_results import QualityJobOutcome
+from clue_api.arv2.quality_results import QualityJobOutcome, ResearchUnitReport
 from clue_api.arv2.quality_review import review_input
 from clue_config import load_settings
 from clue_core import ExecutionId, OperationId
@@ -41,6 +42,7 @@ from clue_research.identity import insert_contact_entity
 from clue_storage.fs import FsStorage
 from clue_toolbelt import ToolContext
 from tests.arv2.account_research_job_helpers import finish_seeded_job
+from tests.arv2.test_quality_claims_db import setup
 from tests.arv2.test_quality_evidence_db import save
 from tests.arv2.test_quality_execution_db import execution
 from tests.arv2.test_quality_generation_db import _waiting_account
@@ -632,3 +634,201 @@ def test_nominee_survives_a_crashed_review(tmp_path, monkeypatch):
             assert harness.calls == ["review", "review", "account_pages"]
 
     run_async(case())
+
+
+def test_whole_flow_with_one_slot(tmp_path, monkeypatch):
+    """The direct deadlock proof: one job slot, an account and three people, all the way to pages.
+
+    Every task the queue is offered runs at once, as a fleet would run it, and competes for the
+    one slot. Nothing that holds the slot may wait for anything else.
+    """
+
+    async def case():
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            op, scope, cid = await setup(conn, storage)
+            refs = {"quality_recipe_version": 40}
+            scope = replace(scope, catalog_version="v4", input_refs=refs)
+            await conn.execute(
+                text("""UPDATE arv2_research_job SET input_refs=input_refs
+                    || jsonb_build_object('quality_recipe_version',40) WHERE job_id=:job"""),
+                {"job": op.job_id},
+            )
+            job = await read_job(conn, job_id=op.job_id)
+            run = await read_run(conn, run_id=op.run_id)
+            lock = asyncio.Lock()
+
+            @asynccontextmanager
+            async def connections():
+                async with lock, conn.begin_nested():
+                    yield conn
+
+            queue = _Queue()
+            events: list[str] = []
+            page_writes: list[int] = []
+
+            async def runner(*, scope, context_id, runtime, objective, model_id, **kwargs):
+                await asyncio.sleep(0)
+                eid = uuid4()
+                if kwargs.get("review") is not None:
+                    events.append("review")
+                    async with connections() as held:
+                        await _save_brief(held, storage, op, execution_id=eid, body="The brief.")
+                elif scope.person_subject_id:
+                    events.append("person")
+                else:
+                    events.append("account")
+                    async with connections() as held:
+                        generation = await ensure_generation(held, op, context_id=cid)
+                        for index in range(3):
+                            contact = await insert_contact_entity(
+                                held, account_entity_id=op.account_id, full_name=f"Person {index}"
+                            )
+                            person = uuid4()
+                            await create_job(
+                                held,
+                                job_id=person,
+                                run_id=op.run_id,
+                                workspace_id=op.workspace_id,
+                                account_entity_id=op.account_id,
+                                subject_type="person",
+                                subject_entity_id=contact,
+                                profile_sha256="a" * 64,
+                                input_refs={**refs, "parent_job_id": str(op.job_id)},
+                            )
+                            await register_child(held, generation, job_id=person)
+                report = None
+                if kwargs.get("review") is None:
+                    report = ResearchUnitReport(
+                        context_id=context_id, job_id=scope.job_id, summary="Fixture."
+                    )
+                return QualityJobOutcome(
+                    execution_id=eid,
+                    status="completed",
+                    finalization_key=None,
+                    report=report,
+                    failure_code=None,
+                )
+
+            async def rewrite(**kwargs):
+                page_writes.append(kwargs["revision"])
+                events.append("pages")
+                async with connections() as held:
+                    await reconcile_generation(
+                        held,
+                        workspace_id=op.workspace_id,
+                        generation_id=kwargs["generation_id"],
+                        expected_revision=kwargs["revision"],
+                        processed_snapshot=True,
+                    )
+                return {"applied": True}
+
+            monkeypatch.setattr(page_writer_runtime, "rewrite_account_pages", rewrite)
+            settings = load_settings().model_copy(update={"arv2_account_max_parallel_jobs": 1})
+            handler = Arv2AccountResearchWorkHandler(
+                settings=settings,
+                conn_factory=connections,
+                artifacts=None,
+                storage=storage,
+                clients=None,
+                model_provider=None,
+                model_id="fixture/research",
+                writer=None,
+                quality_runner=runner,
+                page_writer=object(),
+                queue=queue,
+            )
+            assert handler.max_in_flight == 1
+
+            def composed(row):
+                person = (
+                    {"subject_kind": "person", "contact_id": row.subject_entity_id}
+                    if row.subject_type == "person"
+                    else {}
+                )
+                return SimpleNamespace(
+                    job=row,
+                    run=run,
+                    scope=replace(scope, job_id=row.job_id, **person),
+                    bundle=SimpleNamespace(manifest_sha256=lambda: "a" * 64),
+                    model_id="fixture/research",
+                    task_instruction="Research.",
+                )
+
+            async def compose(_conn, row):
+                return composed(row)
+
+            async def compose_quality(_conn, row, _run):
+                return composed(row)
+
+            async def landed(timeout_s):
+                del timeout_s
+
+            handler._compose = compose
+            handler._compose_quality = compose_quality
+            handler._tool_runtime = lambda _composition: SimpleNamespace(wait_for_inflight=landed)
+
+            def context(offer):
+                return WorkContext(
+                    task_id=uuid4(),
+                    work_id=WorkId(offer["work_id"]),
+                    worker_id="one-slot",
+                    lease_generation=LeaseGeneration(1),
+                    payload=offer["payload"],
+                    stop_requested=asyncio.Event(),
+                    lease_lost=asyncio.Event(),
+                )
+
+            async def drive():
+                running = {
+                    asyncio.create_task(
+                        handler.handle(
+                            context(
+                                {
+                                    "work_id": job.job_id,
+                                    "payload": {
+                                        "job_id": str(job.job_id),
+                                        "run_id": str(job.run_id),
+                                        "workspace_id": job.workspace_id,
+                                    },
+                                }
+                            )
+                        )
+                    )
+                }
+                seen: set[str] = set()
+                while True:
+                    if running:
+                        done, _ = await asyncio.wait(running, timeout=0.05)
+                        for task in done:
+                            running.discard(task)
+                            task.result()
+                    await handler.sweep_quality()
+                    for key, offer in queue.offers.items():
+                        if key not in seen:
+                            seen.add(key)
+                            running.add(asyncio.create_task(handler.handle(context(offer))))
+                    if page_writes and not running:
+                        return
+
+            await asyncio.wait_for(drive(), timeout=60)
+            assert events.count("account") == 1
+            assert events.count("person") == 3
+            assert events.index("review") > max(
+                i for i, event in enumerate(events) if event == "person"
+            )
+            assert events[-2:] == ["review", "pages"]
+            assert events.count("pages") == 1
+
+    run_async(case())
+
+
+class _Queue:
+    def __init__(self):
+        self.offers = {}
+
+    async def enqueue(self, **kwargs):
+        key = kwargs["dedup_key"]
+        existed = key in self.offers
+        self.offers[key] = kwargs
+        return not existed

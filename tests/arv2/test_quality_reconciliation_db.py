@@ -530,6 +530,7 @@ def test_fleet_routes_to_editor_and_fences_lease(tmp_path, bad_lease, monkeypatc
                 _quality_runner=researcher,
                 _jobs=asyncio.Semaphore(1),
                 _settings=SimpleNamespace(arv2_display_model="offline"),
+                _person_stall=lambda: None,
             )
             handler._focused_reconciliation = lambda *args: (
                 Arv2AccountResearchWorkHandler._focused_reconciliation(handler, *args)

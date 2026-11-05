@@ -11,7 +11,7 @@ from sqlalchemy import text
 
 from clue_agents import AgentWorkspaceFactory, ScriptedAgentChatModel, WorkspaceRootPolicy
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
-from clue_api.arv2 import quality_acquisition
+from clue_api.arv2 import page_writer_runtime, quality_acquisition
 from clue_api.arv2.account_research_catalog import arv2_account_profile_sha256
 from clue_api.arv2.account_research_driver import Arv2AccountResearchWorkHandler
 from clue_api.arv2.account_research_launch import launch_arv2_account_research
@@ -91,6 +91,12 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(
         return await real_recover(conn, storage, scope)
 
     monkeypatch.setattr(quality_acquisition, "recover_acquisitions", counting_recover)
+
+    # This fixture's workspaces save no snapshots, which is where a real turn's brief is found.
+    async def saved_brief(conn, storage, scope, execution_id):
+        return "Pursue: the one brief."
+
+    monkeypatch.setattr(page_writer_runtime, "brief_of_execution", saved_brief)
 
     async def case():
         async with rollback_conn() as conn:
@@ -173,7 +179,9 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(
                 def build(self, **kwargs):
                     raise AssertionError("legacy agent must not run for a quality job")
 
-            async def runner(*, scope, context_id, runtime, objective, model_id, unit_key=None):
+            async def runner(
+                *, scope, context_id, runtime, objective, model_id, unit_key=None, review=None
+            ):
                 calls.append(unit_key)
                 scopes.append(scope)
                 assert scope.input_refs["quality_recipe_version"] == CURRENT_RECIPE_VERSION
@@ -255,6 +263,29 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(
 
                 class Models:
                     def build(self, **kwargs):
+                        if review is not None:
+                            return ScriptedAgentChatModel(
+                                responses=(
+                                    call(
+                                        "read_file",
+                                        {"file_path": "/work/review/input.json"},
+                                        "review-input",
+                                    ),
+                                    call(
+                                        "write_file",
+                                        {
+                                            "file_path": "/outputs/page-brief.md",
+                                            "content": "Pursue: the one brief.",
+                                        },
+                                        "review-brief",
+                                    ),
+                                    call(
+                                        "finalize_turn",
+                                        {"status": "completed", "user_message": "Reviewed."},
+                                        "review-final",
+                                    ),
+                                )
+                            )
                         return ReceiptModel(
                             responses=prefix
                             + [
@@ -300,6 +331,7 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(
                     limits=Allowance(15, 25, 2),
                     unit_key=unit_key,
                     checkpointer_factory=checkpoints,
+                    review=review,
                 )
                 result = await owner.run(objective=objective)
 
@@ -312,7 +344,7 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(
                     result.execution_id,
                     result.status.value,
                     result.finalization_ref.artifact_key if result.finalization_ref else None,
-                    await owner.report(result),
+                    None if review is not None else await owner.report(result),
                     result.failure_code,
                 )
 
@@ -372,12 +404,12 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(
             assert recovered == [jid]
             assert events[0] == "landed", events
             initial = await read_job(conn, job_id=jid)
-            # Recipe 25: the researcher finalizes without pages; the driver's page writer
-            # writes them (one seller-brief call, one page call) before the job settles.
+            # Recipe 40: the researcher finalizes without a brief or pages, and the job settles,
+            # which frees its slot. The pages wait for the review.
             assert result.outcome == "completed", (result, initial.finalization)
-            assert writes == [False, True]
+            assert writes == []
             assert initial.finalization["coverage"]["missing_pages"] == []
-            assert initial.finalization["coverage"]["published_pages"] == ["insights", "overview"]
+            assert initial.finalization["coverage"]["deferred_pages"] == ["insights", "overview"]
             assert initial.finalization["spend"]["unpriced_model_calls"] == 5
             assert initial.finalization["spend"]["cost_complete"] is False
             assert initial.finalization["schema_version"] == "quality-job-v1"
@@ -403,12 +435,11 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(
                 stop_requested=asyncio.Event(),
                 lease_lost=asyncio.Event(),
             )
-            # Once the people settle, the account's pages are the writer's (the seller brief is
-            # reused), not the researcher's. Recipe 26: nothing changed since the first write, so
-            # the revision settles without another model call.
+            # Once the people settle, the agent reviews and writes its brief, and the driver's page
+            # writer writes the account's pages (one seller-brief call, one page call).
             rewrite = await handler.handle(continuation)
             assert rewrite.outcome == "completed" and rewrite.references["applied"] is True
-            assert rewrite.references["unchanged"] is True
+            assert len(calls) == 2 and calls[1].startswith("review:")
             assert writes == [False, True]
             overview = await read_page(conn, scopes[0], context_id=run.context_id, page="overview")
             fit = next(
@@ -428,7 +459,7 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(
             # A redelivered continuation is a no-op: no second rewrite, no researcher call.
             assert (await handler.handle(continuation)).outcome == "completed"
             assert writes == [False, True]
-            assert len(calls) == 1
+            assert len(calls) == 2
             # No legacy Luna display or repeat initial task was offered.
             assert len(queue.offers) == 1
             workspaces.close()
