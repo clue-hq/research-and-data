@@ -3,6 +3,7 @@
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
@@ -24,6 +25,7 @@ from clue_api.arv2.page_writer_runtime import PageWriterModels
 from clue_api.arv2.quality_catalog import CURRENT_RECIPE_VERSION
 from clue_api.arv2.quality_context import read_context
 from clue_api.arv2.quality_execution import Allowance, bind_execution
+from clue_api.arv2.quality_generation import pending_continuations
 from clue_api.arv2.quality_pages import read_page
 from clue_api.arv2.quality_results import QualityJobOutcome
 from clue_api.arv2.research_operations import OperationScope
@@ -595,5 +597,55 @@ def test_an_operator_resume_restarts_the_count(tmp_path):
             await claim()
             assert len(composed) == 3  # the resumed job gets another try
             assert (await _status(conn, child))[0] != "needs_review"
+
+    run_async(case())
+
+
+async def _account_turn_crashes(conn, tmp_path, *, recipe):
+    op, _, generation, _ = await _waiting_account(
+        conn, tmp_path, recipe=recipe, idle_minutes=31, finish_parent=False
+    )
+
+    @asynccontextmanager
+    async def connections():
+        yield conn
+
+    handler = Arv2AccountResearchWorkHandler(
+        settings=load_settings(),
+        conn_factory=connections,
+        artifacts=None,
+        storage=FsStorage(tmp_path),
+        clients=None,
+        model_provider=None,
+        model_id="fixture/research",
+        writer=None,
+    )
+
+    async def crash(_conn, _job):
+        raise RuntimeError("the first turn failed")
+
+    handler._compose = crash
+    result = await handler.handle(work(op.job_id, op.run_id, op.workspace_id))
+    return result, generation
+
+
+def test_a_crashed_first_turn_still_reaches_the_final_step(tmp_path):
+    # Every person's contact page waits for that step, so without it they would never be written.
+    async def case():
+        async with rollback_conn() as conn:
+            result, generation = await _account_turn_crashes(conn, tmp_path, recipe=40)
+            assert result.outcome == "needs_review"
+            pending = await pending_continuations(conn, stall_after=timedelta(minutes=30))
+            assert [g.generation_id for g in pending] == [generation.generation_id]
+
+    run_async(case())
+
+
+def test_recipe_39_crash_offers_nothing(tmp_path):
+    async def case():
+        async with rollback_conn() as conn:
+            result, _ = await _account_turn_crashes(conn, tmp_path, recipe=39)
+            assert result.outcome == "needs_review"
+            assert not await pending_continuations(conn, stall_after=timedelta(minutes=30))
 
     run_async(case())

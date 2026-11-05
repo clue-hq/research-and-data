@@ -1271,10 +1271,37 @@ class Arv2AccountResearchWorkHandler:
                 )
                 if landed:
                     await self._store.refresh_run_status(conn, run_id=scope.run_id)
+                    await self._final_step_after_crash(conn, scope, attempt=attempt)
         except Exception:  # noqa: BLE001 — the fleet result is owed whatever the database does
             log.exception("arv2.account_contain_failed", job_id=str(scope.job_id))
             return "needs_review"
         return "needs_review" if landed else self._superseded(scope, _Claim(attempt))
+
+    async def _final_step_after_crash(
+        self, conn: AsyncConnection, scope: _Scope, *, attempt: int
+    ) -> None:
+        """Recipe 40: every person's contact page waits for the account's final step, so an account
+        whose first turn crashed after nominating people must still reach that step."""
+        from clue_api.arv2.quality_generation import initial_settle_event_id, signal
+
+        job = await self._store.read_job(conn, job_id=scope.job_id)
+        if job is None or job.subject_type != "account" or not at_least(job, BRIEF_AFTER_PEOPLE):
+            return
+        generation_id = (
+            await conn.execute(
+                text("""SELECT generation_id FROM arv2_account_research_generation
+                    WHERE initial_job_id=:job AND workspace_id=:ws"""),
+                {"job": scope.job_id, "ws": scope.workspace_id},
+            )
+        ).scalar_one_or_none()
+        if generation_id is not None:
+            await signal(
+                conn,
+                workspace_id=scope.workspace_id,
+                generation_id=generation_id,
+                event_id=initial_settle_event_id(scope.job_id, attempt),
+                reason="initial_settled",
+            )
 
     async def _not_claimable(
         self, conn: AsyncConnection, scope: _Scope, *, task_attempt: int
