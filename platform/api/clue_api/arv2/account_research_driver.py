@@ -673,7 +673,9 @@ class Arv2AccountResearchWorkHandler:
 
                 if UUID(str(work.work_id)) != continuation_work_id(generation):
                     return WorkResult(outcome="completed", references={"superseded_lease": True})
-                pending = await pending_continuations(conn, generation_id=generation_id)
+                pending = await pending_continuations(
+                    conn, generation_id=generation_id, stall_after=self._person_stall()
+                )
                 if not pending:
                     return WorkResult(outcome="completed", references={"batch_not_ready": True})
                 if pending[0].input_revision != revision:
@@ -958,6 +960,9 @@ class Arv2AccountResearchWorkHandler:
                     scopes.append((await self._compose(conn, job)).scope)
         return tuple(scopes)
 
+    def _person_stall(self) -> timedelta:
+        return timedelta(seconds=self._settings.arv2_person_stall_wait_s)
+
     async def sweep_quality(self) -> int:
         """Recover result signals and lost offers; all external effects follow DB commit."""
         from clue_api.arv2.account_research_launch import QueuedJob
@@ -999,7 +1004,7 @@ class Arv2AccountResearchWorkHandler:
             ).all()
             for row in missing:
                 await record_child_result(conn, workspace_id=row.workspace_id, job_id=row.job_id)
-            pending = await pending_continuations(conn)
+            pending = await pending_continuations(conn, stall_after=self._person_stall())
             from clue_api.arv2.quality_person_release import ready_person_jobs
 
             children = await ready_person_jobs(conn)
@@ -1878,6 +1883,7 @@ class Arv2AccountResearchWorkHandler:
 
         scope = composition.scope
         context_id = composition.run.context_id
+        from clue_api.arv2.quality_generation import BRIEF_AFTER_PEOPLE
         from clue_api.arv2.quality_markdown_dossier import uses_markdown_dossier
 
         if (
@@ -1889,6 +1895,13 @@ class Arv2AccountResearchWorkHandler:
             or context_id is None
         ):
             return result
+        if at_least(scope, BRIEF_AFTER_PEOPLE):
+            # Recipe 40: the account's brief comes after its people, and its pages after the brief.
+            # The job settles now, which frees its slot; the generation waits for the review.
+            if not scope.person_subject_id:
+                return replace(result, deferred_pages=("insights", "overview"))
+            if (scope.input_refs or {}).get("parent_job_id"):
+                return replace(result, deferred_pages=("contact",))
         if scope.person_subject_id and at_least(scope, RELEASE_AT_NOMINATION):
             from clue_api.arv2 import quality_person_release
 

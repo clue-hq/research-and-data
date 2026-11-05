@@ -499,6 +499,8 @@ class Settings(BaseSettings):
     # ``agent_long_turn_alert_s`` still warns when a job runs long.
     # Env: ``CLUE_ARV2_ACCOUNT_MAX_RUNTIME_S``.
     arv2_account_max_runtime_s: int = Field(default=0, ge=0)
+    # Recipe 40: an account stops waiting on a started person after this long without progress.
+    arv2_person_stall_wait_s: int = Field(default=1800, ge=1)
     # Recipe 26+ research conversations (docs/superpowers/plans/2026-10-07-research-cost-phase1.md).
     # Past CLEAR_TRIGGER tokens, the oldest processed tool results are shown to the model as a
     # short "re-read <path>" placeholder, in steps of (trigger - target) so the prompt stays

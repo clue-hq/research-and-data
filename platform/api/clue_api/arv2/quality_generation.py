@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from datetime import timedelta
 from typing import Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -408,7 +409,11 @@ BRIEF_AFTER_PEOPLE = 40
 
 
 async def pending_continuations(
-    conn: AsyncConnection, *, limit: int = 100, generation_id: UUID | None = None
+    conn: AsyncConnection,
+    *,
+    limit: int = 100,
+    generation_id: UUID | None = None,
+    stall_after: timedelta | None = None,
 ) -> tuple[Generation, ...]:
     if not 1 <= limit <= 1000:
         raise ValueError("invalid continuation batch size")
@@ -436,6 +441,15 @@ async def pending_continuations(
                     >= :final_step
                   THEN child.status<>'suspended'
                     AND COALESCE(child.input_refs->>'privacy_stopped','false')<>'true'
+                    -- Recipe 40: stop waiting on a person who started and has shown no progress
+                    -- for this long. The job is left running; one not started is never skipped.
+                    AND NOT (
+                      COALESCE((j.input_refs->>'quality_recipe_version')::int,0)>=:brief_after
+                      AND CAST(:stall_s AS double precision) IS NOT NULL
+                      AND child.status='in_progress'
+                      AND GREATEST(child.started_at,(SELECT max(a.created_at)
+                          FROM arv2_quality_activity a WHERE a.job_id=child.job_id))
+                        < now()-make_interval(secs=>CAST(:stall_s AS double precision)))
                   ELSE NOT EXISTS (SELECT 1 FROM arv2_research_import_ready i
                     WHERE i.job_id=child.job_id AND i.workspace_id=g.workspace_id) END)
             AND NOT EXISTS (SELECT 1 FROM arv2_account_research_generation newer
@@ -446,7 +460,13 @@ async def pending_continuations(
                 AND (newer.created_at,newer.generation_id)>(g.created_at,g.generation_id))
           ))
         ORDER BY g.updated_at,g.generation_id LIMIT :limit"""),
-                {"limit": limit, "generation": generation_id, "final_step": FINAL_PAGE_STEP},
+                {
+                    "limit": limit,
+                    "generation": generation_id,
+                    "final_step": FINAL_PAGE_STEP,
+                    "brief_after": BRIEF_AFTER_PEOPLE,
+                    "stall_s": stall_after.total_seconds() if stall_after is not None else None,
+                },
             )
         )
         .mappings()
