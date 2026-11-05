@@ -107,6 +107,7 @@ class _Harness:
         self.scope = replace(scope, catalog_version="v4", input_refs={"quality_recipe_version": 40})
         self.calls: list[str] = []
         self.review_kwargs: list[dict] = []
+        self.executions: list = []
         self.fail_review = False
         self.during_review = None
         self.needs_review: list[bool] = []
@@ -147,6 +148,7 @@ class _Harness:
         if self.fail_review:
             raise RuntimeError("the agent could not resume")
         eid = await self._bind()
+        self.executions.append(eid)
         if self.brief is not None:
             await _save_brief(self.conn, self.storage, self.op, execution_id=eid, body=self.brief)
         return QualityJobOutcome(
@@ -566,6 +568,9 @@ def test_review_that_nominates_writes_no_pages(tmp_path, monkeypatch):
             await harness.continuation()
             assert harness.calls == ["review", "review", "account_pages"]
             assert not await harness.pending()
+            # The second review continues from the first, so it remembers what it decided.
+            second = harness.review_kwargs[1]["review"]
+            assert second["_source_execution"] == str(harness.executions[0])
 
     run_async(case())
 

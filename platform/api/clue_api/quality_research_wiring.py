@@ -622,12 +622,16 @@ class _InlineChild:
             return result
 
 
+REVIEW_INPUT_PATH = "work/review/input.json"
+
+
 async def copy_source_run_files(
     *,
     lease: AgentWorkspaceLease,
     source_lease: AgentWorkspaceLease,
     readable_prefixes: Sequence[str],
     source_thread_id: str,
+    exclude: Sequence[str] = (),
 ) -> dict[str, JsonValue]:
     """Copy a source run's notes and raw reads into a reconciling turn's own folders.
 
@@ -644,7 +648,7 @@ async def copy_source_run_files(
         if prefix not in readable_prefixes:
             continue
         for entry in await source_lease.backend.list_entries(prefix):
-            if entry.path not in existing:
+            if entry.path not in existing and entry.path not in exclude:
                 content = await source_lease.backend.read_text(entry.path)
                 if prefix == "reads":
                     await asyncio.to_thread(
@@ -704,10 +708,11 @@ async def write_review_input(
 ) -> None:
     """Write what a review turn reads, unless this turn already has it (a resumed turn keeps its
     own)."""
-    path = "work/review/input.json"
-    if path not in {e.path for e in await lease.backend.list_entries("work")}:
+    if REVIEW_INPUT_PATH not in {e.path for e in await lease.backend.list_entries("work")}:
+        people = {k: v for k, v in review.items() if not k.startswith("_")}
         await lease.backend.write_text(
-            path, json.dumps({**review, "source_snapshot": source_snapshot}, ensure_ascii=False)
+            REVIEW_INPUT_PATH,
+            json.dumps({**people, "source_snapshot": source_snapshot}, ensure_ascii=False),
         )
 
 
@@ -1094,8 +1099,13 @@ class ResearchUnitRuntime:
         continuation_config = None
         if self.reconciliation is not None or self.review is not None:
             # The source identity is derived from the authorized parent job, never model input.
+            # Recipe 40: a later review continues from the review before it, so it remembers what
+            # it decided and who it nominated.
+            previous_review = (self.review or {}).get("_source_execution")
             source_execution = ExecutionId(
-                research_execution_id(self.scope.job_id, self.scope.restart_count)
+                UUID(previous_review)
+                if previous_review
+                else research_execution_id(self.scope.job_id, self.scope.restart_count)
             )
             async with self.connections() as conn:
                 await resolve_authority(conn, self.scope, source_execution)
@@ -1234,6 +1244,8 @@ class ResearchUnitRuntime:
                         source_lease=source_lease,
                         readable_prefixes=resolved.profile.workspace.readable_prefixes,
                         source_thread_id=f"research-quality-{source_execution}",
+                        # An earlier review's input is out of date; this turn gets its own.
+                        exclude=(REVIEW_INPUT_PATH,),
                     )
                 finally:
                     await self.workspaces.release_saved(source_lease)
@@ -1312,7 +1324,15 @@ class ResearchUnitRuntime:
             async def completion_guard(model_input: Any) -> None:
                 if model_input.status is FinalizeStatus.COMPLETED:
                     if self.review is not None:
-                        # The brief is the agent's; required_output_path checks that it exists.
+                        # Refused here, not through required_output_path, so the agent can repair
+                        # it: a missing required file ends the turn.
+                        entries = await lease.backend.list_entries("outputs")
+                        if not any(
+                            e.path == "outputs/page-brief.md" and e.byte_count for e in entries
+                        ):
+                            raise ValueError(
+                                "Write /outputs/page-brief.md, then call finalize_turn again."
+                            )
                         return
                     if self.reconciliation is not None:
                         from clue_api.arv2.quality_reconciliation import parse_updates
@@ -1380,7 +1400,7 @@ class ResearchUnitRuntime:
                 before_work=bindings.before_work,
                 required_output_path="outputs/reconciliation.json"
                 if self.reconciliation is not None
-                else "outputs/page-brief.md"
+                else None
                 if self.review is not None
                 else DOSSIER_PATH
                 if uses_markdown_dossier(self.scope)

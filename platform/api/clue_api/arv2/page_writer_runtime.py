@@ -473,6 +473,26 @@ async def brief_of_execution(
     return None
 
 
+async def latest_review_before(
+    conn: AsyncConnection, storage: StorageBackend, scope: JobScope, *, execution_id: UUID
+) -> UUID | None:
+    """This job's newest other turn that finished with a brief. Only a review writes one, and the
+    runtime refuses to finish a review without it, so a failed review is never continued from."""
+    executions = (
+        await conn.execute(
+            text("""SELECT e.execution_id FROM arv2_quality_execution e
+            WHERE e.workspace_id=:ws AND e.job_id=:job AND e.role='account_research'
+              AND e.execution_id<>:execution
+            ORDER BY e.created_at DESC"""),
+            {"ws": scope.workspace_id, "job": scope.job_id, "execution": execution_id},
+        )
+    ).scalars()
+    for candidate in executions.all():
+        if await brief_of_execution(conn, storage, scope, candidate) is not None:
+            return candidate
+    return None
+
+
 async def page_brief(conn: AsyncConnection, storage: StorageBackend, scope: JobScope) -> str | None:
     """The account researcher's newest /outputs/page-brief.md from this job's saved agent workspaces
     (research trial, guide v3); the job's saved verdict summary when there is none."""

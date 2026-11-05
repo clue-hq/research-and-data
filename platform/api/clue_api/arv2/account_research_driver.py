@@ -91,7 +91,11 @@ from clue_api.arv2.fleet_task import (
     arv2_display_work_id,
 )
 from clue_api.arv2.gemini_media_client import GeminiMediaClient, MediaBudget
-from clue_api.arv2.job_resume import ResearchRestartRequired, restart_on_claim
+from clue_api.arv2.job_resume import (
+    ResearchRestartRequired,
+    research_execution_id,
+    restart_on_claim,
+)
 from clue_api.arv2.knowledge_frontmatter import document_identity, parse_front_matter
 from clue_api.arv2.media_sources import MediaSourceKeys
 from clue_api.arv2.page_writer_runtime import PageWriterModels, page_writer_models
@@ -920,6 +924,16 @@ class Arv2AccountResearchWorkHandler:
         try:
             async with self._connection() as conn:
                 review = await review_input(conn, self._storage, scope, context_id)
+                previous = await page_writer_runtime.latest_review_before(
+                    conn,
+                    self._storage,
+                    scope,
+                    execution_id=research_execution_id(
+                        scope.job_id, scope.restart_count, f"review:{generation_id}:{revision}"
+                    ),
+                )
+                if previous is not None:
+                    review = {**review, "_source_execution": str(previous)}
             runtime = self._tool_runtime(composition)
             async with self._jobs:
                 outcome = await self._quality_runner(
