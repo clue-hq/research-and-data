@@ -402,6 +402,9 @@ async def signal_subject_change(conn: AsyncConnection, event: dict[str, Any]) ->
 #: Recipe 26+: a generation's pages are written once, after every person settles
 #: (docs/superpowers/plans/2026-10-07-research-cost-phase1.md Task 11).
 FINAL_PAGE_STEP = 26
+#: Recipe 40+: the account's one brief and its pages come after person research
+#: (docs/superpowers/specs/research-quality/2026-11-05-brief-after-person-research-design.md).
+BRIEF_AFTER_PEOPLE = 40
 
 
 async def pending_continuations(
