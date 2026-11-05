@@ -103,7 +103,11 @@ from clue_api.arv2.provider_ledger import (
 )
 from clue_api.arv2.quality_generation import FINAL_PAGE_STEP, initial_settle_event_id
 from clue_api.arv2.quality_person_release import RELEASE_AT_NOMINATION, parent_dossier_ready
-from clue_api.arv2.quality_generation import BRIEF_AFTER_PEOPLE, no_progress_attempts
+from clue_api.arv2.quality_generation import (
+    BRIEF_AFTER_PEOPLE,
+    no_progress_attempts,
+    review_waits_for_people,
+)
 from clue_api.arv2.quality_recipe import at_least
 from clue_api.arv2.quality_results import QualityJobOutcome, QualityJobRunner
 from clue_api.arv2.sinks import LedgerSink
@@ -678,6 +682,13 @@ class Arv2AccountResearchWorkHandler:
                     conn, generation_id=generation_id, stall_after=self._person_stall()
                 )
                 if not pending:
+                    if at_least(composition.scope, BRIEF_AFTER_PEOPLE):
+                        await review_waits_for_people(
+                            conn,
+                            workspace_id=workspace_id,
+                            generation_id=generation_id,
+                            revision=revision,
+                        )
                     return WorkResult(outcome="completed", references={"batch_not_ready": True})
                 if pending[0].input_revision != revision:
                     return WorkResult(outcome="completed", references={"checkpoint_pending": True})
@@ -899,6 +910,7 @@ class Arv2AccountResearchWorkHandler:
         the account lands ``needs_review``.
         """
         from clue_api.arv2 import page_writer_runtime
+        from clue_api.arv2.quality_generation import pending_continuations, reconcile_generation
         from clue_api.arv2.quality_review import review_input
 
         scope = composition.scope
@@ -925,6 +937,27 @@ class Arv2AccountResearchWorkHandler:
             if outcome.status != "completed":
                 raise RuntimeError(outcome.failure_code or "review_incomplete")
             async with self._connection() as conn:
+                if not await pending_continuations(
+                    conn, generation_id=generation_id, stall_after=self._person_stall()
+                ):
+                    # The agent nominated someone: no pages yet, and it reviews again after them.
+                    await reconcile_generation(
+                        conn,
+                        workspace_id=scope.workspace_id,
+                        generation_id=generation_id,
+                        expected_revision=revision,
+                        processed_snapshot=True,
+                    )
+                    await review_waits_for_people(
+                        conn,
+                        workspace_id=scope.workspace_id,
+                        generation_id=generation_id,
+                        revision=revision,
+                    )
+                    return WorkResult(
+                        outcome="completed",
+                        references={"generation_id": str(generation_id), "awaiting_people": True},
+                    )
                 brief_written = (
                     await page_writer_runtime.brief_of_execution(
                         conn, self._storage, scope, outcome.execution_id

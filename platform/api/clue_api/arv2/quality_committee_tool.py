@@ -22,8 +22,13 @@ from clue_api.arv2.quality_evidence import (
     resolve_source,
     validate_support,
 )
-from clue_api.arv2.quality_generation import ensure_generation, register_child
+from clue_api.arv2.quality_generation import (
+    BRIEF_AFTER_PEOPLE,
+    ensure_generation,
+    register_child,
+)
 from clue_api.arv2.quality_policy import advisory_research
+from clue_api.arv2.quality_recipe import at_least
 from clue_api.arv2.quality_relationships import (
     COMMITTEE,
     SELECTION,
@@ -90,10 +95,12 @@ class NominateCommitteeTool(_ResearchWriteTool):
         async with ctx.conn_factory() as conn:
             # Serialize nominees/cap checks, but permit FK KEY SHARE checks from generation
             # signals. UPDATE here caused the r18 job -> generation -> job lock cycle.
-            await conn.execute(
-                text("SELECT job_id FROM arv2_research_job WHERE job_id=:id FOR NO KEY UPDATE"),
-                {"id": self.scope.job_id},
-            )
+            parent_status = (
+                await conn.execute(
+                    text("SELECT status FROM arv2_research_job WHERE job_id=:id FOR NO KEY UPDATE"),
+                    {"id": self.scope.job_id},
+                )
+            ).scalar_one()
             contact, supports, refs = await self.candidate(conn, authority, args)
             generation = await ensure_generation(
                 conn, authority.grant.scope, context_id=authority.context_id
@@ -108,7 +115,13 @@ class NominateCommitteeTool(_ResearchWriteTool):
                     {"id": generation.generation_id, "job": job_id},
                 )
             ).scalar_one()
-            if count >= self.scope.committee_cap:
+            # Recipe 40: the cap is the first turn's setting for how many people to research. In a
+            # review the job has finished, and who to nominate next is the agent's decision.
+            reviewing = at_least(self.scope, BRIEF_AFTER_PEOPLE) and parent_status in (
+                "completed",
+                "needs_review",
+            )
+            if count >= self.scope.committee_cap and not reviewing:
                 raise ValueError("committee candidate cap reached; reconcile existing candidates")
             advisory = advisory_research(self.scope)
             selection: dict[str, JsonValue]

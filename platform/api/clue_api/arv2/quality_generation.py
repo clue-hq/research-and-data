@@ -505,6 +505,23 @@ async def pending_continuations(
     )
 
 
+async def review_waits_for_people(
+    conn: AsyncConnection, *, workspace_id: str, generation_id: UUID, revision: int
+) -> int:
+    """Recipe 40: a review met people still running, so it starts again once they settle or stall.
+
+    A fresh revision is what brings it back: a person who hangs signals nothing, and the fleet would
+    refuse a second offer of a revision it has already run.
+    """
+    return await signal(
+        conn,
+        workspace_id=workspace_id,
+        generation_id=generation_id,
+        event_id=uuid5(NAMESPACE_URL, f"research-review-waits:{generation_id}:{revision}"),
+        reason="person_result",
+    )
+
+
 async def deferred_contact_jobs(
     conn: AsyncConnection, *, workspace_id: str, generation_id: UUID
 ) -> list[UUID]:

@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+
 from clue_agents import AgentRole
 from clue_api.arv2.quality_results import ResearchUnitReport
 from clue_api.quality_research_wiring import CATALOG_ROOT, quality_profiles, quality_tools

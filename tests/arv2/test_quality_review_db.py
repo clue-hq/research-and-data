@@ -5,6 +5,7 @@ import hashlib
 import json
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from datetime import timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
@@ -14,7 +15,11 @@ from sqlalchemy import text
 
 from clue_api.arv2 import page_writer_runtime
 from clue_api.arv2.account_research_driver import Arv2AccountResearchWorkHandler
-from clue_api.arv2.account_research_store import read_job
+from clue_api.arv2.account_research_store import create_job, read_job
+from clue_api.arv2.quality_committee_tool import (
+    NominateBriefedWebCommitteeTool,
+    NominateBriefedWebInput,
+)
 from clue_api.arv2.quality_execution import Allowance, bind_execution
 from clue_api.arv2.quality_generation import (
     continuation_work_id,
@@ -22,15 +27,21 @@ from clue_api.arv2.quality_generation import (
     read_generation,
     reconcile_generation,
     record_child_result,
+    register_child,
     signal,
 )
+from clue_api.arv2.quality_person_release import ready_person_jobs
 from clue_api.arv2.quality_results import QualityJobOutcome
 from clue_api.arv2.quality_review import review_input
 from clue_config import load_settings
+from clue_core import ExecutionId, OperationId
 from clue_fleet import LeaseGeneration, WorkId
 from clue_fleet.work_worker import WorkContext
+from clue_research.identity import insert_contact_entity
 from clue_storage.fs import FsStorage
+from clue_toolbelt import ToolContext
 from tests.arv2.account_research_job_helpers import finish_seeded_job
+from tests.arv2.test_quality_evidence_db import save
 from tests.arv2.test_quality_execution_db import execution
 from tests.arv2.test_quality_generation_db import _waiting_account
 from tests.claimstore.conftest import (  # noqa: F401
@@ -215,6 +226,7 @@ async def _ready(conn, tmp_path, monkeypatch, *, brief="Pursue: the one brief.",
     harness.patch_pages(monkeypatch)
     if settle:
         await _settle_person(conn, op, child, summary="Found their own words.", gaps=["No talks."])
+    harness.first_revision = (await harness.current()).input_revision
     return harness, child
 
 
@@ -411,5 +423,207 @@ def test_settled_job_finalization_is_untouched_by_the_review(tmp_path, monkeypat
             await harness.continuation()
             after = await read_job(conn, job_id=harness.scope.job_id)
             assert (before.status, before.finalization) == (after.status, after.finalization)
+
+    run_async(case())
+
+
+async def _nominate_with_the_real_tool(conn, tmp_path, op, scope, cid, *, cap):
+    storage = FsStorage(tmp_path)
+    scope = replace(
+        scope,
+        catalog_version="v4",
+        committee_cap=cap,
+        input_refs={"quality_recipe_version": 40},
+    )
+    eid = await execution(conn, op, scope.project_id)
+    await bind_execution(
+        conn,
+        op,
+        execution_id=eid,
+        context_id=cid,
+        role="account_research",
+        limits=Allowance(20, 40, 4),
+    )
+    body = "Alex Example now leads operations. Profile: https://www.linkedin.com/in/alex-example/"
+    source = await save(conn, storage, op, body)
+
+    @asynccontextmanager
+    async def connections():
+        yield conn
+
+    tool = NominateBriefedWebCommitteeTool(scope, storage, purge_unevidenced=True)
+    args = NominateBriefedWebInput(
+        name="Alex Example",
+        linkedin_url="https://www.linkedin.com/in/alex-example/",
+        source_id=source.source_id,
+        persona_key="operations",
+        role="champion",
+        rationale="Their predecessor has left; Alex now holds this responsibility.",
+        research_brief="Research Alex. The person who held this seat has left the company.",
+    )
+
+    async def nominate():
+        ctx = ToolContext(
+            workspace_id=scope.workspace_id,
+            actor="agent",
+            conn_factory=connections,
+            execution_id=ExecutionId(eid),
+            operation_id=OperationId(uuid4()),
+        )
+        return await tool.invoke(args, ctx)
+
+    return nominate
+
+
+def test_review_can_nominate_past_the_cap(tmp_path):
+    async def case():
+        async with rollback_conn() as conn:
+            op, scope, generation, _ = await _waiting_account(conn, tmp_path, idle_minutes=1)
+            nominate = await _nominate_with_the_real_tool(
+                conn, tmp_path, op, scope, generation.context_id, cap=1
+            )
+            receipt = await nominate()
+            job = await read_job(conn, job_id=receipt.references["person_job_id"])
+            assert job.status == "not_started"
+            ready = await ready_person_jobs(conn, generation_id=generation.generation_id)
+            assert str(job.job_id) in {str(row["job_id"]) for row in ready}
+
+    run_async(case())
+
+
+def test_first_turn_still_respects_the_cap(tmp_path):
+    async def case():
+        async with rollback_conn() as conn:
+            op, scope, generation, _ = await _waiting_account(
+                conn, tmp_path, idle_minutes=1, finish_parent=False
+            )
+            nominate = await _nominate_with_the_real_tool(
+                conn, tmp_path, op, scope, generation.context_id, cap=1
+            )
+            with pytest.raises(ValueError, match="cap reached"):
+                await nominate()
+
+    run_async(case())
+
+
+def test_renominating_someone_reuses_their_job(tmp_path):
+    async def case():
+        async with rollback_conn() as conn:
+            op, scope, generation, _ = await _waiting_account(conn, tmp_path, idle_minutes=1)
+            nominate = await _nominate_with_the_real_tool(
+                conn, tmp_path, op, scope, generation.context_id, cap=1
+            )
+            first = await nominate()
+            again = await nominate()
+            assert first.references["person_job_id"] == again.references["person_job_id"]
+            assert again.references["replayed"] is True
+
+    run_async(case())
+
+
+async def _add_nominee(harness):
+    """What a nomination leaves behind for the flow: a registered person who has not started."""
+    contact = await insert_contact_entity(
+        harness.conn, account_entity_id=harness.op.account_id, full_name="The replacement"
+    )
+    job = uuid4()
+    await create_job(
+        harness.conn,
+        job_id=job,
+        run_id=harness.op.run_id,
+        workspace_id=harness.op.workspace_id,
+        account_entity_id=harness.op.account_id,
+        subject_type="person",
+        subject_entity_id=contact,
+        profile_sha256="a" * 64,
+        input_refs={"parent_job_id": str(harness.op.job_id), "quality_recipe_version": 40},
+    )
+    await register_child(harness.conn, harness.generation, job_id=job)
+    return job
+
+
+def test_review_that_nominates_writes_no_pages(tmp_path, monkeypatch):
+    async def case():
+        async with rollback_conn() as conn:
+            harness, _ = await _ready(conn, tmp_path, monkeypatch)
+            nominees = []
+
+            async def nominate():
+                nominees.append(await _add_nominee(harness))
+
+            harness.during_review = nominate
+            revision = (await harness.current()).input_revision
+            result = await harness.continuation()
+            assert result.outcome == "completed"
+            assert harness.calls == ["review"]
+            assert (await harness.current()).reconciled_revision == revision
+            assert not await harness.pending()
+
+            harness.during_review = None
+            await _settle_person(conn, harness.op, nominees[0], summary="The replacement.")
+            [pending] = await harness.pending()
+            assert pending.input_revision > revision
+            await harness.continuation()
+            assert harness.calls == ["review", "review", "account_pages"]
+            assert not await harness.pending()
+
+    run_async(case())
+
+
+def test_a_nominee_who_hangs_does_not_stall_the_account(tmp_path, monkeypatch):
+    async def case():
+        async with rollback_conn() as conn:
+            harness, _ = await _ready(conn, tmp_path, monkeypatch)
+            nominees = []
+
+            async def nominate():
+                nominees.append(await _add_nominee(harness))
+
+            harness.during_review = nominate
+            await harness.continuation()
+            harness.during_review = None
+            await conn.execute(
+                text("""UPDATE arv2_research_job SET status='in_progress',
+                    started_at=now()-interval '31 minutes' WHERE job_id=:job"""),
+                {"job": nominees[0]},
+            )
+            [pending] = await pending_continuations(conn, stall_after=timedelta(minutes=30))
+            await harness.continuation(revision=pending.input_revision)
+            assert harness.calls == ["review", "review", "account_pages"]
+
+    run_async(case())
+
+
+def test_nominee_survives_a_crashed_review(tmp_path, monkeypatch):
+    async def case():
+        async with rollback_conn() as conn:
+            harness, _ = await _ready(conn, tmp_path, monkeypatch)
+            nominees = []
+
+            async def nominate():
+                nominees.append(await _add_nominee(harness))
+
+            harness.during_review = nominate
+            harness.fail_review = True
+            first = await harness.continuation()
+            assert first.requeue is True
+            harness.during_review, harness.fail_review = None, False
+            ready = await ready_person_jobs(conn, generation_id=harness.generation.generation_id)
+            assert nominees[0] in {row["job_id"] for row in ready}
+
+            # The retry finds the nominee still running, so it waits rather than writing pages.
+            await harness.continuation(attempt=2)
+            assert harness.calls == ["review"]
+
+            # Whether the nominee then hangs or finishes, a fresh revision carries the flow on.
+            await conn.execute(
+                text("""UPDATE arv2_research_job SET status='in_progress',
+                    started_at=now()-interval '31 minutes' WHERE job_id=:job"""),
+                {"job": nominees[0]},
+            )
+            [pending] = await pending_continuations(conn, stall_after=timedelta(minutes=30))
+            assert pending.input_revision > harness.first_revision
+            await harness.continuation(revision=pending.input_revision)
+            assert harness.calls == ["review", "review", "account_pages"]
 
     run_async(case())

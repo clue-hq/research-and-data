@@ -170,7 +170,7 @@ def test_initial_terminal_history_late_people_and_replay(tmp_path):
 
 
 async def _waiting_account(
-    conn, tmp_path, *, recipe=40, child_status="in_progress", idle_minutes=0
+    conn, tmp_path, *, recipe=40, child_status="in_progress", idle_minutes=0, finish_parent=True
 ):
     """An account whose first turn settled at ``recipe``, with one person in ``child_status``."""
     op, scope, cid = await setup(conn, FsStorage(tmp_path))
@@ -203,6 +203,8 @@ async def _waiting_account(
             WHERE job_id=:job"""),
         {"recipe": recipe, "job": op.job_id},
     )
+    if not finish_parent:
+        return op, scope, generation, child
     await finish_seeded_job(
         conn,
         model_rounds=0,
@@ -296,7 +298,8 @@ def test_privacy_stopped_person_is_not_waited_for(tmp_path):
             _, _, generation, child = await _waiting_account(conn, tmp_path, idle_minutes=1)
             await conn.execute(
                 text("""UPDATE arv2_research_job SET
-                    input_refs=input_refs||jsonb_build_object('privacy_stopped',true) WHERE job_id=:job"""),
+                    input_refs=input_refs||jsonb_build_object('privacy_stopped',true)
+                    WHERE job_id=:job"""),
                 {"job": child},
             )
             pending = await pending_continuations(conn, stall_after=_STALL)
