@@ -391,6 +391,7 @@ async def resume_research_job(
         text("""
       UPDATE arv2_research_job SET status='suspended', failure_code=NULL, failure_message=NULL,
         finished_at=NULL, updated_at=now(),
+        input_refs=input_refs-'no_progress',
         restart_count=restart_count + CASE WHEN :restart THEN 1 ELSE 0 END
       WHERE job_id=:job AND workspace_id=:ws
     """),

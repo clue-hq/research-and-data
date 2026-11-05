@@ -400,6 +400,31 @@ async def signal_subject_change(conn: AsyncConnection, event: dict[str, Any]) ->
         )
 
 
+async def no_progress_attempts(conn: AsyncConnection, job: Any) -> int:
+    """How many claims in a row this job has had with no new activity, this claim included.
+
+    Called on the claiming connection, so a worker that dies straight after the claim still counts.
+    A deploy that stops a working job does not, because that job's activity has moved on.
+    """
+    activity = (
+        await conn.execute(
+            text("SELECT count(*) FROM arv2_quality_activity WHERE job_id=:job"),
+            {"job": job.job_id},
+        )
+    ).scalar_one()
+    prior = (job.input_refs or {}).get("no_progress") or {}
+    attempts = int(prior.get("attempts", 0)) + 1 if prior.get("activity_count") == activity else 1
+    await conn.execute(
+        text("""UPDATE arv2_research_job SET input_refs=COALESCE(input_refs,'{}'::jsonb)
+            || jsonb_build_object('no_progress',
+                jsonb_build_object('activity_count',CAST(:activity AS int),
+                                   'attempts',CAST(:attempts AS int)))
+            WHERE job_id=:job"""),
+        {"activity": activity, "attempts": attempts, "job": job.job_id},
+    )
+    return attempts
+
+
 #: Recipe 26+: a generation's pages are written once, after every person settles
 #: (docs/superpowers/plans/2026-10-07-research-cost-phase1.md Task 11).
 FINAL_PAGE_STEP = 26

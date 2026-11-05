@@ -18,14 +18,17 @@ from clue_api.arv2.account_research_launch import launch_arv2_account_research
 from clue_api.arv2.account_research_store import read_job, read_run
 from clue_api.arv2.claim_writer import LenientClaimWriter
 from clue_api.arv2.display.recipes import load_display_recipes
+from clue_api.arv2.job_resume import resume_research_job
 from clue_api.arv2.page_writer import SECTIONS
 from clue_api.arv2.page_writer_runtime import PageWriterModels
 from clue_api.arv2.quality_catalog import CURRENT_RECIPE_VERSION
 from clue_api.arv2.quality_context import read_context
-from clue_api.arv2.quality_execution import Allowance
+from clue_api.arv2.quality_execution import Allowance, bind_execution
 from clue_api.arv2.quality_pages import read_page
 from clue_api.arv2.quality_results import QualityJobOutcome
+from clue_api.arv2.research_operations import OperationScope
 from clue_api.quality_research_wiring import ResearchUnitRuntime, quality_tools
+from clue_config import load_settings
 from clue_fleet import LeaseGeneration, WorkId
 from clue_fleet.lease import acquire_work_lease
 from clue_fleet.work_worker import WorkContext
@@ -34,6 +37,8 @@ from tests.arv2.icp_fixture import seed_icp_fixture, settings_for
 from tests.arv2.test_account_research_driver_db import _Clients
 from tests.arv2.test_account_research_launch_db import _request
 from tests.arv2.test_quality_context_db import persona
+from tests.arv2.test_quality_execution_db import execution
+from tests.arv2.test_quality_generation_db import _waiting_account
 from tests.arv2.test_quality_runtime_db import call
 from tests.claimstore.conftest import (  # noqa: F401
     migrated_db,
@@ -427,5 +432,137 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(
             # No legacy Luna display or repeat initial task was offered.
             assert len(queue.offers) == 1
             workspaces.close()
+
+    run_async(case())
+
+
+async def _crash_claims(conn, tmp_path, *, recipe=40):
+    """A person job and a handler whose run crashes (the worker dying) straight after each claim."""
+    op, _, _, child = await _waiting_account(conn, tmp_path, recipe=recipe, idle_minutes=1)
+
+    @asynccontextmanager
+    async def connections():
+        yield conn
+
+    handler = Arv2AccountResearchWorkHandler(
+        settings=load_settings(),
+        conn_factory=connections,
+        artifacts=None,
+        storage=FsStorage(tmp_path),
+        clients=None,
+        model_provider=None,
+        model_id="fixture/research",
+        writer=None,
+    )
+    composed = []
+
+    async def crash(_conn, job):
+        composed.append(job.job_id)
+        raise asyncio.CancelledError()
+
+    handler._compose = crash
+
+    async def claim():
+        try:
+            return await handler.handle(work(child, op.run_id, op.workspace_id))
+        except asyncio.CancelledError:
+            return None
+
+    return op, child, composed, claim
+
+
+async def _status(conn, job):
+    row = await conn.execute(
+        text("SELECT status,failure_code FROM arv2_research_job WHERE job_id=:job"), {"job": job}
+    )
+    return tuple(row.one())
+
+
+def test_job_stops_after_three_attempts_without_progress(tmp_path):
+    async def case():
+        async with rollback_conn() as conn:
+            op, child, composed, claim = await _crash_claims(conn, tmp_path)
+            assert await claim() is None
+            assert await claim() is None
+            result = await claim()
+            assert result.outcome == "needs_review"
+            assert composed == [child, child]  # the third claim runs no agent
+            assert await _status(conn, child) == ("needs_review", "retries_exhausted")
+            recorded = await conn.execute(
+                text("SELECT terminal_status FROM arv2_generation_child WHERE job_id=:job"),
+                {"job": child},
+            )
+            assert recorded.scalar_one() == "needs_review"
+
+    run_async(case())
+
+
+def test_progress_resets_the_count(tmp_path):
+    async def case():
+        async with rollback_conn() as conn:
+            op, child, composed, claim = await _crash_claims(conn, tmp_path)
+            eid = await _bind_person(conn, op, child)
+            await claim()
+            await claim()
+            await _record_activity(conn, op, child, eid)
+            await claim()
+            await claim()
+            assert len(composed) == 4
+            assert (await _status(conn, child))[0] != "needs_review"
+
+    run_async(case())
+
+
+def test_recipe_39_has_no_limit(tmp_path):
+    async def case():
+        async with rollback_conn() as conn:
+            _, child, composed, claim = await _crash_claims(conn, tmp_path, recipe=39)
+            for _ in range(5):
+                await claim()
+            assert len(composed) == 5
+            assert (await _status(conn, child))[0] != "needs_review"
+
+    run_async(case())
+
+
+async def _bind_person(conn, op, job):
+    run = (
+        await conn.execute(
+            text("SELECT project_id,context_id FROM arv2_research_run WHERE run_id=:run"),
+            {"run": op.run_id},
+        )
+    ).one()
+    eid = await execution(conn, op, run.project_id)
+    await bind_execution(
+        conn,
+        OperationScope(op.workspace_id, op.run_id, job, op.account_id),
+        execution_id=eid,
+        context_id=run.context_id,
+        role="account_research",
+        limits=Allowance(5, 5, 1),
+    )
+    return eid
+
+
+async def _record_activity(conn, op, job, eid):
+    await conn.execute(
+        text("""INSERT INTO arv2_quality_activity(activity_id,workspace_id,job_id,execution_id,kind)
+            VALUES (:id,:ws,:job,:execution,'tool')"""),
+        {"id": uuid4(), "ws": op.workspace_id, "job": job, "execution": eid},
+    )
+
+
+def test_an_operator_resume_restarts_the_count(tmp_path):
+    async def case():
+        async with rollback_conn() as conn:
+            op, child, composed, claim = await _crash_claims(conn, tmp_path)
+            for _ in range(3):
+                await claim()
+            await resume_research_job(
+                conn, workspace_id=op.workspace_id, job_id=child, actor="ops", reason="Fixed."
+            )
+            await claim()
+            assert len(composed) == 3  # the resumed job gets another try
+            assert (await _status(conn, child))[0] != "needs_review"
 
     run_async(case())

@@ -103,6 +103,7 @@ from clue_api.arv2.provider_ledger import (
 )
 from clue_api.arv2.quality_generation import FINAL_PAGE_STEP, initial_settle_event_id
 from clue_api.arv2.quality_person_release import RELEASE_AT_NOMINATION, parent_dossier_ready
+from clue_api.arv2.quality_generation import BRIEF_AFTER_PEOPLE, no_progress_attempts
 from clue_api.arv2.quality_recipe import at_least
 from clue_api.arv2.quality_results import QualityJobOutcome, QualityJobRunner
 from clue_api.arv2.sinks import LedgerSink
@@ -1236,12 +1237,19 @@ class Arv2AccountResearchWorkHandler:
                     f"task names run {scope.run_id}, but job {job.job_id} belongs to "
                     f"run {job.run_id}"
                 )
-            composition = await self._compose(conn, job)
-            # Spec 2026-09-12 §1: the job is claimed and composed, so what happens next is the
-            # research itself. The stamp rides the claiming connection — a job that shows
-            # ``deep_research`` is a job whose row was already won.
-            await self._store.set_job_stage(conn, job_id=job.job_id, stage="deep_research")
+            composition: _Composition | None = None
+            if not at_least(job, BRIEF_AFTER_PEOPLE) or (
+                await no_progress_attempts(conn, job)
+                < self._settings.arv2_job_max_attempts_no_progress
+            ):
+                composition = await self._compose(conn, job)
+                # Spec 2026-09-12 §1: the job is claimed and composed, so what happens next is the
+                # research itself. The stamp rides the claiming connection — a job that shows
+                # ``deep_research`` is a job whose row was already won.
+                await self._store.set_job_stage(conn, job_id=job.job_id, stage="deep_research")
 
+        if composition is None:
+            return await self._retries_exhausted(scope, attempt=job.attempt)
         runtime = self._tool_runtime(composition)
         if has_capability(composition.scope.catalog_version, "research_quality"):
             if self._quality_runner is None or composition.run.context_id is None:
@@ -1324,6 +1332,24 @@ class Arv2AccountResearchWorkHandler:
                 attempt=job.attempt,
             )
         return await self._settle(composition, runtime, outcome)
+
+    async def _retries_exhausted(self, scope: _Scope, *, attempt: int) -> str | WorkResult:
+        """Recipe 40: this job keeps being claimed and making no progress, so it stops here, and
+        the account's review treats it as a gap instead of waiting on it."""
+        from clue_api.arv2.quality_generation import record_child_result
+
+        ending = await self._contain(
+            scope,
+            attempt=attempt,
+            code="retries_exhausted",
+            message=(
+                f"Stopped after {self._settings.arv2_job_max_attempts_no_progress} attempts in a "
+                "row without progress."
+            ),
+        )
+        async with self._connection() as conn:
+            await record_child_result(conn, workspace_id=scope.workspace_id, job_id=scope.job_id)
+        return ending
 
     def _tool_runtime(self, composition: _Composition) -> ToolRuntime:
         media_budget = MediaBudget(self._settings.arv2_media_seconds_ceiling)
@@ -1883,7 +1909,6 @@ class Arv2AccountResearchWorkHandler:
 
         scope = composition.scope
         context_id = composition.run.context_id
-        from clue_api.arv2.quality_generation import BRIEF_AFTER_PEOPLE
         from clue_api.arv2.quality_markdown_dossier import uses_markdown_dossier
 
         if (
