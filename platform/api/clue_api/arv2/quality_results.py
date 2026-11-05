@@ -25,6 +25,8 @@ class ResearchUnitReport(BaseModel):
     pending_person_job_ids: tuple[UUID, ...] = Field(default=(), max_length=100)
     gaps: tuple[str, ...] = Field(default=(), max_length=100)
     unprocessed_source_ids: tuple[UUID, ...] = Field(default=(), max_length=5000)
+    status: str | None = None
+    next_actions: tuple[str, ...] = ()
     # Backend-generated delivery evidence; old saved reports remain readable.
     delivery: dict[str, object] = Field(default_factory=dict)
 

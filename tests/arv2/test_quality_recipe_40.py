@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from clue_agents import AgentRole
+from clue_api.arv2.quality_results import ResearchUnitReport
 from clue_api.quality_research_wiring import CATALOG_ROOT, quality_profiles, quality_tools
 
 _ROOT = Path(CATALOG_ROOT)
@@ -52,3 +53,31 @@ def test_credentials_rule_reaches_the_person_agent():
     rule = "credentials and certifications go in the one job-history finding"
     assert rule in _text("prompts/quality-person-research/v29-person/SYSTEM.md").lower()
     assert rule in _text("skills/claim-ready-person-dossier/v5/SKILL.md").lower()
+
+
+def _report(**extra):
+    return {
+        "context_id": "00000000-0000-0000-0000-000000000001",
+        "job_id": "00000000-0000-0000-0000-000000000002",
+        "summary": "Research was blocked.",
+        **extra,
+    }
+
+
+def test_report_accepts_blocked_status():
+    report = ResearchUnitReport.model_validate(
+        _report(status="blocked", next_actions=["Restore acquisition"])
+    )
+    assert report.status == "blocked"
+    assert report.next_actions == ("Restore acquisition",)
+
+
+def test_saved_report_without_them_still_loads():
+    report = ResearchUnitReport.model_validate(_report())
+    assert report.status is None
+    assert report.next_actions == ()
+
+
+def test_report_still_refuses_unknown_fields():
+    with pytest.raises(ValueError, match="extra"):
+        ResearchUnitReport.model_validate(_report(mood="fine"))
