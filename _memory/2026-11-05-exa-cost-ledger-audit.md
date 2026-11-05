@@ -25,3 +25,16 @@ $10.158 is unclear. Exa does not label sessions, so this split is an inference.
 - A timed-out call records NULL cost, and retries record only the final attempt.
 - Hand research on the `default` key has no cost record of its own.
 - Raw per-request logs stayed in the browser; nothing from them was saved here.
+
+---
+
+# Crash recovery of a turn with a tool call open: findings (2026-11-05, same session)
+Nothing changed yet. The no-progress guard (`d6b7579c0`, incident 2026-09-29, ~15 silent re-dispatches
+a second holding a fleet task forever) did its job on recipe 40's Dwayne job; the gap is below it.
+After a worker dies, `_recover` abandons the open interaction child, the drive loop sees it as ready,
+the re-dispatch writes no event, and the guard fails the execution. This was first recorded as open in
+`_memory/2026-10-22-agent-workspace-f3-spec.md` ("mid-tool-call turns are not resumed"). The re-dispatch
+refusal is read from code, not yet reproduced in a test.
+Agent then ran on: 9 model calls, $0.757, after the execution had failed. An AI Ark lookup had returned
+8 s before the kill. Any fix keeps the guard, which only catches silent loops: a loop writing an event
+each pass would pass it, so the fix also needs an attempt limit and its own test.
