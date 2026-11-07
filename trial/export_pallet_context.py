@@ -11,8 +11,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 from clue_storage import storage_from_settings
 
-WS = "ws_98f69f42a7e54391aafadfc602446119"
-PROJECT = "prj_bcbca9a562a15149875c552222ee7c8f"
+# Pallet by default; another seller's workspace and project as the 2nd and 3rd arguments.
+WS = sys.argv[2] if len(sys.argv) > 2 else "ws_98f69f42a7e54391aafadfc602446119"
+PROJECT = sys.argv[3] if len(sys.argv) > 3 else "prj_bcbca9a562a15149875c552222ee7c8f"
 DOMAINS = sys.argv[1].split(",")
 
 def enc(v):
