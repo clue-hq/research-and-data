@@ -26,6 +26,7 @@ __all__ = [
 #: Committee ordering. A persona outside this tuple sorts last, then by name.
 PERSONA_RANK: tuple[str, ...] = (
     "economic_buyer",
+    "executive_sponsor",
     "champion",
     "technical_evaluator",
     "user",
@@ -36,6 +37,7 @@ PERSONA_RANK: tuple[str, ...] = (
 #: for, so it gets none — an invented one would put a word on a card that no claim supports.
 PERSONA_LABELS: dict[str, str] = {
     "economic_buyer": "Economic buyer",
+    "executive_sponsor": "Executive sponsor",
     "champion": "Champion",
     "technical_evaluator": "Technical evaluator",
     "user": "User",

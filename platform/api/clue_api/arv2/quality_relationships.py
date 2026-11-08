@@ -60,7 +60,15 @@ class CommitteeAssessment(BaseModel):
     contact_id: UUID
     context_id: UUID
     persona_key: str = Field(min_length=1, max_length=200)
-    role: Literal["champion", "economic_buyer", "technical_evaluator", "blocker", "other"]
+    role: Literal[
+        "economic_buyer",
+        "executive_sponsor",
+        "champion",
+        "technical_evaluator",
+        "user",
+        "blocker",
+        "other",
+    ]
     state: Literal["candidate", "supported", "needs_verification", "excluded"]
     remit: Literal["supported", "hypothesis", "unresolved", "refuted"]
     organization_scope: OrganizationScope

@@ -48,7 +48,15 @@ log = get_logger("arv2.quality.committee")
 class NominateCommitteeInput(ToolInput):
     candidate_ref: str = Field(min_length=1, max_length=250)
     persona_key: str = Field(min_length=1, max_length=200)
-    role: Literal["champion", "economic_buyer", "technical_evaluator", "blocker", "other"]
+    role: Literal[
+        "economic_buyer",
+        "executive_sponsor",
+        "champion",
+        "technical_evaluator",
+        "user",
+        "blocker",
+        "other",
+    ]
     organization_scope: OrganizationScope
     rationale: str = Field(min_length=1, max_length=6000)
 
@@ -58,7 +66,15 @@ class NominateWebCommitteeInput(ToolInput):
     linkedin_url: str | None = None
     source: TextSupport
     persona_key: str = Field(min_length=1, max_length=200)
-    role: Literal["champion", "economic_buyer", "technical_evaluator", "blocker", "other"]
+    role: Literal[
+        "economic_buyer",
+        "executive_sponsor",
+        "champion",
+        "technical_evaluator",
+        "user",
+        "blocker",
+        "other",
+    ]
     organization_scope: OrganizationScope
     rationale: str = Field(min_length=1, max_length=6000)
 
