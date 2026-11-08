@@ -338,7 +338,9 @@ def quality_profiles(
         engine_tool_ceiling=frozenset(authority),
         required_roles=active_roles,
         selected_profile_versions={
-            role: ("v29-person" if person else "v39")
+            role: ("v29-person" if person else "v40")
+            if version >= 41 and role == AgentRole.ACCOUNT_RESEARCH
+            else ("v29-person" if person else "v39")
             if version >= 40 and role == AgentRole.ACCOUNT_RESEARCH
             else ("v28-person" if person else "v38")
             if version >= 39 and role == AgentRole.ACCOUNT_RESEARCH
@@ -499,7 +501,10 @@ class _Contexts:
                 budgets=tuple(
                     LayerBudget(layer=layer, max_tokens=budget)
                     for layer, budget in zip(
-                        tuple(ContextLayer), (24000, 0, 12000, 0, 2000, 0, 16000), strict=True
+                        # Recipe 41's seat-by-seat committee rules took L1 past 24000 bytes.
+                        tuple(ContextLayer),
+                        (32000, 0, 12000, 0, 2000, 0, 16000),
+                        strict=True,
                     )
                 ),
             ),
