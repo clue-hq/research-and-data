@@ -316,8 +316,11 @@ the founder decisions in section 0 of `docs/superpowers/specs/research-quality/m
 - Test: `tests/arv2/test_transcript_quotes.py`
 
 **Interfaces:**
-- `SpeakerIntroduction` and `TranscriptSupport.introduction` stay in the schema (pinned claim tools'
-  fingerprints) with the field described as "Ignored." Nothing reads them.
+- `SpeakerIntroduction` and `TranscriptSupport.introduction` are deleted (founder 2026-11-10). This changes
+  `submit_transcript_claim@1`'s fingerprint; only the recipe 4/5 profiles pin it, and recipes 2–5 already
+  fail to resolve today (`nominate_committee_candidate@1` digest changed), so nothing that resolves today
+  breaks. Check: resolving `quality_profiles` for every recipe 1–43, person and account, fails for exactly
+  recipes 2–5 before and after the change.
 - `validate_transcript` returns `attribution: "unverified"` always and adds the job's saved
   `speaker_check` (if any) as `"speaker_check"` in the claim's media marker; the warning "The quoted voice is
   not corroborated as this person." is removed.
@@ -331,7 +334,9 @@ the founder decisions in section 0 of `docs/superpowers/specs/research-quality/m
   (claim span "we was going to moving fast", page quote "We were going to move fast." → accepted),
   `test_web_quote_still_must_match` (web-snapshot quote not in span → ValueError),
   `test_transcript_claim_outreach_safe_without_introduction`, `test_display_keeps_transcript_quote_as_quote`,
-  `test_introduction_field_ignored` (supplying an introduction with a self-introduction line changes nothing).
+  `test_no_introduction_field` (`"introduction" not in TranscriptSupport.model_fields`), and
+  `test_only_recipes_2_to_5_fail_to_resolve` (loop over recipes 1–43 × person/account; the failing set is
+  `{2, 3, 4, 5}`).
 - [ ] **Step 2: Run** — FAIL. **Step 3: Implement**; delete the regex and every test that pinned the old
   behaviour (list them in the commit message). **Step 4: Run** `tests/arv2/test_transcript_quotes.py`,
   `test_quality_media_db.py`, `test_media_research.py`, and `uv run pytest tests/arv2 -k "page or display or media" --ignore-glob='*_live.py'`

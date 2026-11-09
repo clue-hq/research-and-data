@@ -157,8 +157,10 @@ its launch file (the trial harness runs `CURRENT_RECIPE_VERSION`, now 42). Order
 
 - **Versions:** the latest account profile is v41, so the new ones are account **v42**, person **v31-person**,
   recipe **43** (section 7 said v40).
-- **The `introduction` field stays in the claim schema, ignored.** Removing it would change the fingerprints of
-  pinned claim tools. The check that read it is deleted.
+- ~~The `introduction` field stays in the claim schema, ignored.~~ Founder 2026-11-10: remove it. Only
+  `submit_transcript_claim@1` carries it, pinned only by the recipe 4/5 profiles, and recipes 2–5 already
+  fail to resolve today for another reason (`nominate_committee_candidate@1`'s digest changed). Checked by
+  removing the field and resolving every recipe 1–42: the same recipes 2–5 fail, nothing else.
 - **Quotes:** the proof line the agent saves must still be the transcript's own text at the place it points
   to (that is how a claim proves where it came from). What is dropped is the page check that a quote on the
   page is a character-for-character copy of that proof line, for recording quotes only
