@@ -174,7 +174,7 @@ The current self-introduction check is to be discarded (section 1). Ideas collec
   transcription misspellings.
 - Name the speakers with a model given the known names (for example AssemblyAI speaker identification), then
   credit only that speaker's lines.
-- Voice matching against a known recording of the person (pyannote), later.
+- ~~Voice matching against a known recording of the person (pyannote), later.~~ Not planned (founder, 2026-11-10).
 - Rule: a recording counts only if the person is a confirmed named speaker; a quote counts only from that
   speaker's lines.
 

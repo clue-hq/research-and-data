@@ -73,9 +73,9 @@ to the wrapper (about ten lines each) can be added without changing anything els
 
 Dropped: `discover_media` as the main route (its Exa search stays only as `find_videos`' fallback).
 Not in this version: LinkedIn comments (untested), Spotify, Listen Notes, Podscan, Podchaser, Google,
-conference sites, the Wayback archive, voice matching (section 4).
+conference sites, the Wayback archive. Voice matching is not planned (section 4).
 
-## 4. Is this the right person? Three checks
+## 4. Is this the right person? Two checks
 
 Proposed 2026-11-08 as four steps; what became of each:
 
@@ -88,8 +88,8 @@ Proposed 2026-11-08 as four steps; what became of each:
 2. **After transcribing: Jev (below).** It replaces both the self-introduction check (dropped, ledger
    decision 2; a host's introduction is part of the transcript Jev reads) and naming the speakers with
    AssemblyAI or Gemini (ledger decisions 5 and 8).
-3. **Voice matching: later, not in this version.** pyannote compares a voice sample from one confirmed
-   recording with another recording; for hard cases such as panels or shared names.
+3. **Voice matching: not planned (founder, 2026-11-10).** The 2026-11-08 idea (pyannote comparing a voice
+   sample from one confirmed recording with another) is not being built.
 
 ### The Jev check
 
