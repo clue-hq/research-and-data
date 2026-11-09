@@ -66,8 +66,8 @@ def test_long_transcript_live():
     chars = sum(len(line) + 1 for line in lines)
     print(
         f"chars={chars} windows={check.windows} state={check.state} label={check.label} "
-        f"p={check.label_probabilities} cost={check.cost_usd} secs={time.monotonic() - started:.1f} "
-        f"reason={check.reason}"
+        f"p={check.label_probabilities} cost={check.cost_usd} "
+        f"secs={time.monotonic() - started:.1f} reason={check.reason}"
     )
     assert check.state == "answered"
     assert check.label == case["expect_label"]
