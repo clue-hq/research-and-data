@@ -26,6 +26,13 @@ gift pilot's recipients (`~/gift-poc`, `~/daymaker-rea`).
      person's own words from a podcast or talk can never appear on their page as a quote.**
    - tests in `tests/arv2/test_quality_media_db.py` and `tests/arv2/test_media_research.py`.
 
+3. **Metadata can confirm or rule out a recording, never block it (founder, 2026-11-09).** If the title,
+   description, tags or links clearly name our person, that is trustworthy confirmation. A recording is out
+   of scope only when its metadata clearly shows a namesake: a different person with the same name, shown
+   by links or other clear proof. When the metadata is unclear, says nothing, or its proof is weak, the
+   recording is not rejected: we transcribe it and the model judges from the transcript. No rule-based or
+   string-matching identity checks; the model decides from what it knows about the person and the transcript.
+
 **Principle (founder, 2026-11-09):** only what the person has made public. A private account gives nothing,
 and we never try to get past that (no sign-in, no stealth). The treg providers read public pages logged out;
 they return "private" for private accounts and charge nothing.
@@ -174,6 +181,12 @@ the recording's metadata, sent to the person-agent model (`openai/gpt-6.1-sol`):
   cost about $0.34.
 - **A cheap model is not enough.** `gemini-3.5-flash-lite` (3 s, $0.004) picked the right label on Citi but
   said the "labels are consistent throughout", which is wrong.
+- **Jev (founder's choice, `typesafe/jev-router` on OpenRouter; no `jev-1.13` id is listed there).** Same
+  prompt, same three recordings: all three correct. On Citi it named both Anns, the host and the legal
+  voice-over, and caught the merged lines at 31:47 and 33:22; on Dilip it caught his lines under the host's
+  label (02:23, 50:53); on Kuhn it said different person. 8–12 s each, $0.014–$0.049 each (16k–18k input
+  tokens). It is a router, so the model behind it can change between calls; it also accepts audio and
+  video input, which is untested.
 - **Lesson.** Who is in the recording is easy for a strong model. The real risk is diarisation: a speaker
   label is not one person. Lines must be credited to the person passage by passage, never by whole label.
 
