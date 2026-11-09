@@ -90,19 +90,20 @@ quote is then re-fetched and checked (`check_quotes.py`).
 14. A caveat company shows a **light orange "Caveat" badge** in its Overall fit cell. Hovering the
     badge opens the reason in a floating bubble in the brand's light gray (gray-50 background,
     gray-400 border), drawn in its own top layer so no table edge can clip it — the existing
-    `src/components/ui/hover-card.tsx` already renders in a portal.
+    `src/components/ui/hover-card.tsx` already renders in a portal. The badge stays light orange.
+
+**Settled in the second round (2026-11-10)**
+15. A top company's remark (its reason to act now) shows **only on the account's page**, not on
+    the table. Only caveat companies get the hover bubble.
+16. A run that ends with fewer top companies than asked **searches again**, the way discovery
+    retries today (up to three more rounds, leaving out every company already seen).
+17. **No quote re-check in code.** `check_quotes.py` stays a trial tool only.
+18. **No separate check** for competitor use or quiet existing customers; the one run is enough.
 
 ## 4. Open questions
 
-- Where the top companies' own remark (their reason to act now) shows: hover on every fit cell, or
-  only on the account's page.
 - How the agent's ranking maps onto Fit score and Overall fit (today fit is the share of gates
-  passed).
-- Whether a run that returns fewer top companies than asked searches again (today: up to three
-  more rounds), and how.
-- Whether code re-checks that each quote is on its page (the trial's `check_quotes.py`), given the
-  2026-10-01 removal of the quote-on-page guard.
-- Whether to add a second check for competitor use and quiet existing customers, which the single
-  run finds poorly.
+  passed; Fit score = fit × 100, Overall fit = High at 0.70 and above, Medium at 0.40 and above,
+  else Low). Proposal under discussion: the agent gives each company its own 0–100 fit score.
 - Production Exa account: whether it is zero-data-retention (then a run's result is retrievable
   for only 10 minutes and `previousRunId` is unavailable).
