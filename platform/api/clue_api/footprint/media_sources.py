@@ -225,6 +225,18 @@ def apple_shows(caller: ProviderCaller, term: str, *, limit: int = 5) -> list[Sh
     ]
 
 
+def podcast_index_headers(
+    key: SecretStr, secret: SecretStr, *, now: Callable[[], float] = time.time
+) -> dict[str, str]:
+    """Podcast Index signs every request with sha1(key + secret + unix time)."""
+    stamp = str(int(now()))
+    digest = hashlib.sha1(
+        (key.get_secret_value() + secret.get_secret_value() + stamp).encode(),
+        usedforsecurity=False,
+    ).hexdigest()
+    return {"X-Auth-Key": key.get_secret_value(), "X-Auth-Date": stamp, "Authorization": digest}
+
+
 def podcast_index_shows(
     caller: ProviderCaller,
     term: str,
@@ -235,22 +247,13 @@ def podcast_index_shows(
     limit: int = 5,
 ) -> list[Show]:
     """Shows in Podcast Index. Each request is signed with sha1(key + secret + unix time)."""
-    stamp = str(int(now()))
-    digest = hashlib.sha1(
-        (key.get_secret_value() + secret.get_secret_value() + stamp).encode(),
-        usedforsecurity=False,
-    ).hexdigest()
     body = _get_json(
         caller,
         provider="podcast_index",
         operation="search/byterm",
         label="media.podcast_search",
         url=f"{PODCAST_INDEX_SEARCH_URL}?max={limit}&q={quote_plus(term)}",
-        headers={
-            "X-Auth-Key": key.get_secret_value(),
-            "X-Auth-Date": stamp,
-            "Authorization": digest,
-        },
+        headers=podcast_index_headers(key, secret, now=now),
     )
     return [
         Show(str(f.get("title") or ""), f["url"], "podcast_index")
