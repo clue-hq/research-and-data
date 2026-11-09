@@ -1,0 +1,36 @@
+<h2>Accounts table: caveats marked in the Overall fit column</h2>
+<p class="subtitle">No new columns. A caveat company gets a light orange "Caveat" badge next to its fit; hovering it opens the reason in a light gray bubble (brand gray-50 background, gray-400 border) drawn above the table, so no edge can clip it. Hover the badge on MetLife.</p>
+
+<style>
+  .fitcell { white-space: nowrap; }
+  .caveat { position: relative; display: inline-block; margin-left: 6px; background: #ffe7c2; color: #8a4b00;
+            border: 1px solid #f5c98a; padding: 0 7px; border-radius: 10px; font-size: 11px; cursor: default; }
+  .caveat .tip { visibility: hidden; opacity: 0; position: absolute; left: 0; top: 22px; z-index: 10; width: 300px;
+                 background: #F8F9FB; color: #1C2028; border: 1px solid #D6D9E0; border-radius: 8px; padding: 8px 10px;
+                 font-size: 12px; line-height: 1.45; white-space: normal; box-shadow: 0 4px 14px rgba(0,0,0,.12);
+                 transition: opacity .12s; }
+  .caveat:hover .tip { visibility: visible; opacity: 1; }
+  .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .tbl th { text-align: left; color: #666; font-weight: 500; border-bottom: 1px solid #ddd; padding: 6px; }
+  .tbl td { border-bottom: 1px solid #f0f0f0; padding: 7px 6px; }
+</style>
+
+<div class="mockup">
+  <div class="mockup-header">Project accounts, after a discovery for 5</div>
+  <div class="mockup-body" style="padding-bottom:110px">
+    <table class="tbl">
+      <tr><th>Company name</th><th>Owner</th><th>Industry</th><th>Research status</th><th>Overall fit</th><th>Fit score</th><th>Revenue</th><th>Locations</th></tr>
+      <tr><td>Crédit Mutuel Arkéa</td><td>Shashank</td><td>Banking</td><td>Not researched</td><td class="fitcell">High</td><td>95</td><td>€211.6B assets</td><td>France</td></tr>
+      <tr><td>TruStage</td><td>Shashank</td><td>Insurance</td><td>Not researched</td><td class="fitcell">High</td><td>92</td><td>$6.1B</td><td>US</td></tr>
+      <tr><td>Barclays</td><td>Shashank</td><td>Banking</td><td>Not researched</td><td class="fitcell">High</td><td>84</td><td>£29.1B</td><td>UK</td></tr>
+      <tr><td>Deutsche Bank</td><td>Shashank</td><td>Banking</td><td>Not researched</td><td class="fitcell">High</td><td>82</td><td>€32.1B</td><td>Germany</td></tr>
+      <tr><td>Aflac</td><td>Shashank</td><td>Insurance</td><td>Not researched</td><td class="fitcell">Medium</td><td>70</td><td>$18B</td><td>US</td></tr>
+      <tr><td>MetLife</td><td>Shashank</td><td>Insurance</td><td>Not researched</td>
+        <td class="fitcell">Medium<span class="caveat">Caveat
+          <span class="tip"><b>Why it's not a first target</b><br>A MetLife security engineer says the company runs Cisco Secure Workload, a competing product, and nothing suggests it wants to switch. Qualify its renewal timing and pain before approaching.</span>
+        </span></td><td>55</td><td>$77.1B</td><td>US</td></tr>
+    </table>
+  </div>
+</div>
+
+<p style="font-size:13px;color:#666;margin-top:10px">Order: the agent's ranking shows up as the fit score, so sorting by fit puts the most urgent first and caveat companies after. The other existing columns (Headcount, Website, dates) stay as they are.</p>

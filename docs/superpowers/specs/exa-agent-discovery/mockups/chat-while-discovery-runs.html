@@ -1,0 +1,80 @@
+<h2>Account discovery: the chat while it runs, and the accounts table after</h2>
+<p class="subtitle">Rough sketches of what appears where. The real look comes from the existing design. Example data from the Illumio trial (run 3).</p>
+
+<div class="section">
+<h3>1. The chat while discovery runs</h3>
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">While it runs, message box empty</div>
+    <div class="mockup-body" style="font-size:14px;line-height:1.5">
+      <div style="text-align:right;margin-bottom:12px"><span style="background:#eef;padding:6px 10px;border-radius:12px">Find me 5 accounts for this campaign</span></div>
+      <div style="margin-bottom:8px"><b>Head of ABM</b><br>I've started looking for 5 accounts that fit your profile. They'll appear on this project's accounts table when the search ends, in about 4 minutes.</div>
+      <div style="border-left:3px solid #ccd;padding:6px 10px;margin:8px 0 14px;color:#555;font-size:13px">
+        <div class="label">Discovery running · 1:42</div>
+        <div>✓ Searching for 2026 ransomware attacks on US and European banks</div>
+        <div>✓ Searching for new chief information security officers at UK insurers</div>
+        <div>✓ Searching for core banking migrations announced in 2026</div>
+        <div>✓ Checking Crédit Mutuel Arkéa's annual report for its size</div>
+        <div>… Searching for TruStage cyberattack recovery news</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;border:1px solid #ccc;border-radius:10px;padding:8px;background:#f6f6f6">
+        <span style="flex:1;color:#999">Discovery is running. You can send a message when it ends.</span>
+        <button class="mock-button" style="background:#c33;color:#fff">■ Stop</button>
+      </div>
+    </div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-header">While it runs, a draft typed</div>
+    <div class="mockup-body" style="font-size:14px;line-height:1.5">
+      <div style="color:#999;margin-bottom:10px">… (same chat and live feed as on the left) …</div>
+      <div style="display:flex;gap:8px;align-items:center;border:1px solid #ccc;border-radius:10px;padding:8px">
+        <span style="flex:1">Also look at Nordic banks|</span>
+        <button class="mock-button" style="opacity:.35;cursor:not-allowed">Send</button>
+      </div>
+      <div style="font-size:12px;color:#888;margin-top:6px">Send stays greyed out until discovery ends. Clear the draft to get Stop back.</div>
+      <hr style="margin:18px 0">
+      <div class="label">When it ends</div>
+      <div style="margin-top:6px"><b>Head of ABM</b><br>I found 5 accounts and added them to this project, ranked by how urgent their reason to act now is. Two more fit your profile but have caveats, so I listed them after the 5 and didn't count them. Crédit Mutuel Arkéa is first: it reported a cyber heist this month.</div>
+      <div style="color:#888;font-size:12px;margin-top:6px">The live feed collapses to "Discovery finished · 4:24 · 31 searches". The message box unlocks.</div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="section">
+<h3>2. The project's accounts table after it ends: which way of marking caveats reads better?</h3>
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>A Priority column plus a Remark column, one list</h3>
+      <div class="mockup"><div class="mockup-body" style="font-size:12px">
+        <table style="width:100%;border-collapse:collapse">
+          <tr style="text-align:left;color:#666;border-bottom:1px solid #ddd"><th>Company name</th><th>Priority</th><th>Remark</th><th>Overall fit</th><th>Revenue</th><th>Locations</th></tr>
+          <tr><td>Crédit Mutuel Arkéa</td><td><b>Top 1</b></td><td>Reported a €100M cyber heist (Nov 2026). Lead with containing attackers across its on-premises and cloud systems.</td><td>High</td><td>€211.6B assets</td><td>France</td></tr>
+          <tr><td>TruStage</td><td><b>Top 2</b></td><td>Cyberattack in July 2026, now rebuilding in the cloud. Lead with containment during the rebuild.</td><td>High</td><td>$6.1B</td><td>US</td></tr>
+          <tr><td>Barclays</td><td><b>Top 3</b></td><td>Moving its regulated data warehouse to the cloud (Aug 2026).</td><td>High</td><td>£29.1B</td><td>UK</td></tr>
+          <tr style="color:#777"><td>MetLife</td><td><span style="background:#fde8c8;padding:1px 6px;border-radius:8px">Caveat</span></td><td>A security engineer says they run Cisco Secure Workload. Qualify renewal and pain first.</td><td>High</td><td>$77.1B</td><td>US</td></tr>
+        </table>
+      </div></div>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Caveat companies in their own section below the top ones</h3>
+      <div class="mockup"><div class="mockup-body" style="font-size:12px">
+        <table style="width:100%;border-collapse:collapse">
+          <tr style="text-align:left;color:#666;border-bottom:1px solid #ddd"><th>Company name</th><th>Remark</th><th>Overall fit</th><th>Revenue</th><th>Locations</th></tr>
+          <tr><td>Crédit Mutuel Arkéa</td><td>Reported a €100M cyber heist (Nov 2026). Lead with containing attackers across its on-premises and cloud systems.</td><td>High</td><td>€211.6B assets</td><td>France</td></tr>
+          <tr><td>TruStage</td><td>Cyberattack in July 2026, now rebuilding in the cloud.</td><td>High</td><td>$6.1B</td><td>US</td></tr>
+          <tr><td>Barclays</td><td>Moving its regulated data warehouse to the cloud (Aug 2026).</td><td>High</td><td>£29.1B</td><td>UK</td></tr>
+          <tr><td colspan="5" style="background:#f4f4f4;color:#666;padding:4px 6px"><b>With caveats</b>: fit the profile, not counted toward the 5</td></tr>
+          <tr style="color:#777"><td>MetLife</td><td>A security engineer says they run Cisco Secure Workload. Qualify renewal and pain first.</td><td>High</td><td>$77.1B</td><td>US</td></tr>
+        </table>
+      </div></div>
+    </div>
+  </div>
+</div>
+<p style="font-size:13px;color:#666">In both, the other existing columns (Owner, Industry, Research status, Fit score, Headcount, Website, dates) stay as they are, and each remark's sources open from the account's own page.</p>
+</div>

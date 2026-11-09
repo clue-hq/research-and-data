@@ -58,3 +58,11 @@ platform design or code change.
   breach 2026-06; agent noted US not affected). Quotes 28/28 on page. Competitor, in-house,
   contract, dissatisfaction: none found for any. List shape now matches the hand discovery's
   (breach victims, migrations, Europe) though no company overlaps it.
+
+## Design decisions (2026-11-10, brainstorming with the founder)
+Recorded in `docs/superpowers/specs/exa-agent-discovery/README.md` (§3 decisions, §4 open
+questions) with sketches in `mockups/`. In short: Head of ABM keeps writing the brief; one Exa Agent
+run with its progress stream shown in the chat ("Searching for …" lines only); that chat's composer
+blocked (Stop when empty, greyed Send with a draft); other chats free; no new table columns —
+ranking via Overall fit / Fit score, caveat = light orange badge with a light gray hover bubble in
+a portal. Full design document still to write.
