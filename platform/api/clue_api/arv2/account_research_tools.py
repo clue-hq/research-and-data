@@ -2528,13 +2528,19 @@ async def _write_claims(
         )
     drafts = agent_claims(args.claims, runtime.scope, catalog=runtime.catalog)
     if has_capability(runtime.scope.catalog_version, "media_research"):
-        from clue_api.arv2.media_claims import attach, resolve_source
+        from clue_api.arv2.media_claims import attach, resolve_source, speaker_for
 
         for index, item in enumerate(args.claims):
             source = getattr(item, "transcript_source", None)
             if source is not None:
                 _, saved = await resolve_source(runtime, source)
-                drafts[index] = attach(drafts[index], source, saved, runtime)
+                drafts[index] = attach(
+                    drafts[index],
+                    source,
+                    saved,
+                    runtime,
+                    speaker=await speaker_for(runtime, source),
+                )
     # One transaction per draft. This is the largest model-produced batch in the toolbelt (cap
     # fifty), so a single value the store will not take must cost its own claim and nothing else —
     # never forty-nine good claims, and never a whole-batch ``tool_error`` the model retries

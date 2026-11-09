@@ -170,13 +170,6 @@ def _evidence_ref(claim: Claim) -> EvidenceRef:
         else None
     )
     media = markers.get("media")
-    if (
-        quality
-        and isinstance(media, dict)
-        and claim.entity_type.value == "contact"
-        and (media.get("attribution") != "evidence_backed")
-    ):
-        kind = "source_excerpt"
     quote = (claim.evidence_span or None) if kind in (None, "primary_quote") else None
     support = markers.get("support")
     supports = [s for s in support if isinstance(s, dict)] if isinstance(support, list) else []

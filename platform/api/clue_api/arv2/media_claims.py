@@ -42,7 +42,14 @@ async def resolve_source(
     ), saved
 
 
-def attach(draft: Any, source: TranscriptSource, saved: dict[str, Any], runtime: Any) -> Any:
+def attach(
+    draft: Any,
+    source: TranscriptSource,
+    saved: dict[str, Any],
+    runtime: Any,
+    *,
+    speaker: dict[str, Any] | None = None,
+) -> Any:
     value = saved["text"][source.start : source.end]
     quote = draft.evidence_span or ""
     verdict = substring_verdict(quote, value)
@@ -52,10 +59,6 @@ def attach(draft: Any, source: TranscriptSource, saved: dict[str, Any], runtime:
     segments = [s for s in saved["segments"] if s.start < end and s.end > start]
     mined = [q for q in saved.get("quotes", []) if q.get("text") == quote]
     mining_unsafe = any(q.get("verdict") == "NOT_FOUND" or q.get("usable") is False for q in mined)
-    strong = bool(segments) and all(
-        s.attribution == "evidence_backed" and str(s.entity_id) == str(runtime.scope.contact_id)
-        for s in segments
-    )
     media = {
         "schema_version": 1,
         "version_ref": str(source.version_ref),
@@ -65,7 +68,8 @@ def attach(draft: Any, source: TranscriptSource, saved: dict[str, Any], runtime:
         "mined_quote_qualifications": [
             {"verdict": q.get("verdict"), "usable": q.get("usable")} for q in mined
         ],
-        "attribution": "evidence_backed" if strong else "unverified",
+        "attribution": "unverified",
+        "speaker_check": speaker,
         "segments": [s.model_dump(mode="json") for s in segments],
         "quality": saved["quality"],
         "superseded": saved["superseded"],
@@ -75,10 +79,7 @@ def attach(draft: Any, source: TranscriptSource, saved: dict[str, Any], runtime:
         draft,
         artifact_key=saved["text_key"],
         source_url=saved["source_url"],
-        outreach_safe=draft.outreach_safe
-        and not mining_unsafe
-        and (runtime.scope.subject_kind != "person" or strong)
-        and verdict == "EXACT",
+        outreach_safe=draft.outreach_safe and not mining_unsafe and verdict == "EXACT",
         markers={
             **draft.markers,
             "media": media,
@@ -86,6 +87,19 @@ def attach(draft: Any, source: TranscriptSource, saved: dict[str, Any], runtime:
             "media_timestamp": None,
         },
     )
+
+
+async def speaker_for(runtime: Any, source: TranscriptSource) -> dict[str, Any] | None:
+    """The job's saved speaker check for this transcript, recorded with the claim (no new call)."""
+    from clue_api.arv2.media_speaker import saved_speaker_check
+
+    async with runtime._conn_factory() as conn:
+        return await saved_speaker_check(
+            conn,
+            workspace_id=runtime.scope.workspace_id,
+            job_id=runtime.scope.job_id,
+            version_id=source.version_ref,
+        )
 
 
 async def annotate_drafts(
@@ -104,7 +118,10 @@ async def annotate_drafts(
             ]
             matches = exact if len(exact) == 1 else []
         if len(matches) == 1:
-            draft = attach(draft, *matches[0], runtime)
+            source, saved = matches[0]
+            draft = attach(
+                draft, source, saved, runtime, speaker=await speaker_for(runtime, source)
+            )
         elif draft.markers.get("source_kind_block") == "transcript":
             draft = replace(
                 draft, outreach_safe=False, markers={**draft.markers, "media_reference_gap": True}
@@ -184,7 +201,7 @@ async def guard_draft(runtime: Any, conn: Any, draft: Any) -> Any:
             version_ref=meta["version_ref"], start=meta["start"], end=meta["end"]
         )
         saved = await store.load_transcript(runtime, conn, source.version_ref)
-        return attach(draft, source, saved, runtime)
+        return attach(draft, source, saved, runtime, speaker=await speaker_for(runtime, source))
     is_media = draft.markers.get("source_kind_block") == "transcript"
     if draft.source_url:
         from clue_api.arv2.media_types import content_hash

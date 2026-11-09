@@ -13,9 +13,8 @@ from clue_api.arv2.display.evidence import _evidence_ref
 from clue_api.arv2.media_types import Candidate, Quality, Segment
 from clue_api.arv2.quality_claims import TranscriptProposal, submit_proposal
 from clue_api.arv2.quality_coverage import coverage
-from clue_api.arv2.quality_evidence import EvidenceUnavailable, TextSupport, grant_manifest
+from clue_api.arv2.quality_evidence import EvidenceUnavailable, grant_manifest
 from clue_api.arv2.quality_media import (
-    SpeakerIntroduction,
     TranscriptSupport,
     index_transcripts,
     read_transcript,
@@ -109,14 +108,6 @@ def test_transcript_speaker_qualification_repair_and_refusal_replay(tmp_path, at
                         start=len(intro),
                         end=len(value),
                         quote=quote,
-                        introduction=SpeakerIntroduction(
-                            speaker_label="Guest",
-                            passage=TextSupport(
-                                source_id=source.source_id, start=0, end=len(intro), quote=intro
-                            ),
-                        )
-                        if attributed
-                        else None,
                     ),
                 ),
                 assessment=assessment(),
@@ -149,7 +140,8 @@ def test_transcript_speaker_qualification_repair_and_refusal_replay(tmp_path, at
             claim = next(c for c in rows if c.id == result.claim_id)
             ev = _evidence_ref(claim)
             assert ev.media_timestamp is None
-            assert bool(ev.quote) == attributed
+            # No self-introduction gate (founder 2026-11-09): the quote shows either way.
+            assert ev.quote == quote
             assert ev.outreach_safe == attributed
             assert any("Timestamp unavailable" in q for q in ev.qualifications)
             bad = proposal.model_copy(

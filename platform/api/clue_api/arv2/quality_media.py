@@ -28,12 +28,6 @@ from clue_research.claimstore.quality import assess_claim
 from clue_storage import StorageBackend, read_verified_artifact, retain_artifact
 
 
-class SpeakerIntroduction(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    speaker_label: str = Field(min_length=1, max_length=200)
-    passage: TextSupport
-
-
 class TranscriptSupport(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: Literal["transcript"] = "transcript"
@@ -42,7 +36,6 @@ class TranscriptSupport(BaseModel):
     start: int = Field(ge=0)
     end: int = Field(gt=0)
     quote: str = Field(min_length=1, max_length=8000)
-    introduction: SpeakerIntroduction | None = None
 
 
 @dataclass(frozen=True)
@@ -209,44 +202,19 @@ async def validate_transcript(
         cursor = max(cursor, seg.end)
     if cursor < support.end:
         raise EvidenceUnavailable("the quoted range lacks complete segment support")
-    bound = False
-    introduction = support.introduction
-    if introduction and scope.person_subject_id:
-        intro = introduction.passage
-        if intro.source_id != ref.source_id:
-            raise EvidenceUnavailable("introduction must be a passage in this exact recording")
-        await validate_support(conn, storage, grant, intro)
-        intro_segments = [
-            s for s in saved["segments"] if s.start < intro.end and s.end > intro.start
-        ]
-        # Exact name in the introduction and a consistent turn label are necessary, not a
-        # declaration that every voice in an episode belongs to its named guest.
-        import re
+    from clue_api.arv2.media_speaker import saved_speaker_check
 
-        bound = bool(scope.person_name.strip()) and bool(
-            re.search(
-                r"\b(?:i am|i'm|my name is)\s+" + re.escape(scope.person_name) + r"\b",
-                intro.quote,
-                re.IGNORECASE,
-            )
-        )
-        bound = (
-            bound
-            and bool(intro_segments)
-            and all(
-                s.speaker == introduction.speaker_label
-                and s.attribution != "conflict"
-                and s.entity_id in (None, scope.person_subject_id)
-                for s in [*segments, *intro_segments]
-            )
-        )
+    speaker = await saved_speaker_check(
+        conn,
+        workspace_id=grant.scope.workspace_id,
+        job_id=grant.scope.job_id,
+        version_id=support.version_ref,
+    )
     warnings = list(saved["quality"].get("warnings", []))
     if saved["quality"].get("coverage") != "full":
         warnings.append("Transcript coverage is incomplete or unknown.")
     if any(v is True for v in saved["quality"].get("loop_report", {}).values()):
         warnings.append("Transcript repetition needs review.")
-    if scope.person_subject_id and not bound:
-        warnings.append("The quoted voice is not corroborated as this person.")
     return (
         ref,
         {
@@ -255,8 +223,8 @@ async def validate_transcript(
             "start": support.start,
             "end": support.end,
             "quote_verdict": "EXACT",
-            "attribution": "evidence_backed" if bound else "unverified",
-            "speaker_binding": introduction.model_dump(mode="json") if introduction else None,
+            "attribution": "unverified",
+            "speaker_check": speaker,
             "segments": [s.model_dump(mode="json") for s in segments],
             "quality": saved["quality"],
             "superseded": False,
