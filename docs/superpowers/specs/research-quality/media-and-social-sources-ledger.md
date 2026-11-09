@@ -57,7 +57,12 @@ Status: **works** (tested, use it), **limited** (works with a stated limit), **u
 | | ScrapeCreators user posts | drop | Top-tweets sample only |
 | Read X video up to 2 min | ScrapeCreators X transcript | works | $0.0019 |
 | Read X video over 2 min | Tweet lookup → MP4 link → Deepgram | works | 18-min video transcribed |
-| Read Instagram or Facebook posts | treg providers | untested | |
+| Read Instagram posts | treg `scrapecreators.instagram.user.posts` | works on public accounts | $0.0019/page, 2–6 s, next-page cursor, captions, dates, video links. Public control (garyvee) 26 posts; Dave's public @davegerhardt 27 posts (Sep 2025–Nov 2026, Exit Five content confirms him). Private accounts return "Profile is restricted", not charged |
+| | treg `tikhub.x.instagram-v2-fetch-user-posts` | limited | Worked on the public control (12 posts); refused every one of our people (400, not charged) |
+| Is the Instagram account private? | treg `scrapecreators.instagram.user.profile` | works | $0.0019; Rob, Nick Fisher, Lisa Kant and Ana: private. Gift-pilot people's personal accounts are mostly private, so Instagram will often give nothing |
+| Read Instagram video up to 2 min | treg `scrapecreators.x.v2-instagram-media-transcript` | works | $0.0019; 117-s video gave 291 words; 279-s video refused (same 120-s limit as X) |
+| Read Instagram video over 2 min | Video link from the posts tool → Deepgram | works | File downloads without sign-in; Deepgram matched the 17-s reel; long-video run not repeated (same path as X) |
+| Read Facebook posts | treg providers | untested | |
 | Confirm the person is the speaker | – | none | Current check to be deleted; new design pending |
 
 ## 0b. Google search (checked 2026-11-09, not adopted)
