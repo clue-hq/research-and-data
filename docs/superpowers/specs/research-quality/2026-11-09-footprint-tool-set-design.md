@@ -162,9 +162,11 @@ its launch file (the trial harness runs `CURRENT_RECIPE_VERSION`, now 42). Order
   fail to resolve today for another reason (`nominate_committee_candidate@1`'s digest changed). Checked by
   removing the field and resolving every recipe 1–42: the same recipes 2–5 fail, nothing else.
 - **Quotes:** the proof line the agent saves must still be the transcript's own text at the place it points
-  to (that is how a claim proves where it came from). What is dropped is the page check that a quote on the
-  page is a character-for-character copy of that proof line, for recording quotes only
-  (`quality_pages.py:207-220`), so the page writer can fix spelling.
+  to (that is how a claim proves where it came from). The page checks that a quote is a character-for-character
+  copy, that a transcript quote is `evidence_backed`, and that cited person claims are outreach-safe
+  (`quality_pages.py:207-240`) already do not run for current recipes: they are skipped in advisory mode
+  (every recipe ≥ 6). Checked 2026-11-10 on the lane DB: person pages show facts and quotes from claims all
+  marked outreach-unsafe, including transcript quotes with corrected wording. No page change is needed.
 - **No speaker gate anywhere:** `evidence_backed` stops gating quotes on pages, the display, and a claim's
   `outreach_safe`. Jev's answer is stored with the claim for the record.
 - **Jev runs only in person jobs.** If it fails, the transcript still comes back, marked "speaker check

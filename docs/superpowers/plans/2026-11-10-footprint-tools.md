@@ -310,7 +310,7 @@ the founder decisions in section 0 of `docs/superpowers/specs/research-quality/m
 
 **Files:**
 - Modify: `arv2/quality_media.py` (`validate_transcript`), `arv2/media_claims.py` (`attach`),
-  `arv2/quality_pages.py:207-220`, `arv2/display/evidence.py:170-180`
+  `arv2/display/evidence.py:170-180`
 - Modify tests: `tests/arv2/test_quality_media_db.py`, `tests/arv2/test_media_research.py`, and any test
   asserting `evidence_backed` on transcript claims
 - Test: `tests/arv2/test_transcript_quotes.py`
@@ -326,14 +326,17 @@ the founder decisions in section 0 of `docs/superpowers/specs/research-quality/m
   not corroborated as this person." is removed.
 - `media_claims.attach`: the `strong` rule and its use in `outreach_safe` are removed; `attribution` is
   `"unverified"`; the media marker carries the saved `speaker_check`.
-- `quality_pages`: a quote sentence on a transcript claim no longer needs `attribution == "evidence_backed"`
-  nor `sentence.text in claim["evidence_span"]`; web-snapshot quotes keep the substring rule.
+- `quality_pages`: no change. Its quote, substring and outreach checks (`quality_pages.py:207-240`) run only
+  outside advisory mode (`_validate_sections` returns early when `advisory_research(scope)`, i.e. every
+  recipe ≥ 6), so they do not touch any current page. Checked on the lane DB 2026-11-10: contact pages of
+  the last 10 days carry 1,086 facts and 595 quotes, all citing claims marked outreach-unsafe, including 6
+  transcript quotes whose text is not a copy of the claim's line.
 - `display/evidence.py`: no demotion to `source_excerpt` on attribution.
 
-- [ ] **Step 1: Write failing tests:** `test_transcript_quote_with_fixed_spelling_is_accepted_on_page`
-  (claim span "we was going to moving fast", page quote "We were going to move fast." → accepted),
-  `test_web_quote_still_must_match` (web-snapshot quote not in span → ValueError),
-  `test_transcript_claim_outreach_safe_without_introduction`, `test_display_keeps_transcript_quote_as_quote`,
+- [ ] **Step 1: Write failing tests:** `test_transcript_claim_outreach_safe_without_introduction`
+  (`media_claims.attach` no longer forces `outreach_safe=False` on a person job),
+  `test_display_keeps_transcript_quote_as_quote` (the evidence panel keeps `primary_quote` and the quote for a
+  contact transcript claim with no `evidence_backed`),
   `test_no_introduction_field` (`"introduction" not in TranscriptSupport.model_fields`), and
   `test_only_recipes_2_to_5_fail_to_resolve` (loop over recipes 1–43 × person/account; the failing set is
   `{2, 3, 4, 5}`).
