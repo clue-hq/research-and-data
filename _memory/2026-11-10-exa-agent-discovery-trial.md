@@ -44,3 +44,9 @@ platform design or code change.
   In-house, contract timing and dissatisfaction: "not found" for all 8. Quote check: 26/35 on
   page; 5 not found (mostly homepages), 4 pages unfetchable. Several gates marked unclear although
   the quote answers them (served_market with "Headquartered in London").
+- run2: effort auto (cap $5): completed in 234 s, $1.35 (agentCompute 1.11, 49 searches 0.25),
+  stopReason `schema_satisfied`. 7 companies, all US: 5 top (U.S. Bank, PNC, KeyBank, Allstate,
+  State Farm), 2 caveat (MetLife: Cisco Secure Workload again; Liberty Mutual: Cisco ISE/TrustSec
+  from an old Jamf blog). Gates 27/28 pass, mostly from SEC filings/company pages; quotes 30/30 on
+  page. Some hybrid_estate passes rest on loose quotes (PNC, Allstate). In-house, contract timing,
+  dissatisfaction: "not found" for all 7 again. Overlap with run1: U.S. Bank, PNC, MetLife.
