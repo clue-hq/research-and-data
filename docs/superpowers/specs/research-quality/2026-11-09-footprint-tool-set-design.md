@@ -16,7 +16,10 @@ saved where the agent can page through them, and a prompt that says how to resea
 ## 2. Where the code lives
 
 A new package `platform/api/clue_api/footprint/`, beside `arv2/`. It holds everything that does not depend on
-an ARV2 research job, so the gift agent can use it later without ARV2.
+an ARV2 research job, so the gift agent can use it later without ARV2. The gift agent is standalone only
+while it is an experiment; it will be built into the platform once it takes shape (founder, 2026-11-10), so
+`footprint/` stays inside `clue_api` rather than becoming a separate library. Until then the standalone gift
+agent keeps its own `gt.py`.
 
 **Moves into `footprint/` unchanged (research-agnostic today):** `media_types`, `media_recording`,
 `media_feeds_client`, `media_sources`, `media_resolution`, `deepgram_media_client`, `gemini_media_client`,
@@ -47,9 +50,15 @@ saved as files under `/research/operations/<id>/` and transcripts under `/resear
 the agent reads with its file tools (`ls`, `read_file`, `grep`). That already is the gift agent's
 "saved with an ID, page through it" pattern, so **no new reading tools are needed.**
 
-My call: add the new jobs as operations of `acquire_research_evidence` version 3, not as separate tools. It
-keeps receipts, replay and cost handling in one place. The agent learns each operation from
-`/research/capabilities/0.json`, so each operation's description must be written as carefully as a tool's.
+Settled 2026-11-10: the new jobs are operations of `acquire_research_evidence` version 3, not separate tools.
+The trial lane's record (30 Sep – 8 Nov, `arv2_research_operation`) shows the agent rarely gets the wrapper's
+inputs wrong: 10 of 1,802 person calls and 13 of 1,787 account calls were refused for wrong inputs (under
+1%), none for a job that does not exist, and the agent found and used jobs from the job list
+(`discover_media` 141 calls, `read_media` 110). The refusals that matter (`provider_refusal`,
+`provider_halted:exa`, `choose_an_exact_episode`) would not be fixed by separate tools. The agent learns
+each operation from `/research/capabilities/0.json`, so each operation's description must be written as
+carefully as a tool's. If the trial shows the agent ignoring the new jobs, a named tool that passes its call
+to the wrapper (about ten lines each) can be added without changing anything else.
 
 | Operation | Takes | Does | Gives back |
 |---|---|---|---|
@@ -64,9 +73,25 @@ keeps receipts, replay and cost handling in one place. The agent learns each ope
 
 Dropped: `discover_media` as the main route (its Exa search stays only as `find_videos`' fallback).
 Not in this version: LinkedIn comments (untested), Spotify, Listen Notes, Podscan, Podchaser, Google,
-conference sites, the Wayback archive.
+conference sites, the Wayback archive, voice matching (section 4).
 
-## 4. Speaker check
+## 4. Is this the right person? Three checks
+
+Proposed 2026-11-08 as four steps; what became of each:
+
+1. **Before transcribing: the metadata (kept, prompt, not code).** `find_podcasts` and `find_videos` return
+   the full description, tags, channel and the links found in them, and the agent reads them before calling
+   `read_media`. Clear naming of the person (with the employer or role they had when it was recorded,
+   checked against their career history) confirms the recording; only clear proof of a namesake rules it
+   out; anything unclear is transcribed and judged (ledger decision 3). The same metadata goes to Jev as
+   what we know about the recording.
+2. **After transcribing: Jev (below).** It replaces both the self-introduction check (dropped, ledger
+   decision 2; a host's introduction is part of the transcript Jev reads) and naming the speakers with
+   AssemblyAI or Gemini (ledger decisions 5 and 8).
+3. **Voice matching: later, not in this version.** pyannote compares a voice sample from one confirmed
+   recording with another recording; for hard cases such as panels or shared names.
+
+### The Jev check
 
 - The old self-introduction check is deleted, with everything that depends on it: `SpeakerIntroduction` and
   the regex in `validate_transcript`, the `evidence_backed` attribution value, the "strong" rule in
@@ -80,8 +105,6 @@ conference sites, the Wayback archive.
 - The answer is shown to the agent at the top of the transcript, e.g. "Jev: speaking, 0.97; Speaker 1 is this
   person, 0.88". Every line under that label counts as the person's. The agent decides; there is no code
   threshold that blocks a recording or a quote.
-- Metadata rule (prompt, not code): clear naming confirms; only clear proof of a namesake rules a recording
-  out; anything unclear is transcribed and judged.
 
 ## 5. Quotes
 
@@ -114,7 +137,8 @@ its launch file (the trial harness runs `CURRENT_RECIPE_VERSION`, now 42). Order
 
 ## 8. Open, for the founder
 
-1. Operations inside `acquire_research_evidence` (my call above) or separate named tools like the gift agent's.
+1. ~~Operations inside `acquire_research_evidence` or separate named tools.~~ Settled 2026-11-10: inside, as
+   version 3 (section 3).
 2. ~~YouTube captions have no speaker labels.~~ Settled 2026-11-09: podcast version first, else Gemini;
    captions dropped (ledger decision 8).
 3. ~~Does account research get the social operations?~~ Settled 2026-11-09 (founder): yes, account research gets them too.
