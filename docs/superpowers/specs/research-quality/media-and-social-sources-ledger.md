@@ -36,9 +36,9 @@ gift pilot's recipients (`~/gift-poc`, `~/daymaker-rea`).
 4. **Quotes from recordings: no word matching (founder, 2026-11-09).** The agent keeps the transcript line as
    it was transcribed, as the proof, in its findings and the claim. The page writer writes the same line for
    the reader with spelling and punctuation corrected; it rewrites, it does not copy mechanically. No code
-   compares the two.
-5. **Speaker identification uses Jev (founder, 2026-11-09).** A speaker label is not one person for the
-   whole file (merges, splits, teasers, interjections), so the model credits lines passage by passage.
+   compares the two, and no code checks the finding's line against the transcript character for character.
+5. **Speaker identification uses Jev (founder, 2026-11-09).** How lines are credited to the person (by
+   passage or by speaker label) is not decided yet.
 
 **Principle (founder, 2026-11-09):** only what the person has made public. A private account gives nothing,
 and we never try to get past that (no sign-in, no stealth). The treg providers read public pages logged out;
@@ -195,7 +195,8 @@ the recording's metadata, sent to the person-agent model (`openai/gpt-6.1-sol`):
   tokens). It is a router, so the model behind it can change between calls; it also accepts audio and
   video input, which is untested.
 - **Lesson.** Who is in the recording is easy for a strong model. The real risk is diarisation: a speaker
-  label is not one person. Lines must be credited to the person passage by passage, never by whole label.
+  label is not always one person. Proposal, not agreed: credit lines to the person passage by passage rather
+  than by whole label.
 
 ## 5. LinkedIn
 
