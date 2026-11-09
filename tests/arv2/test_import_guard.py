@@ -19,6 +19,8 @@ ARV2_PACKAGE = "clue_api.arv2"
 #: all of ``clue_memory``, and every ``clue_api`` module outside ``arv2`` are forbidden.
 ALLOWED_INTERNAL_PREFIXES: tuple[str, ...] = (
     "clue_api.arv2",
+    # Footprint research (2026-11-10): media and social clients that know nothing about a job.
+    "clue_api.footprint",
     "clue_core",
     "clue_config",
     "clue_obs",

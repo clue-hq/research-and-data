@@ -172,6 +172,14 @@ type = "forbidden"
 source_modules = ["clue_auth"]
 forbidden_modules = ["clue_research", "clue_memory", "clue_content", "clue_design", "clue_toolbelt", "clue_agents", "clue_execution", "clue_fleet", "clue_projections", "clue_api", "clue_gateway", "clue_locks", "clue_storage"]
 
+# Footprint research (2026-11-10): media and social code shared by research and, later, the gift
+# agent. It never reaches into a research job.
+[[tool.importlinter.contracts]]
+name = "footprint never imports the ARV2 research lane"
+type = "forbidden"
+source_modules = ["clue_api.footprint"]
+forbidden_modules = ["clue_api.arv2"]
+
 # Rule 2 — core/ is the shared kernel: it imports nothing else inside clue_research.
 [[tool.importlinter.contracts]]
 name = "core is the shared kernel (imports nothing internal)"
