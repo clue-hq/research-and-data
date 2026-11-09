@@ -33,6 +33,13 @@ gift pilot's recipients (`~/gift-poc`, `~/daymaker-rea`).
    recording is not rejected: we transcribe it and the model judges from the transcript. No rule-based or
    string-matching identity checks; the model decides from what it knows about the person and the transcript.
 
+4. **Quotes from recordings: no word matching (founder, 2026-11-09).** The agent keeps the transcript line as
+   it was transcribed, as the proof, in its findings and the claim. The page writer writes the same line for
+   the reader with spelling and punctuation corrected; it rewrites, it does not copy mechanically. No code
+   compares the two.
+5. **Speaker identification uses Jev (founder, 2026-11-09).** A speaker label is not one person for the
+   whole file (merges, splits, teasers, interjections), so the model credits lines passage by passage.
+
 **Principle (founder, 2026-11-09):** only what the person has made public. A private account gives nothing,
 and we never try to get past that (no sign-in, no stealth). The treg providers read public pages logged out;
 they return "private" for private accounts and charge nothing.
