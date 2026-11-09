@@ -1,0 +1,81 @@
+{
+  "type": "object",
+  "required": ["companies"],
+  "properties": {
+    "companies": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "required": [
+          "name", "domain", "hq_country", "size", "gates", "builds_in_house",
+          "current_competitor_product", "contract_timing", "dissatisfaction",
+          "priority", "opportunity", "remark"
+        ],
+        "properties": {
+          "name": {"type": "string"},
+          "domain": {"type": "string", "description": "the company's own website domain, e.g. example.com"},
+          "hq_country": {"type": "string"},
+          "size": {"type": "string", "description": "revenue, assets or employees, as the source states it"},
+          "gates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["gate", "verdict", "url", "quote"],
+              "properties": {
+                "gate": {"type": "string", "description": "the gate's key"},
+                "verdict": {"type": "string", "enum": ["pass", "fail", "unclear"]},
+                "url": {"type": "string"},
+                "quote": {"type": "string", "description": "the deciding sentence, copied word for word"}
+              }
+            }
+          },
+          "builds_in_house": {
+            "type": "object",
+            "required": ["status", "url", "quote"],
+            "properties": {
+              "status": {"type": "string", "enum": ["yes", "no", "not found"]},
+              "url": {"type": "string"},
+              "quote": {"type": "string"}
+            }
+          },
+          "current_competitor_product": {
+            "type": "object",
+            "required": ["product", "url", "quote"],
+            "properties": {
+              "product": {"type": "string", "description": "the product's name, or \"not found\""},
+              "url": {"type": "string"},
+              "quote": {"type": "string"}
+            }
+          },
+          "contract_timing": {
+            "type": "object",
+            "required": ["summary", "ends_within_6_months", "url", "quote"],
+            "properties": {
+              "summary": {"type": "string", "description": "what is known about when the contract ends, or \"not found\""},
+              "ends_within_6_months": {"type": "string", "enum": ["yes", "no", "unknown"]},
+              "url": {"type": "string"},
+              "quote": {"type": "string"}
+            }
+          },
+          "dissatisfaction": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["who", "summary", "url", "quote"],
+              "properties": {
+                "who": {"type": "string", "description": "the named person and their role at this company"},
+                "summary": {"type": "string"},
+                "url": {"type": "string"},
+                "quote": {"type": "string"}
+              }
+            }
+          },
+          "priority": {"type": "string", "enum": ["top", "caveat"]},
+          "opportunity": {"type": "boolean"},
+          "remark": {"type": "string", "description": "one or two sentences for the seller"}
+        }
+      }
+    }
+  }
+}
