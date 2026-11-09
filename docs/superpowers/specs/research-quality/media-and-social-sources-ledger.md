@@ -149,6 +149,34 @@ The current self-introduction check is to be discarded (section 1). Ideas collec
 - Rule: a recording counts only if the person is a confirmed named speaker; a quote counts only from that
   speaker's lines.
 
+### 4.1 Tests run 2026-11-09
+
+**Speaker metadata from each platform** (Dilip Venkatachari and Ann Barron-DiCamillo samples):
+
+| Source | What names the people in it | Result |
+|---|---|---|
+| Podcast Index (`/episodes/byid`) | `persons` field (the podcast:person tag) | Empty on all 6 sample episodes; no feed used the tag. |
+| Podcast RSS item | Description text; sometimes links | All 6 descriptions name the guest, their role and employer, and usually the host. CIO Classified links the guest's and host's LinkedIn profiles in the item. |
+| YouTube Data API (`videos.list`) | Title, description, tags | The name is in the title or description of most hits; tags sometimes list every speaker (nasscom: three names). One CIO Classified video links the guest's LinkedIn. Namesakes appear ("Leslie Ann Barron"). An old hit names an earlier employer (Compass Labs), so the employer check needs the person's career history. |
+| LinkedIn posts (fetchinio) | Post text | The text names co-panelists in plain words. The tool returns no tagged-profile links. A post in a person's feed can be someone else's (a Meera Mani post appeared in Dilip's feed). |
+| X tweet | `entities.user_mentions` when the author tags someone | The field exists in the tweet format. The one sample had no mentions, so this is untested. |
+
+**Speaker identification by an LLM**: the diarised Deepgram transcript, what we know about the person, and
+the recording's metadata, sent to the person-agent model (`openai/gpt-6.1-sol`):
+
+| Recording | Hard part | Answer | Correct? |
+|---|---|---|---|
+| Citi "The Cyber World" podcast, 37 min, 4 labels | Two guests both called Ann | Speaking. Speaker 1 is the person. Some of her lines also sit under Speaker 2 (the opening teaser, and before 33:22). Host questions are merged into some labels. | Yes. It caught the diarisation errors. |
+| Dilip's LinkedIn live, 52 min, 2 labels | Name misspelled "Venkatachary"; no caption | Speaking. Speaker 0 is mostly Dilip. Some of his answers sit under the host's label (02:23, 50:21). | Yes |
+| "Dr. David Kuhn" IEP podcast, 42 min | Namesake | Different person (a clinical psychologist). | Yes |
+
+- **Time and cost.** About 20 s per recording and 11k–16k input tokens. Deepgram for the two new episodes
+  cost about $0.34.
+- **A cheap model is not enough.** `gemini-3.5-flash-lite` (3 s, $0.004) picked the right label on Citi but
+  said the "labels are consistent throughout", which is wrong.
+- **Lesson.** Who is in the recording is easy for a strong model. The real risk is diarisation: a speaker
+  label is not one person. Lines must be credited to the person passage by passage, never by whole label.
+
 ## 5. LinkedIn
 
 | Source | What it gives | Cost | Tested on | Result | Verdict |
