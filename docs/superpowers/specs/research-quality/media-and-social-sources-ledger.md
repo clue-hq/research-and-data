@@ -188,12 +188,40 @@ the recording's metadata, sent to the person-agent model (`openai/gpt-6.1-sol`):
   cost about $0.34.
 - **A cheap model is not enough.** `gemini-3.5-flash-lite` (3 s, $0.004) picked the right label on Citi but
   said the "labels are consistent throughout", which is wrong.
-- **Jev (founder's choice, `typesafe/jev-router` on OpenRouter; no `jev-1.13` id is listed there).** Same
-  prompt, same three recordings: all three correct. On Citi it named both Anns, the host and the legal
-  voice-over, and caught the merged lines at 31:47 and 33:22; on Dilip it caught his lines under the host's
-  label (02:23, 50:53); on Kuhn it said different person. 8–12 s each, $0.014–$0.049 each (16k–18k input
-  tokens). It is a router, so the model behind it can change between calls; it also accepts audio and
-  video input, which is untested.
+- **Correction: `typesafe/jev-router` is not Jev.** The first Jev test sent the chat prompt to
+  `typesafe/jev-router`, a router that hands each call to some chat model. Logged over 12 more calls, it
+  picked DeepSeek v4.1 Flash, Claude Sonnet 5.5 or Gemini 3.8 Flash, so those results say nothing about
+  Jev. Discarded.
+- **Jev 1.14 (`typesafe/jev-1.14`, the model the founder chose).** Jev writes no text; it answers typed
+  questions with probabilities through OpenRouter's Decisions API (`POST /api/alpha/decisions`, no tunable
+  parameters). Every call answered as `typesafe/jev-1.14-20261014`.
+  - `state` (an object): `person_we_research` (the same profile as above), `what_we_know_about_the_recording`
+    (show, episode, description), `transcript_diarised` (lines `[mm:ss] Speaker N: text`), and a note that
+    labels can be wrong and names misspelled.
+  - Questions (agreed with the founder 2026-11-09):
+    - `presence` (choice): "Is the person we research (person_we_research) in this recording?" Options
+      `speaking`, `only_mentioned`, `different_person`, `unclear`.
+    - `is_speaking` (noul): "Does the person we research speak in this recording?" True: they are one of the
+      voices. False: they do not speak here, or the speaker is someone else with the same name.
+    - `speaker_label` (choice): "Using the facts in person_we_research (their employer, roles and career),
+      which speaker label is that exact person? If the speaker who shares the name is someone else (a
+      namesake), the answer is none." One option per label ("Speaker N is the person described in
+      person_we_research") plus `none` ("they do not speak, or the voice with that name belongs to a
+      namesake").
+  - Results, 5 runs per recording:
+
+    | Recording | presence | is_speaking | speaker_label |
+    |---|---|---|---|
+    | Citi (two Anns) | speaking 0.96–0.98 | 0.93–0.95 | Speaker 1 0.86–0.89 (none 0.11–0.14) |
+    | Dilip LinkedIn live | speaking 0.98–0.99 | 0.96–0.97 | Speaker 0 0.89–0.93 (none 0.07–0.11) |
+    | Kuhn namesake | different_person 0.97–0.98 | 0.10–0.14 | none 1.00 |
+
+    All 15 correct; runs agree within about 0.04. 1.2–1.5 s and $0.0005–$0.0008 per call (16k–18k input
+    tokens). The first wording of the label question ("which label mostly carries the voice of the person")
+    picked the namesake's label on Kuhn at about 0.66; the reworded question above fixed it.
+  - Limit: Jev answers only the questions asked. It does not list passages where the diarisation mixed
+    people up, as the chat models did unprompted; crediting passage by passage would need one question per
+    passage.
 - **Lesson.** Who is in the recording is easy for a strong model. The real risk is diarisation: a speaker
   label is not always one person. Proposal, not agreed: credit lines to the person passage by passage rather
   than by whole label.
