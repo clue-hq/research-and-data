@@ -42,7 +42,15 @@ gift pilot's recipients (`~/gift-poc`, `~/daymaker-rea`).
    keep it simple, revisit later).
 6. **Heavy posters, first iteration (founder, 2026-11-09):** the agent reads its saved files itself. A
    scalable way to search thousands of items is a later, separate branch.
-7. **Out of scope (founder, 2026-11-09):** text someone else wrote into a caption, description or transcript
+8. **YouTube transcription: Gemini is the main route (founder, 2026-11-09).** Order: (1) the podcast version
+   of the same episode when there is one (publisher transcript or Deepgram); (2) otherwise Gemini on the public
+   YouTube link; YouTube captions through treg are dropped as a route. The Gemini model is one env setting,
+   `CLUE_ARV2_MEDIA_VIDEO_MODEL` (today `gemini-3.5-flash-lite`); the founder will choose it after trying models.
+   Add a coverage check: compare the transcript's last timestamp with the video length from the YouTube API and
+   re-run only the missing part once. Shorter Gemini windows (`CLUE_ARV2_MEDIA_GEMINI_WINDOW_SECONDS`, now 2400)
+   are worth considering. Gemini's transcripts carry speaker labels, so Jev picks the label as for Deepgram;
+   Gemini's own name on a label is a guess (its prompt names the subject) and is not the proof.
+9. **Out of scope (founder, 2026-11-09):** text someone else wrote into a caption, description or transcript
    to mislead the agent. Beyond the platform's control.
 
 **Principle (founder, 2026-11-09):** only what the person has made public. A private account gives nothing,
@@ -67,8 +75,9 @@ Status: **works** (tested, use it), **limited** (works with a stated limit), **u
 | | Conference and webinar sites (RSAC, BrightTALK, ON24, Gartner) | drop | Founder 2026-11-09: a talk counts only when it is also on YouTube, LinkedIn, X or a podcast. Exa on these sites found real talks only for Rob and Karl (BrightTALK), namesakes for Kuhn and Rossmann, nothing on RSAC, ON24 or Gartner |
 | Read a podcast | Publisher transcript | works | First choice |
 | | Deepgram by audio link | works | About $0.0043/min, speaker labels |
-| Read a YouTube video | Captions via treg | works | $0.0019; no speaker names |
-| | Gemini | limited | Fallback; refused when length unknown or over budget |
+| Read a YouTube video | Podcast version of the same episode | works | First choice when it exists |
+| | Gemini on the YouTube link | works, main route | About $0.012 per 35-min video; labelled speakers; can stop early without warning (needs the coverage check) |
+| | Captions via treg | drop | $0.0019, full coverage, but no speaker labels; auto captions unpunctuated |
 | Read the person's LinkedIn posts | treg `fetchinio.linkedin.user.posts` | works | Full history; Ann 80 (8/8 hand posts) |
 | | Exa on linkedin.com in date windows | limited | Fallback; coverage unknown |
 | See what they liked on LinkedIn | treg `fetchinio.linkedin.user.reactions` | works | Found Kuhn's like of an Illumio VP's post |
@@ -138,8 +147,8 @@ of this.
 | Route | What it handles | Cost | Tested on | Result | Verdict |
 |---|---|---|---|---|---|
 | Publisher transcript (RSS `podcast:transcript`, show pages) | Podcasts that publish one | Free | Already in `read_media` | Best quality when present | Keep, first choice |
-| **YouTube captions via treg** (`scrapecreators.x.v1-youtube-video-transcript`) | Any YouTube video with captions | $0.0019 | Ann's 5 videos | All 5 returned (1,000–9,000 words), lower-case auto captions, no speaker names. Direct `timedtext` fetch from our IP returned empty. | **Keep, before Gemini** |
-| Gemini on YouTube (today) | Video without captions | Model cost; refused when duration is unknown or over budget | Runs 4/5 | Works; slower and dearer than captions | Keep as fallback |
+| YouTube captions via treg (`scrapecreators.x.v1-youtube-video-transcript`) | Any YouTube video with captions | $0.0019 | Ann's 5 videos; Technovation/Dilip (34 min) and Citi "Cyber World" (37 min) | Full coverage, but no speaker labels (Dilip's track had 33 `>>` turn marks, Citi's none, all lower case, misheard "jaria Murray"). | **Drop** (founder 2026-11-09) |
+| **Gemini on YouTube** (`gemini-3.5-flash-lite`, platform prompt, 0.2 fps) | Any public YouTube video | About $0.012–0.013 per video, 34–86 s | Same two videos (2026-11-09) | Every line labelled and named; separated the two Anns. Dilip: full 33:47. Citi: stopped at 31:32 of 36:41 with no warning, losing the closing answers. Misheard the host as "Charly Murray". Word counts differ from captions (Dilip 7,188 vs 5,992), unexplained. | **Main route** after the podcast version; needs a coverage check |
 | **Deepgram nova-3 by link** (today, for podcast audio) | Any audio or video file link, with speaker labels | About $0.0043/min | X: Theo Von, 18 min (2,338 words). LinkedIn: Dilip's "CIO Leadership Live", 52 min (9,263 words, 2 speakers). | Full transcripts both times | **Keep; extend to X and LinkedIn video** |
 | ScrapeCreators X transcript | X video up to 120 s | $0.0019 | Short clips; an 18-min and a 3-min video | Clips under 2 min work. Longer ones are refused; `allow_long_transcription=true` returned success with an empty transcript. | Keep for short clips only |
 | ScrapeCreators LinkedIn post transcript | LinkedIn video | $0.0019 | Several posts | Often unavailable | Drop in favour of file + Deepgram |
@@ -268,7 +277,8 @@ Comparison on the same people: the archive is free and reaches older history; Ti
    quoted name, each result shown with title, channel or show, date and description for the agent to judge.
 2. Prompt guidance on how media research works: search by quoted name; check name and employer at the time
    before transcribing; skip personal and family channels.
-3. Transcription order: publisher transcript → YouTube captions (treg) → Deepgram by file link (also for X
+3. Transcription order: publisher transcript → podcast version of a YouTube video → Gemini for YouTube →
+   Deepgram by file link (also for X
    and LinkedIn video) → Gemini.
 4. LinkedIn own posts and reactions through treg once the profile URL is confirmed; comments after testing.
 5. X timeline through TikHub once the handle is confirmed; handles from PDL.

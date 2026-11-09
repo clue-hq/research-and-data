@@ -55,7 +55,7 @@ keeps receipts, replay and cost handling in one place. The agent learns each ope
 |---|---|---|---|
 | `find_podcasts` (new) | name, company | Apple + Podcast Index (by person, by keyword); removes duplicates; fills missing feed links; puts episodes naming the person and company first. Never drops a result. | Show, title, date, description, links found in it, feed, audio link, publisher transcript link |
 | `find_videos` (new) | name, company | YouTube search with the quoted name, then full description, tags, channel and length for each hit; Exa on youtube.com when the YouTube quota is used up | Title, channel, date, length, full description, tags, links found in it |
-| `read_media` (extended) | a link or a found item | Transcribes, in this order: publisher transcript → YouTube captions → Deepgram on the file → Gemini. Now also reads LinkedIn, X, Instagram and Facebook video (short X/Instagram clips by ScrapeCreators, the rest by Deepgram from the file link). Runs the speaker check (section 4). | Transcript saved as files, with the speaker check's answer at the top |
+| `read_media` (extended) | a link or a found item | Transcribes podcasts from the publisher transcript, else Deepgram on the file. YouTube: the podcast version of the same episode if there is one, else Gemini on the link, with a coverage check (last timestamp against the video length; the missing part re-run once). Model set by `CLUE_ARV2_MEDIA_VIDEO_MODEL`, chosen by the founder. Now also reads LinkedIn, X, Instagram and Facebook video (short X/Instagram clips by ScrapeCreators, the rest by Deepgram from the file link). Runs the speaker check (section 4). | Transcript saved as files, with the speaker check's answer at the top |
 | `search_transcripts`, `open_transcript` (kept) | | as today | |
 | `linkedin_activity` (new) | profile link, `posts` or `reactions` | Pages through the person's whole history | Every post saved to files; a receipt with counts and date range |
 | `x_posts` (new) | handle | Pages through the TikHub timeline | Same |
@@ -72,6 +72,8 @@ conference sites, the Wayback archive.
   the regex in `validate_transcript`, the `evidence_backed` attribution value, the "strong" rule in
   `media_claims`, the quote refusal in `quality_pages.py:211`, the demotion in `display/evidence.py:177`,
   and their tests.
+- Gemini's YouTube transcripts carry speaker labels too, so Jev picks the label as for Deepgram. Gemini's own
+  name on a label is a guess (its prompt names the subject) and is not the proof.
 - After a recording with speaker labels is transcribed for a person job, `read_media` asks Jev the three
   agreed questions (present? speaking? which label is that exact person?), with what we know about the person
   and the recording. About 1 s and under $0.001 a question.
@@ -113,8 +115,8 @@ its launch file (the trial harness runs `CURRENT_RECIPE_VERSION`, now 42). Order
 ## 8. Open, for the founder
 
 1. Operations inside `acquire_research_evidence` (my call above) or separate named tools like the gift agent's.
-2. YouTube captions have no speaker labels, so Jev cannot pick a label: use the podcast version's audio when
-   there is one, otherwise Gemini or Deepgram on the video, or accept "speaking: yes/no" only.
+2. ~~YouTube captions have no speaker labels.~~ Settled 2026-11-09: podcast version first, else Gemini;
+   captions dropped (ledger decision 8).
 3. Does account research get the social operations, or only person research?
 4. Saved posts live under `/research/operations/<id>/` (the quality lane's place) rather than a new `reads/`
    folder; the agent-workspace redesign may later move them.
