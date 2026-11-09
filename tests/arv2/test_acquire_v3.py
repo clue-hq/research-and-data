@@ -1,4 +1,4 @@
-"""acquire_research_evidence version 3: new footprint jobs; versions 1 and 2 stay exactly as pinned."""
+"""acquire_research_evidence version 3: new footprint jobs; versions 1 and 2 stay as pinned."""
 
 from __future__ import annotations
 
