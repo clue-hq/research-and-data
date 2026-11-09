@@ -37,12 +37,10 @@ Status: **works** (tested, use it), **limited** (works with a stated limit), **u
 | Find personal sites and blogs | Exa search, then page fetch | works | The gift pilot's richest stories came from own sites and old blogs |
 | Find podcasts by person | Podcast Index `byperson` + `byterm` | works | Free; matched every hand-found podcast for Ann and Dilip; noisy for common names |
 | | Apple Podcasts search | works | Free; fills feed links |
-| | Listen Notes, Podscan | untested | Founder trying both |
-| | Podchaser | drop | Same results as Podcast Index, paid |
-| | Spotify search (treg) | untested | |
+| | Listen Notes, Podscan, Spotify, Podchaser | drop | Founder 2026-11-09: Podcast Index + Apple are enough |
 | Find videos and talks by person | YouTube Data API search, quoted name | works | Free to about 100 searches a day; 5/5 Ann, 3/3 Dilip; skip personal and family channels |
 | | Exa on youtube.com | limited | 4 of 5 for Ann; fallback |
-| | Conference and webinar libraries | limited | No direct tool; found only when uploaded to YouTube or indexed by Exa |
+| | Conference and webinar sites (RSAC, BrightTALK, ON24, Gartner) | drop | Founder 2026-11-09: a talk counts only when it is also on YouTube, LinkedIn, X or a podcast. Exa on these sites found real talks only for Rob and Karl (BrightTALK), namesakes for Kuhn and Rossmann, nothing on RSAC, ON24 or Gartner |
 | Read a podcast | Publisher transcript | works | First choice |
 | | Deepgram by audio link | works | About $0.0043/min, speaker labels |
 | Read a YouTube video | Captions via treg | works | $0.0019; no speaker names |
@@ -61,6 +59,18 @@ Status: **works** (tested, use it), **limited** (works with a stated limit), **u
 | Read X video over 2 min | Tweet lookup → MP4 link → Deepgram | works | 18-min video transcribed |
 | Read Instagram or Facebook posts | treg providers | untested | |
 | Confirm the person is the speaker | – | none | Current check to be deleted; new design pending |
+
+## 0b. Google search (checked 2026-11-09, not adopted)
+
+- Google's own Custom Search JSON API is closed to new customers and stops working on 1 January 2027
+  (developers.google.com/custom-search). There is no official whole-web Google API to build on.
+- Third-party result providers (SerpApi, DataForSEO and others, reachable through treg) scrape Google. Google
+  sued SerpApi in December 2025 for circumventing its SearchGuard protection (DMCA claims); reports say the
+  court has since granted SerpApi's motion to dismiss. Legal risk is not settled.
+- Through treg's routed `treg.google.serp.organic`, a `site:` query with a quoted name that finds nothing is
+  a "miss" and falls through every provider, each billing: one call took 24–61 s and cost 1–2 ¢. The 32-search
+  test was stopped part-way after about 23 ¢.
+- Founder decision: no Google search.
 
 ## 1. What is wrong today
 
