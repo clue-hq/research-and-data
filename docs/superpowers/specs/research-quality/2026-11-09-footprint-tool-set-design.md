@@ -141,8 +141,30 @@ its launch file (the trial harness runs `CURRENT_RECIPE_VERSION`, now 42). Order
    version 3 (section 3).
 2. ~~YouTube captions have no speaker labels.~~ Settled 2026-11-09: podcast version first, else Gemini;
    captions dropped (ledger decision 8).
-3. ~~Does account research get the social operations?~~ Settled 2026-11-09 (founder): yes, account research gets them too.
+3. ~~Does account research get the social operations?~~ Settled 2026-11-09 (founder): yes, account research gets them too. Settled 2026-11-10 (founder): it reads **both** the company's own pages (LinkedIn company page, X account)
+   and the company leaders' posts. Company LinkedIn posts need a treg tool not yet tested
+   (`tikhub.x.linkedin-web-v2-get-company-posts` $0.001, `scrapecreators.x.v1-linkedin-company-posts` $0.00188).
 4. ~~Where saved posts live.~~ Settled 2026-11-09 (founder): under `/research/operations/<id>/`, like every
    other operation's result. No `reads/` folder is added to the research agent. The shared `footprint/` code
    only returns posts; each agent saves them in its own place (the gift agent or a Head of ABM chat in its
    own workspace).
+5. ~~Legal review and topics to stay off.~~ Settled 2026-11-10 (founder): kept as they are for now; the trial
+   runs with today's privacy filter (`person_compliance.py`), and the off-limits list follows later.
+6. ~~Can the jobs be appended to version 2?~~ Settled 2026-11-10: no. Version 2's input schema lists the job
+   names, and 21 saved profiles pin its fingerprint; a version 3 is used only by the new profiles.
+
+## 9. Calls made while planning (2026-11-10, mine, for the founder to check)
+
+- **Versions:** the latest account profile is v41, so the new ones are account **v42**, person **v31-person**,
+  recipe **43** (section 7 said v40).
+- **The `introduction` field stays in the claim schema, ignored.** Removing it would change the fingerprints of
+  pinned claim tools. The check that read it is deleted.
+- **Quotes:** the proof line the agent saves must still be the transcript's own text at the place it points
+  to (that is how a claim proves where it came from). What is dropped is the page check that a quote on the
+  page is a character-for-character copy of that proof line, for recording quotes only
+  (`quality_pages.py:207-220`), so the page writer can fix spelling.
+- **No speaker gate anywhere:** `evidence_backed` stops gating quotes on pages, the display, and a claim's
+  `outreach_safe`. Jev's answer is stored with the claim for the record.
+- **Jev runs only in person jobs.** If it fails, the transcript still comes back, marked "speaker check
+  unavailable".
+
