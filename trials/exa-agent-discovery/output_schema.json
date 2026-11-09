@@ -10,7 +10,7 @@
         "required": [
           "name", "domain", "hq_country", "size", "gates", "builds_in_house",
           "current_competitor_product", "contract_timing", "dissatisfaction",
-          "priority", "opportunity", "remark"
+          "reasons_to_act_now", "priority", "opportunity", "remark"
         ],
         "properties": {
           "name": {"type": "string"},
@@ -66,6 +66,19 @@
               "properties": {
                 "who": {"type": "string", "description": "the named person and their role at this company"},
                 "summary": {"type": "string"},
+                "url": {"type": "string"},
+                "quote": {"type": "string"}
+              }
+            }
+          },
+          "reasons_to_act_now": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["what", "date", "url", "quote"],
+              "properties": {
+                "what": {"type": "string", "description": "what happened, in one sentence"},
+                "date": {"type": "string", "description": "when it happened, as YYYY-MM-DD or YYYY-MM"},
                 "url": {"type": "string"},
                 "quote": {"type": "string"}
               }

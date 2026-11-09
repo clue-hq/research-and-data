@@ -35,6 +35,8 @@ def evidence(company: dict) -> list[tuple[str, str, str]]:
         items.append((key, found.get("url", ""), found.get("quote", "")))
     for signal in company.get("dissatisfaction") or []:
         items.append(("dissatisfaction", signal.get("url", ""), signal.get("quote", "")))
+    for reason in company.get("reasons_to_act_now") or []:
+        items.append(("reason_to_act_now", reason.get("url", ""), reason.get("quote", "")))
     return [(what, url, quote) for what, url, quote in items if url and quote.strip()]
 
 
