@@ -26,6 +26,10 @@ gift pilot's recipients (`~/gift-poc`, `~/daymaker-rea`).
      person's own words from a podcast or talk can never appear on their page as a quote.**
    - tests in `tests/arv2/test_quality_media_db.py` and `tests/arv2/test_media_research.py`.
 
+**Principle (founder, 2026-11-09):** only what the person has made public. A private account gives nothing,
+and we never try to get past that (no sign-in, no stealth). The treg providers read public pages logged out;
+they return "private" for private accounts and charge nothing.
+
 ## 0a. What each source can be used for today
 
 Status: **works** (tested, use it), **limited** (works with a stated limit), **untested**, **drop**.
@@ -62,7 +66,8 @@ Status: **works** (tested, use it), **limited** (works with a stated limit), **u
 | Is the Instagram account private? | treg `scrapecreators.instagram.user.profile` | works | $0.0019; Rob, Nick Fisher, Lisa Kant and Ana: private. Gift-pilot people's personal accounts are mostly private, so Instagram will often give nothing |
 | Read Instagram video up to 2 min | treg `scrapecreators.x.v2-instagram-media-transcript` | works | $0.0019; 117-s video gave 291 words; 279-s video refused (same 120-s limit as X) |
 | Read Instagram video over 2 min | Video link from the posts tool → Deepgram | works | File downloads without sign-in; Deepgram matched the 17-s reel; long-video run not repeated (same path as X) |
-| Read Facebook posts | treg providers | untested | |
+| Read Facebook posts | treg `scrapecreators.x.v1-facebook-profile-posts` | works on public posts | $0.0019 a page of 3 posts, 4–12 s, cursor; text, date, reactions, comments, video file links (`sdUrl`/`hdUrl`, download without sign-in, so long video goes to Deepgram). Lisa Kant and Nick Fisher: "Profile is private", not charged. Rob: only 9 public posts in all (2012–2021; paging stopped after 3 pages, 18 s, 0.4 ¢). Brooke and Mandar: public posts, but those read were family or religious, which are off limits |
+| | treg `anyapi.facebook.user.posts` | untested | Needs POST; not retried |
 | Confirm the person is the speaker | – | none | Current check to be deleted; new design pending |
 
 ## 0b. Google search (checked 2026-11-09, not adopted)
