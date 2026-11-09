@@ -1210,8 +1210,9 @@ def test_a_long_video_is_read_in_windows_and_joined():
                     youtube_data("PT1H10M"),
                     no_shows(),
                     no_shows(),
-                    gemini_window("[00:10] Guest: First part."),
-                    gemini_window("[00:20] Guest: Second part."),
+                    # Each window ends near its end, so the coverage check asks nothing more.
+                    gemini_window("[00:10] Guest: First part.\n[39:30] Guest: Wrapping up."),
+                    gemini_window("[00:20] Guest: Second part.\n[29:30] Guest: Thanks."),
                     embeddings(),
                 ]
             )
@@ -1521,8 +1522,9 @@ def test_paid_gemini_windows_are_recovered_when_saving_failed(monkeypatch):
                     youtube_data("PT1H10M"),
                     no_shows(),
                     no_shows(),
-                    gemini_window("[00:10] Guest: First part."),
-                    gemini_window("[00:20] Guest: Second part."),
+                    # Each window ends near its end, so the coverage check asks nothing more.
+                    gemini_window("[00:10] Guest: First part.\n[39:30] Guest: Wrapping up."),
+                    gemini_window("[00:20] Guest: Second part.\n[29:30] Guest: Thanks."),
                     embeddings(),
                 ]
             )

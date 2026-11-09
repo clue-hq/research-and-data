@@ -28,6 +28,7 @@ from clue_api.arv2.gemini_media_client import (
     GeminiMediaClient,
     SpeakerContext,
     Transcript,
+    covered_window,
     detect_loops,
     join_windows,
     sentence_lines,
@@ -659,20 +660,14 @@ async def _acquire_youtube(
 
     def hop(caller: Any) -> Transcript:
         client = runtime.clients.media(caller, runtime.ledger_of(caller))
+
+        def transcribe(start: int, end: int) -> Transcript:
+            return client.transcribe_video(
+                candidate.url, duration_s=end - start, start_s=start, end_s=end, context=context
+            )
+
         return join_windows(
-            [
-                (
-                    start,
-                    client.transcribe_video(
-                        candidate.url,
-                        duration_s=end - start,
-                        start_s=start,
-                        end_s=end,
-                        context=context,
-                    ),
-                )
-                for start, end in windows
-            ]
+            [part for start, end in windows for part in covered_window(transcribe, start, end)]
         )
 
     transcript = await ops.call(runtime, op, "gemini", hop)

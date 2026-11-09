@@ -702,6 +702,43 @@ def youtube_windows(duration_s: int, window_s: int) -> list[tuple[int, int]]:
     return [(start, min(start + window_s, duration_s)) for start in range(0, duration_s, window_s)]
 
 
+#: A window whose last timestamp falls short of its end by more than this is re-asked once for the
+#: missing part (founder 2026-11-09: Gemini can stop early without saying so).
+COVERAGE_SLACK_S = 60
+COVERAGE_SLACK_SHARE = 0.05
+
+
+def _last_ts(transcript: Transcript) -> int | None:
+    stamps = [line.ts_s for line in transcript.lines if line.ts_s is not None]
+    return max(stamps) if stamps else None
+
+
+def covered_window(
+    transcribe: Callable[[int, int], Transcript], start: int, end: int
+) -> list[tuple[int, Transcript]]:
+    """One window, checked for coverage: the last timestamp against the window's end.
+
+    Short by more than ``max(60 s, 5%)`` of the window: the missing part is asked once more, from
+    the last timestamp. Still short: the part is kept and marked ``STOPPED_EARLY_AT_<mm:ss>``, which
+    makes the joined transcript partial. A transcript without timestamps cannot be checked and is
+    kept as it is.
+    """
+    slack = max(COVERAGE_SLACK_S, int((end - start) * COVERAGE_SLACK_SHARE))
+    first = transcribe(start, end)
+    last = _last_ts(first)
+    if last is None or start + last >= end - slack:
+        return [(start, first)]
+    resume = start + last
+    second = transcribe(resume, end)
+    second_last = _last_ts(second)
+    reached = resume + (second_last or 0)
+    if reached < end - slack:
+        second = replace(
+            second, finish_reason=f"STOPPED_EARLY_AT_{reached // 60:02d}:{reached % 60:02d}"
+        )
+    return [(start, first), (resume, second)]
+
+
 def join_windows(parts: Sequence[tuple[int, Transcript]]) -> Transcript:
     """One transcript from windows in order; each window's timestamps shift by its start.
 
