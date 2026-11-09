@@ -142,6 +142,12 @@ class Secrets(BaseSettings):
     # Env: CLUE_TREG_API_KEY. A treg team token: LinkedIn, X, Instagram and Facebook readers for
     # footprint research. Sent as ``X-Treg-Token`` (redacted). Unset: those jobs report a gap.
     treg_api_key: SecretStr | None = None
+    # Env: CLUE_PDL_API_KEY, else PDL_API_KEY (the key the design subsystem already uses). People
+    # Data Labs person enrichment: a person's X and Facebook handles for footprint research.
+    pdl_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("CLUE_PDL_API_KEY", "PDL_API_KEY", "pdl_api_key"),
+    )
 
     # --- telemetry roots (lane 3 slice 2) ---
     # Env: CLUE_SENTRY_DSN — the Sentry project DSN (it authorises event ingest, so a secret).
