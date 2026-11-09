@@ -234,6 +234,11 @@ the recording's metadata, sent to the person-agent model (`openai/gpt-6.1-sol`):
     All 15 correct; runs agree within about 0.04. 1.2–1.5 s and $0.0005–$0.0008 per call (16k–18k input
     tokens). The first wording of the label question ("which label mostly carries the voice of the person")
     picked the namesake's label on Kuhn at about 0.66; the reworded question above fixed it.
+  - Long transcripts (2026-11-10, Citi transcript repeated to reach the length): sent whole, 134,786
+    characters (about 110 minutes) answered Speaker 1 at 0.82 in 1.4 s for $0.0015; 360,811 characters
+    answered Speaker 1 at 0.69 in 2.1 s for $0.0041. In four windows of 120,000 characters, the default
+    (`CLUE_ARV2_SPEAKER_CHECK_MAX_CHARS`), the combined answer was Speaker 1 at 0.73 for $0.0042. No
+    length limit was hit; the lower confidence comes from the repeated content.
   - Limit: Jev answers only the questions asked. It does not list passages where the diarisation mixed
     people up, as the chat models did unprompted; crediting passage by passage would need one question per
     passage.

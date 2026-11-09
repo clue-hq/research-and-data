@@ -446,6 +446,12 @@ class Settings(BaseSettings):
     # serves neither this transcription model nor a file upload. It reads
     # ``Secrets.gemini_api_key`` directly. Env: ``CLUE_ARV2_MEDIA_TRANSCRIBE_MODEL``.
     arv2_media_video_model: str = "gemini-3.5-flash-lite"
+    # The speaker check on a person job's transcripts (founder 2026-11-09): Jev answers, through
+    # OpenRouter's Decisions API, which speaker label is the person. Transcripts longer than
+    # ``arv2_speaker_check_max_chars`` are asked in windows and the answers combined.
+    # Env: ``CLUE_ARV2_SPEAKER_CHECK_MODEL`` / ``CLUE_ARV2_SPEAKER_CHECK_MAX_CHARS``.
+    arv2_speaker_check_model: str = "typesafe/jev-1.14"
+    arv2_speaker_check_max_chars: int = Field(default=120_000, ge=10_000)
     arv2_media_transcribe_model: str = "gemini-3.5-transcribe"
     # Active recording ASR is Deepgram Nova-3; Gemini fields above serve legacy callers.
     # en matches the trial; auto detects dominant language; multi permits code-switching.
