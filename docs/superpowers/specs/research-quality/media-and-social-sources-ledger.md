@@ -10,6 +10,58 @@ scratchpad, not in the repo.
 People used as test cases are public executives: the U.S. Bank committee from rounds r40b–r42b, and the
 gift pilot's recipients (`~/gift-poc`, `~/daymaker-rea`).
 
+## 0. Decisions (founder, 2026-11-09)
+
+1. **One shared channel** for every media and social source: podcast and video discovery, transcription,
+   LinkedIn posts and video, X posts and video, handle finding. Account research, person research and the
+   direct-mail (gift) research all use it. Designed with the founder and approved before any code.
+2. **Delete the self-introduction speaker check** in the same change that builds the shared channel. Its
+   footprint (found 2026-11-09), all of which goes or is redesigned:
+   - `quality_media.py` `SpeakerIntroduction`, `TranscriptSupport.introduction` and the regex in
+     `validate_transcript`, with its warning "The quoted voice is not corroborated as this person";
+   - `media_types.py` the `evidence_backed` attribution value and its validator;
+   - `media_claims.py` the "strong" rule that writes `attribution: evidence_backed | unverified`;
+   - `quality_pages.py:211`, which refuses any contact quote from a transcript that is not `evidence_backed`
+     as a primary quote, and `display/evidence.py:177`, which demotes it to a source excerpt. **So today a
+     person's own words from a podcast or talk can never appear on their page as a quote.**
+   - tests in `tests/arv2/test_quality_media_db.py` and `tests/arv2/test_media_research.py`.
+
+## 0a. What each source can be used for today
+
+Status: **works** (tested, use it), **limited** (works with a stated limit), **untested**, **drop**.
+
+| Job | Source | Status | Note |
+|---|---|---|---|
+| Find the person's X and Facebook handles | PDL person enrichment | works | All 10 X and 5 FB handles found by any route; 0 wrong; about $0.28 a match |
+| Find the Instagram account | Same-handle check, logged out | limited | 5 of 6 found; gives name and post count only |
+| Find personal sites and blogs | Exa search, then page fetch | works | The gift pilot's richest stories came from own sites and old blogs |
+| Find podcasts by person | Podcast Index `byperson` + `byterm` | works | Free; matched every hand-found podcast for Ann and Dilip; noisy for common names |
+| | Apple Podcasts search | works | Free; fills feed links |
+| | Listen Notes, Podscan | untested | Founder trying both |
+| | Podchaser | drop | Same results as Podcast Index, paid |
+| | Spotify search (treg) | untested | |
+| Find videos and talks by person | YouTube Data API search, quoted name | works | Free to about 100 searches a day; 5/5 Ann, 3/3 Dilip; skip personal and family channels |
+| | Exa on youtube.com | limited | 4 of 5 for Ann; fallback |
+| | Conference and webinar libraries | limited | No direct tool; found only when uploaded to YouTube or indexed by Exa |
+| Read a podcast | Publisher transcript | works | First choice |
+| | Deepgram by audio link | works | About $0.0043/min, speaker labels |
+| Read a YouTube video | Captions via treg | works | $0.0019; no speaker names |
+| | Gemini | limited | Fallback; refused when length unknown or over budget |
+| Read the person's LinkedIn posts | treg `fetchinio.linkedin.user.posts` | works | Full history; Ann 80 (8/8 hand posts) |
+| | Exa on linkedin.com in date windows | limited | Fallback; coverage unknown |
+| See what they liked on LinkedIn | treg `fetchinio.linkedin.user.reactions` | works | Found Kuhn's like of an Illumio VP's post |
+| See their LinkedIn comments | treg `harvestapi.linkedin.user.comments` | untested | Next test |
+| Find LinkedIn posts that mention them | treg LinkedIn post search | limited | Recent and popular only; namesakes |
+| Read LinkedIn video (any length) | Video link from the posts tool → Deepgram | works | 52-min stream transcribed; link expires in about a week |
+| | ScrapeCreators LinkedIn transcript | drop | Often unavailable |
+| Read the person's X posts | TikHub timeline (treg) | works | 0.1¢ a page, about 3 s; current; depth limit and replies unknown |
+| | Wayback archive + X embed | limited | Free deep history for heavy posters; gaps, slow, undocumented endpoint |
+| | ScrapeCreators user posts | drop | Top-tweets sample only |
+| Read X video up to 2 min | ScrapeCreators X transcript | works | $0.0019 |
+| Read X video over 2 min | Tweet lookup → MP4 link → Deepgram | works | 18-min video transcribed |
+| Read Instagram or Facebook posts | treg providers | untested | |
+| Confirm the person is the speaker | – | none | Current check to be deleted; new design pending |
+
 ## 1. What is wrong today
 
 | Problem | Evidence |
