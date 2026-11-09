@@ -37,8 +37,13 @@ gift pilot's recipients (`~/gift-poc`, `~/daymaker-rea`).
    it was transcribed, as the proof, in its findings and the claim. The page writer writes the same line for
    the reader with spelling and punctuation corrected; it rewrites, it does not copy mechanically. No code
    compares the two, and no code checks the finding's line against the transcript character for character.
-5. **Speaker identification uses Jev (founder, 2026-11-09).** How lines are credited to the person (by
-   passage or by speaker label) is not decided yet.
+5. **Speaker identification uses Jev (founder, 2026-11-09).** Jev picks which speaker label is our person;
+   every line under that label counts as theirs. Passage-by-passage crediting is not built now (founder:
+   keep it simple, revisit later).
+6. **Heavy posters, first iteration (founder, 2026-11-09):** the agent reads its saved files itself. A
+   scalable way to search thousands of items is a later, separate branch.
+7. **Out of scope (founder, 2026-11-09):** text someone else wrote into a caption, description or transcript
+   to mislead the agent. Beyond the platform's control.
 
 **Principle (founder, 2026-11-09):** only what the person has made public. A private account gives nothing,
 and we never try to get past that (no sign-in, no stealth). The treg providers read public pages logged out;
@@ -55,7 +60,8 @@ Status: **works** (tested, use it), **limited** (works with a stated limit), **u
 | Find personal sites and blogs | Exa search, then page fetch | works | The gift pilot's richest stories came from own sites and old blogs |
 | Find podcasts by person | Podcast Index `byperson` + `byterm` | works | Free; matched every hand-found podcast for Ann and Dilip; noisy for common names |
 | | Apple Podcasts search | works | Free; fills feed links |
-| | Listen Notes, Podscan, Spotify, Podchaser | drop | Founder 2026-11-09: Podcast Index + Apple are enough |
+| | Listen Notes, Podscan, Podchaser | drop | Founder 2026-11-09: Podcast Index + Apple are enough |
+| | Spotify search, treg `scrapecreators.x.v1-spotify-search` | works, adds little | $0.0019/call, no key of ours. Dilip: CIO Classified, CIO Leadership Live, Technovation (all already found by Podcast Index); Ann: FinCyber Today only (missed the Citi episode). Rest of the results are noise (devotional and art podcasts). Gives no audio file, so a Spotify-only episode cannot be transcribed through it. Official Spotify Web API: development mode needs a Premium owner and allows 5 users; extended access is for organisations with 250k monthly users (since May 2025) |
 | Find videos and talks by person | YouTube Data API search, quoted name | works | Free to about 100 searches a day; 5/5 Ann, 3/3 Dilip; skip personal and family channels |
 | | Exa on youtube.com | limited | 4 of 5 for Ann; fallback |
 | | Conference and webinar sites (RSAC, BrightTALK, ON24, Gartner) | drop | Founder 2026-11-09: a talk counts only when it is also on YouTube, LinkedIn, X or a podcast. Exa on these sites found real talks only for Rob and Karl (BrightTALK), namesakes for Kuhn and Rossmann, nothing on RSAC, ON24 or Gartner |
