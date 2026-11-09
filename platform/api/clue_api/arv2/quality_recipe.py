@@ -10,6 +10,8 @@ from typing import Any, Final
 
 RECIPE_26: Final = 26
 RECIPE_27: Final = 27
+#: Recipe 43: acquire_research_evidence version 3 with the footprint jobs (plan 2026-11-10).
+FOOTPRINT_RECIPE: Final = 43
 
 
 def recipe_of(scope: Any) -> int:

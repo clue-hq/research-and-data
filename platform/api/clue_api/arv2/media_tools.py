@@ -254,6 +254,27 @@ async def discover_media(runtime: Any, args: DiscoverMediaArgs) -> dict[str, Any
     }
 
 
+async def _x_video_link(runtime: Any, url: str) -> str:
+    """An X post link becomes its video file (one treg lookup), which Deepgram reads by link.
+
+    Without a treg token, or for a post with no video, the link is returned unchanged and the
+    walled-host rule reports it as before.
+    """
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower().removeprefix("www.")
+    token = getattr(runtime.clients, "treg_token", None)
+    if host not in {"x.com", "twitter.com"} or "/status/" not in parts.path or token is None:
+        return url
+    from clue_api.footprint.social_video import x_video_file
+    from clue_api.footprint.treg_client import TREG_BASE_URL
+
+    base_url = getattr(runtime.settings, "treg_base_url", TREG_BASE_URL)
+    found = await runtime.call_provider(
+        "treg", lambda caller: x_video_file(caller, token, url, base_url=base_url)
+    )
+    return found or url
+
+
 async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
     url = args.url
     selected: Candidate | None = None
@@ -269,6 +290,7 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
             if candidate.media_url and candidate.canonical_key:
                 selected = candidate
     assert url is not None
+    url = await _x_video_link(runtime, url)
     gaps: list[str] = []
     for target in [url, *args.alternate_urls]:
         resolved: Resolution | None = None

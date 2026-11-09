@@ -144,8 +144,12 @@ from clue_api.arv2.quality_page_tools import (
     PublishResearchPageTool,
     ReadPageInputsTool,
 )
-from clue_api.arv2.quality_provider_tools import AcquireResearchTool, AcquireResearchToolV2
-from clue_api.arv2.quality_recipe import RECIPE_26, at_least
+from clue_api.arv2.quality_provider_tools import (
+    AcquireResearchTool,
+    AcquireResearchToolV2,
+    AcquireResearchToolV3,
+)
+from clue_api.arv2.quality_recipe import FOOTPRINT_RECIPE, RECIPE_26, at_least
 from clue_api.arv2.quality_results import QualityJobRunner, ResearchUnitReport, validate_report
 from clue_api.arv2.quality_tools import (
     CorrectResearchClaimTool,
@@ -276,6 +280,7 @@ def quality_tools(
         registry.register(tool, make_default=tool.version == "1")
     registry.register(AcquireResearchTool(acquisition_runtime), make_default=True)
     registry.register(AcquireResearchToolV2(acquisition_runtime), make_default=False)
+    registry.register(AcquireResearchToolV3(acquisition_runtime), make_default=False)
     return registry
 
 
@@ -974,7 +979,11 @@ class ResearchUnitRuntime:
                 self.scope,
                 execution,
                 capabilities=cast(
-                    AcquireResearchTool, self.tools.get("acquire_research_evidence", "1")
+                    AcquireResearchTool,
+                    self.tools.get(
+                        "acquire_research_evidence",
+                        "3" if at_least(self.scope, FOOTPRINT_RECIPE) else "1",
+                    ),
                 ).capabilities(),
             ),
             middleware=(

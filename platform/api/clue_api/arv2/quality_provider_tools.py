@@ -61,9 +61,40 @@ AcquisitionName = Literal[
 ]
 ACQUISITIONS = frozenset(get_args(AcquisitionName))
 
+#: Version 3 (recipe 43, founder 2026-11-10): the footprint jobs join; ``discover_media`` leaves
+#: (its Exa search lives on only as find_videos' fallback). Versions 1 and 2 are unchanged.
+AcquisitionNameV3 = Literal[
+    "fetch_page",
+    "search_web",
+    "read_ats_board",
+    "lookup_company",
+    "research_deep",
+    "discover_people",
+    "read_people_result",
+    "lookup_person",
+    "enrich_contact",
+    "read_media",
+    "search_transcripts",
+    "open_transcript",
+    "find_podcasts",
+    "find_videos",
+    "find_handles",
+    "linkedin_activity",
+    "x_posts",
+    "instagram_posts",
+    "facebook_posts",
+    "company_linkedin_posts",
+]
+ACQUISITIONS_V3 = frozenset(get_args(AcquisitionNameV3))
+
 
 class AcquireResearchInput(ToolInput):
     operation: AcquisitionName
+    arguments: dict[str, JsonValue]
+
+
+class AcquireResearchInputV3(ToolInput):
+    operation: AcquisitionNameV3
     arguments: dict[str, JsonValue]
 
 
@@ -151,7 +182,7 @@ class AcquireResearchTool(Tool):
         return await retry_lock_conflict(ctx.conn_factory, begin)
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
-        args = AcquireResearchInput.model_validate(inputs)
+        args = cast(AcquireResearchInput, self.input_model.model_validate(inputs))
         runtime = self.runtime
         if runtime is None:
             raise ValueError("acquisition is not bound in this research execution")
@@ -510,3 +541,20 @@ class AcquireResearchToolV2(AcquireResearchTool):
                 preview=[ReceiptHit.model_validate(h) for h in hits],
             )
         )
+
+
+class AcquireResearchToolV3(AcquireResearchToolV2):
+    """Recipe 43: the footprint jobs (podcasts, videos, handles, LinkedIn, X, Instagram, Facebook,
+    company pages) run through the same wrapper; ``discover_media`` is no longer offered."""
+
+    version = "3"
+    input_model = AcquireResearchInputV3
+
+    def __init__(self, runtime: ToolRuntime | None):
+        super().__init__(runtime)
+        if runtime is None:
+            return
+        from clue_api.arv2.footprint_operations import footprint_tools
+
+        kept = {n: t for n, t in self.operations.items() if n in ACQUISITIONS_V3}
+        self.operations = {**kept, **{t.name: t for t in footprint_tools(runtime)}}

@@ -2646,8 +2646,12 @@ class _LiveClients:
         youtube_data_api_key: SecretStr | None = None,
         podcast_index_api_key: SecretStr | None = None,
         podcast_index_api_secret: SecretStr | None = None,
+        treg_api_key: SecretStr | None = None,
+        pdl_api_key: SecretStr | None = None,
     ) -> None:
         self._settings = settings
+        self._treg_api_key = treg_api_key
+        self._pdl_api_key = pdl_api_key
         self._youtube_data_api_key = youtube_data_api_key
         self._podcast_index_api_key = podcast_index_api_key
         self._podcast_index_api_secret = podcast_index_api_secret
@@ -2673,7 +2677,19 @@ class _LiveClients:
             youtube_data_api_key=self._youtube_data_api_key,
             podcast_index_api_key=self._podcast_index_api_key,
             podcast_index_api_secret=self._podcast_index_api_secret,
+            treg_api_key=self._treg_api_key,
+            pdl_api_key=self._pdl_api_key,
         )
+
+    @property
+    def treg_token(self) -> SecretStr | None:
+        """The treg team token for the footprint jobs (LinkedIn, X, Instagram, Facebook)."""
+        return self._treg_api_key if _present(self._treg_api_key) else None
+
+    @property
+    def pdl_key(self) -> SecretStr | None:
+        """The PDL key for find_handles (X and Facebook handles)."""
+        return self._pdl_api_key if _present(self._pdl_api_key) else None
 
     @property
     def transcription_ready(self) -> bool:
@@ -2835,6 +2851,8 @@ def build_arv2_account_research_handler(
             youtube_data_api_key=secrets.youtube_data_api_key,
             podcast_index_api_key=secrets.podcast_index_api_key,
             podcast_index_api_secret=secrets.podcast_index_api_secret,
+            treg_api_key=secrets.treg_api_key,
+            pdl_api_key=secrets.pdl_api_key,
             openrouter_api_key=_secret(keys["CLUE_OPENROUTER_API_KEY"]),
             # The OpenRouter URL is gateway policy, read from the config's own default rather than
             # spelled again here: the two ARV2 clients that speak to OpenRouter directly (media,
