@@ -139,6 +139,9 @@ class Secrets(BaseSettings):
     # without them only Apple's directory is searched.
     podcast_index_api_key: SecretStr | None = None
     podcast_index_api_secret: SecretStr | None = None
+    # Env: CLUE_TREG_API_KEY. A treg team token: LinkedIn, X, Instagram and Facebook readers for
+    # footprint research. Sent as ``X-Treg-Token`` (redacted). Unset: those jobs report a gap.
+    treg_api_key: SecretStr | None = None
 
     # --- telemetry roots (lane 3 slice 2) ---
     # Env: CLUE_SENTRY_DSN — the Sentry project DSN (it authorises event ingest, so a secret).

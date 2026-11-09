@@ -1069,6 +1069,9 @@ class Settings(BaseSettings):
     # docs/superpowers/specs/crm-integration/). The CRM tools and routes refuse until this is on
     # AND ``CLUE_COMPOSIO_API_KEY`` is set. Env: ``CLUE_CRM_INTEGRATION_ENABLED``.
     crm_integration_enabled: bool = True
+    # treg catalog base for footprint research (LinkedIn, X, Instagram, Facebook readers).
+    # Env: ``CLUE_TREG_BASE_URL``; the token is the secret ``CLUE_TREG_API_KEY``.
+    treg_base_url: str = "https://treg.to"
     # Composio REST API base (v3.1). Env: ``CLUE_COMPOSIO_BASE_URL``.
     composio_base_url: str = "https://backend.composio.dev/api/v3.1"
     # The Composio auth config per CRM; a CRM without one is not offered on the connect card.

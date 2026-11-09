@@ -51,7 +51,15 @@ __all__ = [
 #: from ``files.start`` and its holder can push bytes into our Gemini storage, on our billing,
 #: without any other credential. A raw record is a durable artifact at D1/A7, so it is masked here.
 SECRET_HEADERS: frozenset[str] = frozenset(
-    {"authorization", "x-token", "x-api-key", "x-goog-api-key", "x-goog-upload-url", "x-auth-key"}
+    {
+        "authorization",
+        "x-token",
+        "x-api-key",
+        "x-goog-api-key",
+        "x-goog-upload-url",
+        "x-auth-key",
+        "x-treg-token",
+    }
 )
 
 #: Query parameters whose value is a credential. Gemini's native API takes its key as ``?key=``,
