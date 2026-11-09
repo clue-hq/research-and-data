@@ -117,6 +117,7 @@ from clue_api.arv2.quality_recipe import at_least
 from clue_api.arv2.quality_results import QualityJobOutcome, QualityJobRunner
 from clue_api.arv2.sinks import LedgerSink
 from clue_api.arv2.structuring_client import FieldCatalog, StructuringClient, catalog_menu_text
+from clue_api.footprint.jev_client import SpeakerCheck, check_speaker
 from clue_config import GatewayConfig, Secrets, Settings
 from clue_core import Claim, EntityId
 from clue_core.provider_failures import failure_code
@@ -2729,6 +2730,25 @@ class _LiveClients:
             ledger=ledger,
             video_input_usd_per_1m=self._settings.arv2_media_video_usd_per_m_input,
             video_output_usd_per_1m=self._settings.arv2_media_video_usd_per_m_output,
+        )
+
+    def speaker_check(
+        self,
+        caller: ProviderCaller,
+        *,
+        person: dict[str, Any],
+        recording: dict[str, Any],
+        lines: list[str],
+    ) -> SpeakerCheck:
+        """Jev's answer to which speaker label is the person (person jobs; founder 2026-11-09)."""
+        return check_speaker(
+            caller,
+            self._openrouter_api_key,
+            self._settings.arv2_speaker_check_model,
+            person=person,
+            recording=recording,
+            lines=lines,
+            max_chars=self._settings.arv2_speaker_check_max_chars,
         )
 
     def structuring(self, caller: ProviderCaller) -> StructuringClient:

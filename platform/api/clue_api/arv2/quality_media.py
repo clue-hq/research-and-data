@@ -150,7 +150,16 @@ async def read_transcript(
         if not 0 <= start <= len(saved["segments"]):
             raise EvidenceUnavailable("restart the transcript segment view at 0")
         end = len(saved["segments"])
+        from clue_api.arv2.media_speaker import saved_speaker_check
+
+        check = await saved_speaker_check(
+            conn,
+            workspace_id=grant.scope.workspace_id,
+            job_id=grant.scope.job_id,
+            version_id=version,
+        )
         return {
+            **({"speaker_check": check} if check else {}),
             "source_id": str(sid),
             "version_ref": str(version),
             "current_version": str(saved["current_version"]),

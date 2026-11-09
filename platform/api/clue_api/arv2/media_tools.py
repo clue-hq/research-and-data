@@ -387,10 +387,12 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
                 result["next_action"] = (
                     "Use open_transcript with this version_ref to read the transcript; use "
                     "search_transcripts for focused passages. Preserve speakers and source timing. "
-                    "Deepgram Speaker numbers are voice clusters, not verified names; do not "
-                    "assign the research subject to a cluster from the episode title alone. "
-                    "Confidence and timing are machine estimates, not listening verification."
+                    "Speaker numbers are voice clusters. On a person job the speaker check above "
+                    "is a model's answer to which label is this person; weigh it with what you "
+                    "read. Confidence and timing are machine estimates, not listening verification."
                 )
+                if result.get("version_ref"):
+                    result = await _with_speaker_check(runtime, result, UUID(result["version_ref"]))
                 return result
             gaps.append(result.get("gap", result["state"]))
             video = result.get("video") or video
@@ -455,6 +457,24 @@ async def search_transcripts(runtime: Any, args: SearchTranscriptsArgs) -> dict[
     )
 
 
+async def _with_speaker_check(
+    runtime: Any, result: dict[str, Any], version_ref: UUID
+) -> dict[str, Any]:
+    """Put a person job's speaker check right after the recording's title, ahead of the text."""
+    from clue_api.arv2.media_speaker import speaker_check
+
+    check = await speaker_check(runtime, version_ref)
+    if check is None:
+        return result
+    ordered: dict[str, Any] = {}
+    for key, value in result.items():
+        if key in {"preview", "text", "segments", "passages"} and "speaker_check" not in ordered:
+            ordered["speaker_check"] = check.model_dump(mode="json")
+        ordered[key] = value
+    ordered.setdefault("speaker_check", check.model_dump(mode="json"))
+    return ordered
+
+
 async def open_transcript(runtime: Any, args: OpenTranscriptArgs) -> dict[str, Any]:
     if args.quote_index is not None:
         if args.version_ref is None:
@@ -480,7 +500,7 @@ async def open_transcript(runtime: Any, args: OpenTranscriptArgs) -> dict[str, A
             "attribution": "unverified",
             "why": quote.get("why", "")[:500],
         }
-    return await retrieval.open_passage(
+    opened = await retrieval.open_passage(
         runtime,
         version_id=args.version_ref,
         passage=args.passage_ref,
@@ -488,3 +508,7 @@ async def open_transcript(runtime: Any, args: OpenTranscriptArgs) -> dict[str, A
         end=args.end,
         neighbors=args.neighbors,
     )
+    version = opened.get("version_ref") if isinstance(opened, dict) else None
+    if version:
+        opened = await _with_speaker_check(runtime, opened, UUID(str(version)))
+    return opened
