@@ -117,6 +117,6 @@ its launch file (the trial harness runs `CURRENT_RECIPE_VERSION`, now 42). Order
 1. Operations inside `acquire_research_evidence` (my call above) or separate named tools like the gift agent's.
 2. ~~YouTube captions have no speaker labels.~~ Settled 2026-11-09: podcast version first, else Gemini;
    captions dropped (ledger decision 8).
-3. Does account research get the social operations, or only person research?
+3. ~~Does account research get the social operations?~~ Settled 2026-11-09 (founder): yes, account research gets them too.
 4. Saved posts live under `/research/operations/<id>/` (the quality lane's place) rather than a new `reads/`
    folder; the agent-workspace redesign may later move them.
