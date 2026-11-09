@@ -50,3 +50,11 @@ platform design or code change.
   from an old Jamf blog). Gates 27/28 pass, mostly from SEC filings/company pages; quotes 30/30 on
   page. Some hybrid_estate passes rest on loose quotes (PNC, Allstate). In-house, contract timing,
   dissatisfaction: "not found" for all 7 again. Overlap with run1: U.S. Bank, PNC, MetLife.
+- run3 (prompt d8cbec479: look first for reasons to act now, rank by them, never drop a fitting
+  company, spread markets): auto, 264 s, $0.97 (28 searches), schema_satisfied. 5 top, 0 caveat:
+  Crédit Mutuel Arkéa (FR, reported €100M cyber heist 2026-11), TruStage (US, July 2026
+  cyberattack, interim CIO, rebuilding in cloud), Barclays (UK, data-warehouse cloud migration),
+  Deutsche Bank (DE, core banking migration running old+new in parallel), Aflac (US, Aflac Japan
+  breach 2026-06; agent noted US not affected). Quotes 28/28 on page. Competitor, in-house,
+  contract, dissatisfaction: none found for any. List shape now matches the hand discovery's
+  (breach victims, migrations, Europe) though no company overlaps it.
