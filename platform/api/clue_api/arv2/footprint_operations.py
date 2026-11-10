@@ -29,6 +29,7 @@ from clue_api.footprint.social import (
 from clue_api.footprint.social_types import SocialHistory
 from clue_api.footprint.treg_client import TREG_BASE_URL
 from clue_api.footprint.video_search import find_videos
+from clue_api.footprint.video_search import overview as video_overview
 from clue_spend.errors import ProviderTransportError, RawParseError
 
 #: The receipt previews this many items; the saved file holds them all.
@@ -242,21 +243,19 @@ async def _find_videos(runtime: Any, args: FindVideosArgs) -> dict[str, Any]:
         return find_videos(caller, _keys(runtime), args.queries, exa_fallback=exa)
 
     leads, gaps = await runtime.call_provider("youtube_data", run)
-    found = [lead.model_dump(mode="json") for lead in leads]
+    # As for podcasts: the saved file opens with ``overview``, then the full entries under
+    # ``videos`` (keys are saved alphabetically); the receipt carries only the ``report`` line.
     return {
         "state": "complete",
         "gaps": gaps,
-        "n_results": len(found),
-        "leads": found,
-        "results": [
-            {
-                "title": f"{lead.get('channel') or ''} — {lead.get('title') or ''}".strip(" —"),
-                "url": lead["url"],
-                "published": lead.get("published_at"),
-                "text": lead.get("description"),
-            }
-            for lead in found
-        ],
+        "n_results": len(leads),
+        "report": (
+            f"{len(leads)} video results from {len(dict.fromkeys(args.queries))} searches. "
+            "Read the overview at the top of result_path (one line per result), then open the "
+            "entries you need by number in its videos list (line N is videos[N-1])."
+        ),
+        "overview": video_overview(leads, args.queries),
+        "videos": [lead.model_dump(mode="json") for lead in leads],
     }
 
 

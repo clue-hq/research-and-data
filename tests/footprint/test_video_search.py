@@ -125,3 +125,38 @@ def test_videos_keep_the_order_found_and_rank_nothing():
     leads, _ = find_videos(caller, KEYS, ["Acme CISO keynote"], exa_fallback=None)
     assert [lead.video_id for lead in leads] == [VID2, VID1]
     assert q(transport.requests[0])["q"] == ["Acme CISO keynote"]
+
+
+# --- The overview: one short line per result (founder, 2026-11-11) -----------------------------
+
+from clue_api.footprint.video_search import overview  # noqa: E402
+
+
+def test_video_overview_is_one_line_per_result_in_the_order_found():
+    searches = ['"Ada Example"', "Acme CISO keynote"]
+    leads = [
+        VideoLead(
+            video_id=VID1,
+            url=f"https://www.youtube.com/watch?v={VID1}",
+            title="Zero trust at scale",
+            channel="Conf",
+            published_at=datetime(2025, 5, 1, tzinfo=UTC),
+            duration_s=2110,
+            source="youtube",
+            found_by=searches,
+        ),
+        VideoLead(
+            video_id=VID2,
+            url=f"https://www.youtube.com/watch?v={VID2}",
+            source="exa",
+            found_by=[searches[1]],
+        ),
+    ]
+    lines = overview(leads, searches)
+    assert lines[0].startswith("2 results, in the order found (not ranked)")
+    assert '[1] "Ada Example" — 1 results' in lines and "[2] Acme CISO keynote — 2 results" in lines
+    rows = [line for line in lines if line[:4].strip().isdigit()]
+    assert rows == [
+        "  1 | 2025-05-01 | Conf — Zero trust at scale | 35 min | 1,2 | youtube",
+        f"  2 | - | (no details) https://www.youtube.com/watch?v={VID2} | - | 2 | exa",
+    ]

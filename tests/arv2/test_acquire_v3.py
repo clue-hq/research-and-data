@@ -153,3 +153,39 @@ def test_podcast_result_opens_with_the_overview_then_the_full_entries():
     assert count == 150 and not empty
     assert [h["title"] for h in hits] == ["Report"]
     assert "overview" in hits[0]["snippet"] and len(json.dumps(hits)) < 2000
+
+
+def test_video_result_opens_with_the_overview_then_the_full_entries():
+    import asyncio
+    import json
+    from types import SimpleNamespace
+
+    from clue_api.arv2 import footprint_operations as ops
+    from clue_api.arv2.quality_provider_tools import receipt_preview
+    from clue_api.footprint.video_search import VideoLead
+
+    leads = [
+        VideoLead(
+            video_id=f"v{n:010d}",
+            url=f"https://www.youtube.com/watch?v=v{n:010d}",
+            title=f"Talk {n}",
+            channel="Conf",
+            description="a long description " * 40,
+            source="youtube",
+            found_by=['"Ada Example"'],
+        )
+        for n in range(1, 151)
+    ]
+
+    async def call_provider(provider, fn):
+        return leads, []
+
+    runtime = SimpleNamespace(call_provider=call_provider, clients=SimpleNamespace())
+    value = asyncio.run(ops._find_videos(runtime, ops.FindVideosArgs(queries=['"Ada Example"'])))
+    saved = json.dumps(value, ensure_ascii=False, sort_keys=True)
+    assert saved.index('"overview"') < saved.index('"videos"')
+    assert "results" not in value and len(value["videos"]) == 150
+    assert value["overview"][0].startswith("150 results")
+    hits, count, empty = receipt_preview(value)
+    assert count == 150 and not empty and [h["title"] for h in hits] == ["Report"]
+    assert len(json.dumps(hits)) < 2000

@@ -193,3 +193,39 @@ def find_videos(
         for v in ids
     ]
     return leads, []
+
+
+#: An overview line keeps this much of "channel — title".
+OVERVIEW_TITLE_CHARS = 90
+
+
+def overview(leads: Sequence[VideoLead], queries: Sequence[str]) -> list[str]:
+    """One short line per result, in the order found, so the agent can scan many results before
+    opening any. Line N is entry N of the full list. Nothing is ranked or left out."""
+    searches = list(dict.fromkeys(queries))
+    number = {q: i for i, q in enumerate(searches, 1)}
+    lines = [
+        f"{len(leads)} results, in the order found (not ranked). Line N is entry N of the full "
+        "list below it.",
+        "Searches:",
+        *(
+            f"[{number[q]}] {q} — {sum(q in lead.found_by for lead in leads)} results"
+            for q in searches
+        ),
+        "Sources: youtube = YouTube search, exa = Exa web search (used when YouTube's daily "
+        "quota is gone).",
+        "",
+        "  # | date | channel — title | length | found by | source",
+    ]
+    for n, lead in enumerate(leads, 1):
+        if lead.title:
+            name = f"{lead.channel} — {lead.title}" if lead.channel else lead.title
+        else:
+            name = f"(no details) {lead.url}"
+        if len(name) > OVERVIEW_TITLE_CHARS and lead.title:
+            name = name[: OVERVIEW_TITLE_CHARS - 1] + "…"
+        date = lead.published_at.date().isoformat() if lead.published_at else "-"
+        length = f"{round(lead.duration_s / 60)} min" if lead.duration_s else "-"
+        found = ",".join(str(number[q]) for q in lead.found_by if q in number) or "-"
+        lines.append(f"{n:3d} | {date} | {name} | {length} | {found} | {lead.source}")
+    return lines
