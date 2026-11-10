@@ -267,13 +267,35 @@ on this in production.
 | Source | What it gives | Cost and time | Tested on | Result | Verdict |
 |---|---|---|---|---|---|
 | **Wayback CDX + X embed endpoint** (`~/daymaker-rea/x-pilot`) | Every archived tweet ID, read one by one, author checked | Free; about 145 s per handle for discovery plus 20 reads (1 s per read); 0.07–0.24 s CPU | 10 gift-pilot handles (2026-11-05) | Deep for heavy accounts (Dave 8,174 IDs back to 2009; Rob 1,633). Gaps: a hole in 2023, nothing that was never archived, renamed handles break the author check, 7 of 10 lookups hit 503/504, endpoint undocumented. Includes replies. | Keep as a free deep-history extra for heavy posters only |
-| **treg TikHub `tikhub.x.user.posts`** | The live timeline, about 20 tweets a page with a cursor; retweets marked | $0.001/page; about 3 s a page | Same handles (2026-11-09) | Rob: 15 pages, 288 tweets (183 own) from Apr 2022 to Nov 2026 in 46 s for 1.5 ¢. Dave: 15 pages, 281 (270 own) from Aug 2025 to Oct 2026, 41 s, 1.5 ¢. Current tweets the archive lacks (Rob's newest 4 Nov). Works on the renamed handle (Ana). Other handles: 20 tweets each on page 1. @wmannab: refused, not charged. We stopped at 15 pages, so the depth limit is unknown. Replies appear to be left out. | **Keep, main X source** |
+| **treg TikHub `tikhub.x.user.posts`** | The live timeline, about 20 tweets a page with a cursor; retweets marked | $0.001/page; about 3 s a page | Same handles (2026-11-09) | Rob: 15 pages, 288 tweets (183 own) from Apr 2022 to Nov 2026 in 46 s for 1.5 ¢. Dave: 15 pages, 281 (270 own) from Aug 2025 to Oct 2026, 41 s, 1.5 ¢. Current tweets the archive lacks (Rob's newest 4 Nov). Works on the renamed handle (Ana). Other handles: 20 tweets each on page 1. @wmannab: refused, not charged. We stopped at 15 pages, so the depth limit is unknown. Replies within their own threads are included (2026-11-10 check below). | **Keep, main X source** |
 | treg ScrapeCreators `scrapecreators.x.user.posts` | X's "top tweets" sample, no cursor | $0.0019/call | Same handles | Dave 101; most others only 5. Charged even for a missing account. | Drop |
 | PDL person enrichment (`~/daymaker-rea/handle-test`) | X and Facebook handles | about $0.28 a match | 20 people | Found all 10 X and all 5 Facebook handles found by any route; 6/6 X handles independently confirmed; 0 wrong people | Keep for finding handles |
 | Same-handle Instagram check (Scrapling, logged out) | Instagram account name and post count | Free | 20 people | Found 5 of 6 Instagram accounts; bios and posts need a provider | Keep for finding handles |
 
 Comparison on the same people: the archive is free and reaches older history; TikHub is current, fast
 (seconds not minutes), handles renames, needs no author check, and costs a tenth of a cent a page.
+
+### Is the text complete? (checked 2026-11-10, about 1.3 ¢)
+
+Question from the founder: are X and LinkedIn posts read in full, or clipped? Each provider's text was
+compared, after collapsing whitespace, with an independent copy.
+
+| What | Reference | Result |
+|---|---|---|
+| X own tweets, incl. long posts (TikHub, @davegerhardt and @levelsio, 2 pages each, 73 tweets) | ScrapeCreators single tweet (`note_tweet` text) | 3 of 3 long posts identical (559, 1,655, 2,023 chars). X's free embed service gives only the first ~280 chars of a long post, so TikHub gives more than the public view. |
+| X retweets | the full original TikHub sends in `retweeted_tweet` | TikHub's `text` for a retweet is X's 140-char `RT @…: …` form: 4 of 9 cut mid-sentence (a 2,530-char original kept as 139). The parser kept only that text. **Fixed 2026-11-11** (`0601c64a5`): the full original goes in `shared`; replayed on the real pages, 8 of 8 retweets full, the 1,655-char one identical to the reference. |
+| X quote tweets | — | TikHub sends the quoted post in `quoted`; the parser dropped it (fixed: `shared`). For a long quoted post TikHub's copy stops near 280 chars, sometimes mid-word; read the quoted post itself when it matters. |
+| X replies | — | They are included, with `reply_to` (the id answered); all seen were replies within the person's own threads. Kept as `reply_to_id` since the fix. Links come only as `t.co`; no expanded URLs are sent. |
+| LinkedIn own posts (fetchinio, Dave Gerhardt, 43 posts) | public post page, logged out (`articleBody`) | 5 of 5 identical (1,800–2,500 chars), including one that looked clipped ("...i" is how it was written). |
+| LinkedIn liked posts (50) | public post page | 4 of 4 of the longest identical (up to 2,982 chars). |
+| LinkedIn reshares | public page of the original | fetchinio sends the full original in `resharedPost`; the parser kept only the person's line (32 of 473 chars in one case). Fixed: `shared`; both originals match their public pages. Link cards (6) and mentioned people (43 in 17 posts) are now kept too. |
+| Company page reshares (TikHub) | — | Only a `reshared: true` flag; no original. Not changed. |
+
+Reading without signing in: a single LinkedIn post page opens headless with its full text (9 of 9 today).
+The list of a person's posts does not: the logged-out profile shows the newest 8, the activity tab
+repeats them and asks for sign-in. An X tweet page fetched headless is a JavaScript shell with no text;
+the embed service gives text, cut at ~280 chars for long posts. So the providers matter for the post
+list (both sites) and for long X posts. How they get past sign-in is not known to us (see the legal note).
 
 ## 7. Proposed keep and drop (to agree with the founder)
 
