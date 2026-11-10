@@ -189,3 +189,20 @@ def test_video_result_opens_with_the_overview_then_the_full_entries():
     hits, count, empty = receipt_preview(value)
     assert count == 150 and not empty and [h["title"] for h in hits] == ["Report"]
     assert len(json.dumps(hits)) < 2000
+
+
+def test_every_new_job_explains_its_arguments_and_shows_a_valid_example():
+    """Founder ask 2026-11-11: the agent must see what each argument expects and how to give it."""
+    import json
+    import re
+
+    from clue_api.arv2.footprint_operations import DESCRIPTIONS, JOBS
+
+    for name, model, _body in JOBS:
+        schema = model.model_json_schema()
+        for field, spec in schema["properties"].items():
+            assert spec.get("description"), f"{name}.{field} has no description"
+            assert spec.get("examples"), f"{name}.{field} has no example"
+        found = re.search(r"Example arguments: (\{.*\})\s*$", DESCRIPTIONS[name])
+        assert found, f"{name} description has no example call"
+        model.model_validate(json.loads(found.group(1)))  # the example is a valid call

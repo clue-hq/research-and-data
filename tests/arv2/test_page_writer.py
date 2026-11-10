@@ -488,3 +488,20 @@ def test_only_the_v2_guides_get_the_interpretation_line(version: str, shown: boo
 
     prompt = asyncio.run(scenario())
     assert ("Interpretation: Owns the budget this quarter." in prompt) is shown
+
+
+def test_guide_v4_is_v3_plus_the_recording_quote_line():
+    """Founder-approved 2026-11-11 (footprint plan Task 11): quotes from a recording may fix only
+    the transcription's spelling and punctuation. Everything else in v4 is v3."""
+    from clue_api.arv2 import page_writer
+    from clue_config import Settings
+
+    line = "Fix only spelling and punctuation the transcription got wrong."
+    assert line in page_writer.account_system("v4") and line in page_writer.contact_system("v4")
+    assert line not in page_writer.account_system("v3")
+    assert page_writer.sections_for("v4") == page_writer.sections_for("v3")
+    for name in ("account-pages", "contact-page"):
+        assert page_writer.guide(name, "v4") == page_writer.guide(name, "v3")
+    assert page_writer.uses_page_brief("v4") and page_writer.uses_page_brief("v3")
+    assert not page_writer.uses_page_brief("v2")
+    assert Settings(arv2_page_guide_version="v4").arv2_page_guide_version == "v4"

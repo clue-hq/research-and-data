@@ -125,6 +125,14 @@ Points for the person prompt, taken from the gift pilot:
 - If a tool is down, use the others. Stop when every source type has been searched, and say what was searched.
 - Off-limits topics for each use (sales research and gifts) to be agreed separately.
 
+**Approved by the founder 2026-11-11.** The wording is in `2026-11-11-task11-wording-for-review.md` (items A,
+A2, B1–B9, C, D) and was written into: the job descriptions, argument descriptions and example calls in
+`arv2/footprint_operations.py`; `prompts/quality-person-research/v31-person`; `prompts/quality-account-research/v42`;
+`skills/research-page-writing/v4` (with unchanged v4 copies of `account-pages` and `contact-page`, since the page
+writer loads all three under one version, `CLUE_ARV2_PAGE_GUIDE_VERSION=v4`). One placement call of mine: B8's
+sentences sit after "Then record it in the dossier's gaps…" rather than before it, so that "it" still refers
+to the failed route; the wording is unchanged.
+
 ## 7. Versions and rollout
 
 New `acquire_research_evidence` version 3, person prompt and profile v31, account profile v40, recipe 43 and

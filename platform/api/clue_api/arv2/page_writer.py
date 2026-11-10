@@ -92,6 +92,9 @@ _SECTIONS_BY_GUIDE: dict[str, dict[str, tuple[str, ...]]] = {
 
 # v3 (research trial): the same sections as v2; the writer also gets the researcher's page brief.
 _SECTIONS_BY_GUIDE["v3"] = _SECTIONS_BY_GUIDE["v2"]
+# v4 (footprint plan, founder-approved 2026-11-11): v3 plus one line in research-page-writing
+# letting a quote from a recording fix only the transcription's spelling and punctuation.
+_SECTIONS_BY_GUIDE["v4"] = _SECTIONS_BY_GUIDE["v3"]
 
 
 def sections_for(version: str = GUIDE_VERSION) -> dict[str, tuple[str, ...]]:
@@ -100,6 +103,11 @@ def sections_for(version: str = GUIDE_VERSION) -> dict[str, tuple[str, ...]]:
 
 
 SECTIONS: dict[str, tuple[str, ...]] = sections_for(GUIDE_VERSION)
+
+
+def uses_page_brief(version: str = GUIDE_VERSION) -> bool:
+    """Whether the writer also gets the researcher's page brief (research-trial guides, v3 on)."""
+    return version in ("v3", "v4")
 
 
 def shows_interpretations(version: str = GUIDE_VERSION) -> bool:

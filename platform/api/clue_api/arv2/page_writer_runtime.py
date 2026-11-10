@@ -41,6 +41,7 @@ from clue_api.arv2.page_writer import (
     contact_system,
     seller_brief_request,
     seller_brief_system,
+    uses_page_brief,
     write_account_pages,
     write_contact_page,
 )
@@ -563,7 +564,7 @@ async def write_pages(
         else:
             people = await committee_people(conn, storage, scope, context_id)
             brief_for_pages = (
-                await page_brief(conn, storage, scope) if guide_version == "v3" else None
+                await page_brief(conn, storage, scope) if uses_page_brief(guide_version) else None
             )
     if scope.person_subject_id is not None:
         return await write_contact_page(

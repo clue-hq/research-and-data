@@ -11,6 +11,7 @@ founder first (plan Task 11) and replaces them.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping
 from typing import Annotated, Any, Literal
 
@@ -43,63 +44,175 @@ class _Args(BaseModel):
 #: One search the agent writes, e.g. ``"Mike McNeil" Fleet Device Management``.
 Query = Annotated[str, Field(min_length=2, max_length=300)]
 
+# What each argument expects, as the agent reads it in the job list (founder-approved 2026-11-11).
+_PODCAST_SEARCHES = [
+    '"Mike McNeil"',
+    '"Mike McNeil" Fleet Device Management',
+    "Fleet Device Management CEO panel",
+]
+_VIDEO_SEARCHES = ['"Ann Barron-DiCamillo"', '"Ann Barron-DiCamillo" Citi']
+_QUERIES = (
+    "Your searches, one or more, each written as you would type it into a search box. Put a "
+    "name in double quotes to keep its words together."
+)
+
 
 class FindPodcastsArgs(_Args):
-    queries: list[Query] = Field(min_length=1)
+    queries: list[Query] = Field(
+        min_length=1,
+        description=_QUERIES,
+        examples=[_PODCAST_SEARCHES],
+    )
 
 
 class FindVideosArgs(_Args):
-    queries: list[Query] = Field(min_length=1)
+    queries: list[Query] = Field(
+        min_length=1,
+        description="Same as for find_podcasts: " + _QUERIES[0].lower() + _QUERIES[1:],
+        examples=[_VIDEO_SEARCHES],
+    )
 
 
 class FindHandlesArgs(_Args):
-    name: str = Field(min_length=2, max_length=200)
-    company: str | None = Field(None, max_length=200)
-    linkedin_url: str | None = Field(None, max_length=500)
+    name: str = Field(
+        min_length=2,
+        max_length=200,
+        description="The person's full name as they use it.",
+        examples=["Ann Barron-DiCamillo"],
+    )
+    company: str | None = Field(
+        None,
+        max_length=200,
+        description="Their current employer; it helps tell them apart from namesakes.",
+        examples=["U.S. Bank"],
+    )
+    linkedin_url: str | None = Field(
+        None,
+        max_length=500,
+        description=(
+            "Their LinkedIn profile link, the surest way to find their other accounts; give it "
+            "whenever you have it."
+        ),
+        examples=["https://www.linkedin.com/in/annbarrondicamillo"],
+    )
 
 
 class LinkedInActivityArgs(_Args):
-    profile: str = Field(min_length=2, max_length=500)
-    kind: Literal["posts", "reactions"]
+    profile: str = Field(
+        min_length=2,
+        max_length=500,
+        description=(
+            "Their LinkedIn profile link, such as https://www.linkedin.com/in/jane-doe (their "
+            "profile URN also works)."
+        ),
+        examples=["https://www.linkedin.com/in/jane-doe"],
+    )
+    kind: Literal["posts", "reactions"] = Field(
+        description=(
+            '"posts" for what they wrote or shared, "reactions" for posts they reacted to; one '
+            "kind per call, so call twice for both."
+        ),
+        examples=["posts"],
+    )
 
 
 class XPostsArgs(_Args):
-    handle: str = Field(min_length=1, max_length=100)
+    handle: str = Field(
+        min_length=1,
+        max_length=100,
+        description="The X account name, with or without @. Not a link.",
+        examples=["davegerhardt"],
+    )
 
 
 class InstagramPostsArgs(_Args):
-    handle: str = Field(min_length=1, max_length=100)
+    handle: str = Field(
+        min_length=1,
+        max_length=100,
+        description="The Instagram account name, with or without @. Not a link.",
+        examples=["davegerhardt"],
+    )
 
 
 class FacebookPostsArgs(_Args):
-    profile: str = Field(min_length=2, max_length=500)
+    profile: str = Field(
+        min_length=2,
+        max_length=500,
+        description="The Facebook profile link.",
+        examples=["https://www.facebook.com/jane.doe"],
+    )
 
 
 class CompanyLinkedInPostsArgs(_Args):
-    company: str = Field(min_length=2, max_length=500)
+    company: str = Field(
+        min_length=2,
+        max_length=500,
+        description="The company's LinkedIn page link.",
+        examples=["https://www.linkedin.com/company/illumio/"],
+    )
 
 
-DESCRIPTIONS: Mapping[str, str] = {
+#: What the agent reads for each job (founder-approved 2026-11-11, Task 11).
+_TEXT: Mapping[str, str] = {
     "find_podcasts": (
-        "Podcast episodes the person may appear on, from Apple and Podcast Index, with each "
-        "episode's full description, links, feed and audio link. Nothing is filtered."
+        "Podcast episodes for the searches you write (queries). Each search is run on Apple, "
+        "Podcast Index and Exa's podcast transcripts, which match what was said in an episode, "
+        "so an episode whose title never names the person can still be found. Each episode "
+        "comes with its full description, links, feed and audio link, the searches that found "
+        "it, and, from Exa, the transcript passages that matched and the hosts and guests Exa "
+        "heard. Nothing is left out or ranked: decide yourself which are this person. The "
+        "answer starts with an overview, one line per episode in the order found; scan it, then "
+        "open the episodes you need by number in its podcasts list."
     ),
     "find_videos": (
-        "YouTube videos found by the person's quoted name (and with the company), each with its "
-        "full description, tags, channel and length. Nothing is filtered."
+        "YouTube videos for the searches you write (queries). Each comes with its full "
+        "description, tags, channel, length and the searches that found it. Nothing is left out "
+        "or ranked. The answer starts with an overview, one line per video in the order found; "
+        "scan it, then open the videos you need by number in its videos list."
     ),
     "find_handles": (
-        "Candidate X, Facebook and Instagram accounts for the person (PDL and a same-handle "
-        "Instagram check). Each is a candidate to confirm from its bio and posts."
+        "Possible X, Facebook and Instagram accounts for the person. Each one is only a "
+        "candidate: check its bio and posts before you read it."
     ),
     "linkedin_activity": (
-        "The person's whole LinkedIn history: their own posts (kind=posts) or the posts they "
-        "reacted to (kind=reactions). Every post is saved; video links are included."
+        "Everything the person has posted on LinkedIn (kind=posts), or every post they reacted "
+        "to (kind=reactions). Every post is saved with its own link, date and any video link. A "
+        "reshare comes with the original post and its author."
     ),
-    "x_posts": "The whole X timeline of a handle; reposts are marked. Video links are included.",
-    "instagram_posts": "The public Instagram posts of a handle; a private account says so.",
-    "facebook_posts": "The public Facebook posts of a profile link; a private profile says so.",
-    "company_linkedin_posts": "The whole post history of a company's LinkedIn page.",
+    "x_posts": (
+        "Every post on an X account, newest first. A repost comes with the original post and "
+        "its author; a quote comes with the post it quotes. Video links are included."
+    ),
+    "instagram_posts": (
+        "The public posts of an Instagram account. A private account comes back as private."
+    ),
+    "facebook_posts": (
+        "The public posts of a Facebook profile. A private profile comes back as private."
+    ),
+    "company_linkedin_posts": (
+        "Everything a company has posted on its LinkedIn page. A reshare comes with the "
+        "original post and its author."
+    ),
+}
+
+#: One example call per job, shown at the end of its description (and checked by the tests).
+EXAMPLES: Mapping[str, dict[str, Any]] = {
+    "find_podcasts": {"queries": _PODCAST_SEARCHES},
+    "find_videos": {"queries": _VIDEO_SEARCHES},
+    "find_handles": {
+        "name": "Ann Barron-DiCamillo",
+        "company": "U.S. Bank",
+        "linkedin_url": "https://www.linkedin.com/in/annbarrondicamillo",
+    },
+    "linkedin_activity": {"profile": "https://www.linkedin.com/in/jane-doe", "kind": "posts"},
+    "x_posts": {"handle": "davegerhardt"},
+    "instagram_posts": {"handle": "davegerhardt"},
+    "facebook_posts": {"profile": "https://www.facebook.com/jane.doe"},
+    "company_linkedin_posts": {"company": "https://www.linkedin.com/company/illumio/"},
+}
+
+DESCRIPTIONS: Mapping[str, str] = {
+    name: f"{text} Example arguments: {json.dumps(EXAMPLES[name])}" for name, text in _TEXT.items()
 }
 
 
