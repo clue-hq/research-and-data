@@ -292,9 +292,9 @@ compared, after collapsing whitespace, with an independent copy.
 | LinkedIn reshares | public page of the original | fetchinio sends the full original in `resharedPost`; the parser kept only the person's line (32 of 473 chars in one case). Fixed: `shared`; both originals match their public pages. Link cards (6) and mentioned people (43 in 17 posts) are now kept too. |
 | Company page reshares (TikHub) | TikHub post detail of the company's activity | The list item for a reshare *is* the original: `poster` is its author, `text` and `url` are the original's, `urn` is the company's activity. 37 of 37 reshares at Illumio, Microsoft, Clari, 6sense and HubSpot had no words of the company's own (detail `post_text` = `repost_text`). **Fixed 2026-11-11**: filed as a repost, the original in `shared`; before, it looked like a company post written by the original author. A reshare *with* the company's own words was never seen: 50 ordinary Microsoft and Clari posts looked up in detail were all plain posts (`post_type` "post"), so how TikHub lists one is untested. |
 
-Finding (2026-11-11): the `CLUE_TREG_API_KEY` in the trial worktree's `.env` is refused by treg (401 "not
-authenticated"); every live check above went through the signed-in `treg` CLI. It must be replaced before any
-platform run uses the footprint jobs.
+Finding (2026-11-11): `CLUE_TREG_API_KEY` is empty in the trial worktree's `.env` (treg answers 401 "not
+authenticated"); every live check above went through the signed-in `treg` CLI. It must be filled before any
+platform run uses the footprint jobs. The PDL key is set (as `PDL_API_KEY`).
 
 Reading without signing in: a single LinkedIn post page opens headless with its full text (9 of 9 today).
 The list of a person's posts does not: the logged-out profile shows the newest 8, the activity tab
