@@ -9,13 +9,13 @@ from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 from sqlalchemy import text
 
 from clue_api.arv2.account_research_refusals import RefusalError
-from clue_api.arv2.media_types import Candidate, Quality, Segment, canonical_text, content_hash
 from clue_api.arv2.research_operations import job_available
+from clue_api.footprint.media_types import Candidate, Quality, Segment, canonical_text, content_hash
 from clue_research.identity.provider import register_provider_subjects
 from clue_storage import artifact_key, content_address, read_verified_artifact, record_artifact
 
 if TYPE_CHECKING:
-    from clue_api.arv2.media_resolution import Resolution
+    from clue_api.footprint.media_resolution import Resolution
 
 
 def unavailable(
@@ -499,7 +499,7 @@ async def state(runtime: Any, conn: Any) -> dict[str, Any]:
 
 
 async def cached_resolution(runtime: Any, conn: Any, url: str) -> Resolution | None:
-    from clue_api.arv2.media_resolution import Resolution, public_url, youtube_url
+    from clue_api.footprint.media_resolution import Resolution, public_url, youtube_url
 
     url = public_url(url)
     yt = youtube_url(url)
@@ -557,7 +557,7 @@ async def link_aliases(
 
 
 async def refresh_expired(runtime: Any, conn: Any, url: str) -> None:
-    from clue_api.arv2.media_resolution import public_url, youtube_url
+    from clue_api.footprint.media_resolution import public_url, youtube_url
 
     url = public_url(url)
     yt = youtube_url(url)

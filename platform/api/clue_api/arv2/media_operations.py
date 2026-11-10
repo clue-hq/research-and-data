@@ -10,8 +10,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import text
 
 from clue_api.arv2 import media_store as store
-from clue_api.arv2 import media_telemetry as telemetry
 from clue_api.arv2.research_operations import fingerprint, job_available
+from clue_api.footprint import media_telemetry as telemetry
 from clue_obs.langfuse import observation
 
 active_resolution: ContextVar[list[str] | None] = ContextVar("arv2_media_resolution", default=None)

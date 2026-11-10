@@ -20,7 +20,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
 from clue_api.arv2.errors import RawParseError
-from clue_api.arv2.openrouter import (
+from clue_api.footprint.openrouter import (
     openrouter_chat_request,
     openrouter_cost_reader,
     openrouter_halt_rule,

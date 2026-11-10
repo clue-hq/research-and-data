@@ -25,7 +25,7 @@ from pydantic import SecretStr
 
 from clue_api.arv2.calls import CallResult, CallSpec, ProviderCaller, SpendEstimate
 from clue_api.arv2.onboarding_lineage import CatalogProduct
-from clue_api.arv2.openrouter import (
+from clue_api.footprint.openrouter import (
     openrouter_chat_request,
     openrouter_cost_reader,
     openrouter_halt_rule,

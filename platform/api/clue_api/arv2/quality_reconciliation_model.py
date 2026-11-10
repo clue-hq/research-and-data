@@ -13,12 +13,6 @@ from decimal import Decimal
 from typing import Any
 
 from clue_api.arv2.calls import CallSpec, ProviderCaller, SpendEstimate
-from clue_api.arv2.openrouter import (
-    openrouter_chat_request,
-    openrouter_cost_reader,
-    openrouter_halt_rule,
-    openrouter_message_text,
-)
 from clue_api.arv2.provider_ledger import (
     ArtifactSink,
     BufferedLedger,
@@ -28,6 +22,12 @@ from clue_api.arv2.provider_ledger import (
 )
 from clue_api.arv2.structuring_client import parse_reply_text
 from clue_api.arv2.transport import HttpxTransport
+from clue_api.footprint.openrouter import (
+    openrouter_chat_request,
+    openrouter_cost_reader,
+    openrouter_halt_rule,
+    openrouter_message_text,
+)
 from clue_config import GatewayConfig, Secrets, Settings
 from clue_db import ConnFactory
 

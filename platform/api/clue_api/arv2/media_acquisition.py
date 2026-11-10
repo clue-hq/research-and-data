@@ -17,14 +17,14 @@ from sqlalchemy import text
 
 from clue_api.arv2 import media_operations as ops
 from clue_api.arv2 import media_store as store
-from clue_api.arv2.deepgram_media_client import (
+from clue_api.footprint.deepgram_media_client import (
     REMOTE_CONTENT_ERROR,
     DeepgramMediaError,
     DeepgramTranscript,
     parameters,
     parse_response,
 )
-from clue_api.arv2.gemini_media_client import (
+from clue_api.footprint.gemini_media_client import (
     GeminiMediaClient,
     SpeakerContext,
     Transcript,
@@ -34,10 +34,10 @@ from clue_api.arv2.gemini_media_client import (
     sentence_lines,
     youtube_windows,
 )
-from clue_api.arv2.media_recording import prepare_audio
-from clue_api.arv2.media_resolution import Resolution, fetch, resolve, with_feed_transcript
-from clue_api.arv2.media_sources import media_keys_of
-from clue_api.arv2.media_types import Candidate, Quality, Segment, canonical_text
+from clue_api.footprint.media_recording import prepare_audio
+from clue_api.footprint.media_resolution import Resolution, fetch, resolve, with_feed_transcript
+from clue_api.footprint.media_sources import media_keys_of
+from clue_api.footprint.media_types import Candidate, Quality, Segment, canonical_text
 from clue_storage import read_verified_artifact
 
 
@@ -662,9 +662,10 @@ async def _acquire_youtube(
         client = runtime.clients.media(caller, runtime.ledger_of(caller))
 
         def transcribe(start: int, end: int) -> Transcript:
-            return client.transcribe_video(
+            part: Transcript = client.transcribe_video(
                 candidate.url, duration_s=end - start, start_s=start, end_s=end, context=context
             )
+            return part
 
         return join_windows(
             [part for start, end in windows for part in covered_window(transcribe, start, end)]

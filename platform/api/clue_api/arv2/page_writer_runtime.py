@@ -27,12 +27,6 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.calls import CallSpec, ProviderCaller, SpendEstimate
-from clue_api.arv2.openrouter import (
-    openrouter_chat_request,
-    openrouter_cost_reader,
-    openrouter_halt_rule,
-    openrouter_message_text,
-)
 from clue_api.arv2.page_writer import (
     GUIDE_VERSION,
     ModelCall,
@@ -64,6 +58,12 @@ from clue_api.arv2.quality_recipe import RECIPE_26, at_least
 from clue_api.arv2.quality_relationships import read_committee
 from clue_api.arv2.transport import HttpxTransport
 from clue_api.execution_wiring import ExecutionRunEventWriter
+from clue_api.footprint.openrouter import (
+    openrouter_chat_request,
+    openrouter_cost_reader,
+    openrouter_halt_rule,
+    openrouter_message_text,
+)
 from clue_config import GatewayConfig, Secrets, Settings
 from clue_core import ExecutionId
 from clue_db import ConnFactory

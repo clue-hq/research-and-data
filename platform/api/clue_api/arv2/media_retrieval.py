@@ -12,9 +12,9 @@ from sqlalchemy import text
 
 from clue_api.arv2 import media_operations as ops
 from clue_api.arv2 import media_store as store
-from clue_api.arv2 import media_telemetry as telemetry
 from clue_api.arv2.media_acquisition import raw_responses
-from clue_api.arv2.media_types import EmbeddingContract, content_hash
+from clue_api.footprint import media_telemetry as telemetry
+from clue_api.footprint.media_types import EmbeddingContract, content_hash
 
 RECEIPT_BYTES = 12 * 1024
 CHUNKER = "unicode-byte-boundary-v1"

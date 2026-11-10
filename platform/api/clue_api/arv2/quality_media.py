@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2 import media_store
 from clue_api.arv2.account_research_claims import JobScope
-from clue_api.arv2.media_types import Segment
 from clue_api.arv2.quality_evidence import (
     EvidenceGrant,
     EvidenceUnavailable,
@@ -24,6 +23,7 @@ from clue_api.arv2.quality_evidence import (
     validate_support,
 )
 from clue_api.arv2.research_operations import OperationScope
+from clue_api.footprint.media_types import Segment
 from clue_research.claimstore.quality import assess_claim
 from clue_storage import StorageBackend, read_verified_artifact, retain_artifact
 

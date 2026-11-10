@@ -334,7 +334,7 @@ def build_onboarding_provider_caller(*, raw: RawSink, ledger: LedgerSink) -> Pro
 def build_customer_domain_caller(*, raw: RawSink, ledger: LedgerSink) -> ProviderCaller:
     """The customers step's public-web caller: the DNS-pinned transport media resolution uses, so a
     customer domain can never point the worker at a private address."""
-    from clue_api.arv2.media_resolution import PublicMediaTransport
+    from clue_api.footprint.media_resolution import PublicMediaTransport
 
     return ProviderCaller(
         transport=PublicMediaTransport(),

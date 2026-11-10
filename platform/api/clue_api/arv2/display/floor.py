@@ -24,7 +24,7 @@ from dataclasses import dataclass, replace
 from clue_api.arv2.display.gather import SectionInput
 from clue_api.arv2.display.render import DisplayClaim
 from clue_api.arv2.display.runner import SectionDraft, cited_payloads, claim_ids_of
-from clue_api.arv2.text import substring_verdict
+from clue_api.footprint.text import substring_verdict
 
 #: A quoted span shorter than this many words is punctuation, a single term or an aside — not a
 #: quotation anyone would check, and counting it would drown the signal in noise.

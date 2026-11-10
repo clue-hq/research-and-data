@@ -19,8 +19,8 @@ from html.parser import HTMLParser
 from typing import Any, Literal
 
 from clue_api.arv2.calls import CallSpec, ProviderCaller
-from clue_api.arv2.media_resolution import PUBLIC_HEADERS, public_url
 from clue_api.arv2.transport import HttpRequest
+from clue_api.footprint.media_resolution import PUBLIC_HEADERS, public_url
 
 __all__ = ["DomainCheck", "check_domains", "names_company"]
 

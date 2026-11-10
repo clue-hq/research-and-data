@@ -79,7 +79,6 @@ from clue_api.arv2.ai_ark_client import AiArkClient
 from clue_api.arv2.calls import ProviderCaller
 from clue_api.arv2.claim_writer import LenientClaimWriter
 from clue_api.arv2.committee_step import CommitteeStepResult, run_committee_step
-from clue_api.arv2.deepgram_media_client import DeepgramMediaClient
 from clue_api.arv2.display.fleet_handler import display_page_payload
 from clue_api.arv2.exa_client import ExaClient
 from clue_api.arv2.fleet_task import (
@@ -90,14 +89,12 @@ from clue_api.arv2.fleet_task import (
     arv2_account_work_id,
     arv2_display_work_id,
 )
-from clue_api.arv2.gemini_media_client import GeminiMediaClient, MediaBudget
 from clue_api.arv2.job_resume import (
     ResearchRestartRequired,
     research_execution_id,
     restart_on_claim,
 )
 from clue_api.arv2.knowledge_frontmatter import document_identity, parse_front_matter
-from clue_api.arv2.media_sources import MediaSourceKeys
 from clue_api.arv2.page_writer_runtime import PageWriterModels, page_writer_models
 from clue_api.arv2.provider_ledger import (
     ArtifactSink,
@@ -117,7 +114,10 @@ from clue_api.arv2.quality_recipe import at_least
 from clue_api.arv2.quality_results import QualityJobOutcome, QualityJobRunner
 from clue_api.arv2.sinks import LedgerSink
 from clue_api.arv2.structuring_client import FieldCatalog, StructuringClient, catalog_menu_text
+from clue_api.footprint.deepgram_media_client import DeepgramMediaClient
+from clue_api.footprint.gemini_media_client import GeminiMediaClient, MediaBudget
 from clue_api.footprint.jev_client import SpeakerCheck, check_speaker
+from clue_api.footprint.media_sources import MediaSourceKeys
 from clue_config import GatewayConfig, Secrets, Settings
 from clue_core import Claim, EntityId
 from clue_core.provider_failures import failure_code

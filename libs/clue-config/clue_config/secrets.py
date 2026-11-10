@@ -144,7 +144,7 @@ class Secrets(BaseSettings):
     treg_api_key: SecretStr | None = None
     # Env: CLUE_PDL_API_KEY, else PDL_API_KEY (the key the design subsystem already uses). People
     # Data Labs person enrichment: a person's X and Facebook handles for footprint research.
-    pdl_api_key: SecretStr | None = Field(
+    pdl_api_key: SecretStr | None = Field(  # type: ignore[pydantic-alias]
         default=None,
         validation_alias=AliasChoices("CLUE_PDL_API_KEY", "PDL_API_KEY", "pdl_api_key"),
     )

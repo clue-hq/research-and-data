@@ -21,7 +21,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
-from clue_api.arv2.text import normalize_for_match
+from clue_api.footprint.text import normalize_for_match
 from clue_core import Claim
 
 #: A single rendered value is a line on a page, not a document. Longer values are clipped rather

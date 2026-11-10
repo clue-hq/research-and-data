@@ -40,14 +40,14 @@ from clue_api.arv2.display.prompts import PROMPT_VERSION, RESPONSE_FORMAT, build
 from clue_api.arv2.display.recipes import SectionRecipe
 from clue_api.arv2.display.render import DisplayClaim, alias_table
 from clue_api.arv2.errors import RawParseError
-from clue_api.arv2.openrouter import (
+from clue_api.arv2.sinks import SpendTotals
+from clue_api.arv2.structuring_client import parse_reply_text
+from clue_api.footprint.openrouter import (
     openrouter_chat_request,
     openrouter_cost_reader,
     openrouter_halt_rule,
     openrouter_message_text,
 )
-from clue_api.arv2.sinks import SpendTotals
-from clue_api.arv2.structuring_client import parse_reply_text
 
 #: A section is a page's worth of prose, not a document, but the model must never be truncated
 #: mid-JSON — an unfinished object is an invalid reply and costs a whole second call.

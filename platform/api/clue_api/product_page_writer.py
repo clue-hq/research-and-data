@@ -22,7 +22,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import JsonValue, SecretStr
 
-from clue_api.arv2.openrouter import (
+from clue_api.footprint.openrouter import (
     openrouter_chat_request,
     openrouter_cost_reader,
     openrouter_halt_rule,

@@ -34,13 +34,13 @@ from pydantic import SecretStr
 
 from clue_api.arv2.calls import CallCost, CallSpec, ProviderCaller, SpendEstimate
 from clue_api.arv2.errors import RawParseError
-from clue_api.arv2.openrouter import (
+from clue_api.footprint.openrouter import (
     openrouter_chat_request,
     openrouter_cost_reader,
     openrouter_halt_rule,
     openrouter_message_text,
 )
-from clue_api.arv2.text import MatchVerdict, substring_verdict
+from clue_api.footprint.text import MatchVerdict, substring_verdict
 
 #: A structuring call reads a whole research bundle and reasons over it; the proof-of-concept
 #: measured one to two minutes. The wrapper's retry arithmetic sits on top of this, so a timeout

@@ -109,7 +109,7 @@ class AcquireResearchReceipt(ToolOutput):
 
 class AcquireResearchTool(Tool):
     name = "acquire_research_evidence"
-    input_model = AcquireResearchInput
+    input_model: ClassVar[type[ToolInput]] = AcquireResearchInput
     output_model: ClassVar[type[ToolOutput]] = AcquireResearchReceipt
     effect_class = ToolEffectClass.WRITE
     replay = ReplaySafety(

@@ -9,9 +9,9 @@ from uuid import UUID
 from sqlalchemy import text
 
 from clue_api.arv2 import media_store as store
-from clue_api.arv2.media_types import TranscriptSource
 from clue_api.arv2.structuring_client import SourceBlock
-from clue_api.arv2.text import substring_verdict
+from clue_api.footprint.media_types import TranscriptSource
+from clue_api.footprint.text import substring_verdict
 
 
 async def resolve_source(
@@ -204,7 +204,7 @@ async def guard_draft(runtime: Any, conn: Any, draft: Any) -> Any:
         return attach(draft, source, saved, runtime, speaker=await speaker_for(runtime, source))
     is_media = draft.markers.get("source_kind_block") == "transcript"
     if draft.source_url:
-        from clue_api.arv2.media_types import content_hash
+        from clue_api.footprint.media_types import content_hash
 
         is_media = (
             is_media

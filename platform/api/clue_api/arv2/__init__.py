@@ -105,21 +105,6 @@ from clue_api.arv2.exa_websets_client import (
     websets_halt_rule,
     websets_items_cost,
 )
-from clue_api.arv2.gemini_media_client import (
-    EmbeddedChunk,
-    EmbeddedTranscript,
-    GeminiMediaClient,
-    LoopReport,
-    MediaBudget,
-    MediaCeilingExceeded,
-    MinedQuotes,
-    QuoteCandidate,
-    SpeakerContext,
-    SpeakerVerdict,
-    Transcript,
-    TranscriptLine,
-    transcription_input_from_enclosure,
-)
 from clue_api.arv2.icp_authoring import (
     AuthoredIcp,
     DbIcpAuthoringService,
@@ -128,21 +113,6 @@ from clue_api.arv2.icp_authoring import (
     IcpAuthoringService,
     author_icp_document,
     authored_document_id,
-)
-from clue_api.arv2.media_feeds_client import (
-    Episode,
-    Podcast,
-    UnsupportedMediaHost,
-    download_enclosure,
-    fetch_feed,
-    find_episode,
-)
-from clue_api.arv2.openrouter import (
-    openrouter_chat_request,
-    openrouter_cost_reader,
-    openrouter_embeddings_request,
-    openrouter_halt_rule,
-    openrouter_message_text,
 )
 from clue_api.arv2.read_tools import (
     EVIDENCE_CHARS,
@@ -215,7 +185,6 @@ from clue_api.arv2.structuring_client import (
     StructuringClient,
     catalog_menu_text,
 )
-from clue_api.arv2.text import normalize_for_match, substring_verdict
 from clue_api.arv2.transport import (
     BROWSER_USER_AGENT,
     HttpRequest,
@@ -226,6 +195,37 @@ from clue_api.arv2.transport import (
     TransportFailure,
     json_request,
 )
+from clue_api.footprint.gemini_media_client import (
+    EmbeddedChunk,
+    EmbeddedTranscript,
+    GeminiMediaClient,
+    LoopReport,
+    MediaBudget,
+    MediaCeilingExceeded,
+    MinedQuotes,
+    QuoteCandidate,
+    SpeakerContext,
+    SpeakerVerdict,
+    Transcript,
+    TranscriptLine,
+    transcription_input_from_enclosure,
+)
+from clue_api.footprint.media_feeds_client import (
+    Episode,
+    Podcast,
+    UnsupportedMediaHost,
+    download_enclosure,
+    fetch_feed,
+    find_episode,
+)
+from clue_api.footprint.openrouter import (
+    openrouter_chat_request,
+    openrouter_cost_reader,
+    openrouter_embeddings_request,
+    openrouter_halt_rule,
+    openrouter_message_text,
+)
+from clue_api.footprint.text import normalize_for_match, substring_verdict
 
 __all__ = [
     "AccountClaimView",

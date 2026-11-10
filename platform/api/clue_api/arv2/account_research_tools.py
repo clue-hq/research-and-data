@@ -96,7 +96,6 @@ from clue_api.arv2.ats_client import (
 )
 from clue_api.arv2.calls import CallCost, ProviderCaller
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter, WriteReceipt
-from clue_api.arv2.deepgram_media_client import DeepgramMediaClient
 from clue_api.arv2.discovery_firmographics import ai_ark_firmographics_on_file, without_fields
 from clue_api.arv2.errors import ProviderHalted, RawParseError
 from clue_api.arv2.exa_client import (
@@ -105,25 +104,6 @@ from clue_api.arv2.exa_client import (
     is_thin_deep_response,
     report_output_schema,
 )
-from clue_api.arv2.gemini_media_client import (
-    GeminiMediaClient,
-    MediaBudget,
-    MediaCeilingExceeded,
-    SpeakerContext,
-    transcription_input_from_enclosure,
-    verify_speaker,
-)
-from clue_api.arv2.media_feeds_client import (
-    EnclosureTooLarge,
-    MediaFetchError,
-    UnsupportedMediaHost,
-    download_enclosure,
-    fetch_feed,
-    find_episode,
-    is_youtube,
-    reject_native_video,
-)
-from clue_api.arv2.media_types import TranscriptSource
 from clue_api.arv2.person_compliance import apply_person_floor
 from clue_api.arv2.person_exa_brief import (
     person_exa_arguments,
@@ -149,8 +129,28 @@ from clue_api.arv2.structuring_client import (
     StructuringClient,
     schema_hint,
 )
-from clue_api.arv2.text import substring_verdict
 from clue_api.arv2.transport import HttpxTransport, Transport
+from clue_api.footprint.deepgram_media_client import DeepgramMediaClient
+from clue_api.footprint.gemini_media_client import (
+    GeminiMediaClient,
+    MediaBudget,
+    MediaCeilingExceeded,
+    SpeakerContext,
+    transcription_input_from_enclosure,
+    verify_speaker,
+)
+from clue_api.footprint.media_feeds_client import (
+    EnclosureTooLarge,
+    MediaFetchError,
+    UnsupportedMediaHost,
+    download_enclosure,
+    fetch_feed,
+    find_episode,
+    is_youtube,
+    reject_native_video,
+)
+from clue_api.footprint.media_types import TranscriptSource
+from clue_api.footprint.text import substring_verdict
 from clue_config import Settings
 from clue_core import Claim, RunId
 from clue_db import ConnFactory
@@ -565,7 +565,7 @@ class ToolRuntime:
         raw, ledger = BufferedRawSink(), BufferedLedger()
         transport = self._transport_factory()
         if provider == "media_public" and isinstance(transport, HttpxTransport):
-            from clue_api.arv2.media_resolution import PublicMediaTransport
+            from clue_api.footprint.media_resolution import PublicMediaTransport
 
             transport = PublicMediaTransport()
         caller = ProviderCaller(
@@ -2943,7 +2943,7 @@ def _governed(
                         runtime.finalization["media"] = coverage
                     result = {**result, "media": coverage}
                 if has_capability(runtime.scope.catalog_version, "media_research"):
-                    from clue_api.arv2.media_telemetry import tool_result
+                    from clue_api.footprint.media_telemetry import tool_result
 
                     tool_result(runtime, name, result)
                 return json.dumps(result, default=str)

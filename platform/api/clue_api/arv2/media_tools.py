@@ -14,20 +14,20 @@ from sqlalchemy import text
 from clue_api.arv2 import media_acquisition as acquisition
 from clue_api.arv2 import media_retrieval as retrieval
 from clue_api.arv2 import media_store as store
-from clue_api.arv2 import media_telemetry as telemetry
 from clue_api.arv2.account_research_refusals import RefusalError
-from clue_api.arv2.deepgram_media_client import DeepgramMediaError
-from clue_api.arv2.gemini_media_client import GeminiMediaError
-from clue_api.arv2.media_feeds_client import UnsupportedMediaHost, reject_native_video
-from clue_api.arv2.media_resolution import (
+from clue_api.arv2.research_operations import fingerprint
+from clue_api.footprint import media_telemetry as telemetry
+from clue_api.footprint.deepgram_media_client import DeepgramMediaError
+from clue_api.footprint.gemini_media_client import GeminiMediaError
+from clue_api.footprint.media_feeds_client import UnsupportedMediaHost, reject_native_video
+from clue_api.footprint.media_resolution import (
     RECORDING_SUFFIXES,
     Resolution,
     recording_family,
     unresolved_recording,
     youtube_url,
 )
-from clue_api.arv2.media_types import Candidate, MediaModel
-from clue_api.arv2.research_operations import fingerprint
+from clue_api.footprint.media_types import Candidate, MediaModel
 
 #: Gaps after which a page is read through Exa: blocked, or no recording in its plain HTML (a
 #: player built by JavaScript). Spec 2026-10-13-legitimate-media-sources-design §3 step 1.
@@ -49,7 +49,7 @@ UNAVAILABLE_NEXT_ACTION = (
 
 def page_recordings(links: list[str]) -> list[str]:
     """Recording links among a page's links, deduplicated (YouTube by video id), in page order."""
-    from clue_api.arv2.media_sources import podcast_links
+    from clue_api.footprint.media_sources import podcast_links
 
     found: list[str] = []
     for link in links:
