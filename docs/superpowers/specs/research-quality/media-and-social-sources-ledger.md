@@ -52,6 +52,14 @@ gift pilot's recipients (`~/gift-poc`, `~/daymaker-rea`).
    Gemini's own name on a label is a guess (its prompt names the subject) and is not the proof.
 9. **Out of scope (founder, 2026-11-09):** text someone else wrote into a caption, description or transcript
    to mislead the agent. Beyond the platform's control.
+10. **The agent writes the podcast and video searches; code judges no name (founder, 2026-11-11).**
+   `find_podcasts` and `find_videos` take the agent's own list of searches (the name alone, with the
+   current and each earlier employer, name variants, the employer and role) and run every one; code
+   merges duplicates and returns everything, unranked. Whether an episode is this person is the agent's
+   judgement, made from the introduction, employer, role and background against what it already knows,
+   never from the spelling: transcripts misspell names ("Venkateshwari" for Venkatachari). Exa's podcast
+   transcripts join Apple and Podcast Index as a third source of `find_podcasts`, for guests the title and
+   description never name. Listen Notes, Podscan and Podchaser stay out (subscriptions, and see section 2).
 
 **Principle (founder, 2026-11-09):** only what the person has made public. A private account gives nothing,
 and we never try to get past that (no sign-in, no stealth). The treg providers read public pages logged out;
@@ -133,14 +141,40 @@ Status: **works** (tested, use it), **limited** (works with a stated limit), **u
 | Apple Podcasts search | Episode search by term | Free | Already used inside `read_media` and by the gift pilot's `find_podcasts`. | Keep inside the podcast tool |
 | treg `treg.youtube.search.videos` | Query | $0.001–0.015/call | Works; no better than our own API key. | Not needed while our key has quota |
 | Podchaser | Guest credits | $25/mo (yearly) for 1,000 requests; $240/mo for 10,000 | Same podcasts as Podcast Index on Ann and Dilip. | Drop unless guest credits prove better on more people |
-| Listen Notes | Episode search | 300 requests/month free; $200/mo for 5,000 | Not yet tested (founder trying it). | Open |
-| Podscan | Transcript search across podcasts | 10-day trial; $100/mo for 2,000/day | Demo too loose to judge; URL lookups returned 404. Founder trying it. | Open |
+| Listen Notes | Episode search, can search inside the audio | 300 requests/month free; $200/mo for 5,000 | Not tested: even the website search needs a sign-in, and no key was given. | Drop (subscription) |
+| Podscan | Transcript search across podcasts | 10-day trial; $100/mo for 2,000/day | Trial key, 2026-11-11: found neither hidden-guest episode below (neither is in its index); its two Rubini hits name her in the description anyway; transcripts not diarised; 10 searches a minute. | Drop |
+| **Exa podcast transcripts** (`includeDomains: exa.ai/library/podcast`) | Matches what was said; returns the transcript passages, speaker-labelled transcript, hosts and guests | about 1.7 ¢ a search at 20 results | 2026-11-11, see "Hidden guests" below: 9 of 9 known episodes with agent-style searches (old name-only search 7 of 9). Searches by meaning, so a common name needs quotes. About 3.2M episodes, 119k shows: coverage smaller than Apple's. | **Keep, third source of `find_podcasts`** |
+| Particle (through Firecrawl) | "Every episode a person speaks on" | per call | Blocked: its terms must be accepted by a Firecrawl organisation admin. | Not tested |
 | treg Spotify search | Query | $0.0019 | Not tested. | Open |
 | Conference and webinar libraries (RSA, Gartner, BrightTALK, vendor webinars) | Site by site | – | No catalog tool exists; reachable through Exa or YouTube when uploaded. | No action yet |
 
 Note: the gift pilot's `find_podcasts` (`~/gift-poc/tools/gt.py`) already searches Apple + Podcast Index
 `byperson` + `byterm` and ranks episodes naming the company and person first. Our platform agent has none
 of this.
+
+### Hidden guests (2026-11-11)
+
+The gap: an episode where the person speaks but the title and description never name them. Test cases,
+found through Exa's own index (so the test favours Exa; recheck on independently found cases):
+Beatrice Rubini (CRIF), 10 turns in CRIF Talks "The SME Cyber Shield", introduced by name in the audio;
+Mike McNeil (CEO, Fleet Device Management), panellist from 62:21 of Consulting Spotlight "Adnan Masood on
+AI Transformation at UST". Before the change `find_podcasts` found neither (49 and 66 namesakes). Ordinary
+web search found Rubini through the publisher's own page (crif.com names her); YouTube found a recording
+of the McNeil panel once (its description lists the panellists), but not on a second run, so YouTube
+results vary. Neither show's feed lists transcripts or guest tags.
+
+Recall after the change (`4a5767196`), live, agent-style searches (name alone, with employers, a
+variant, employer and role) against the old name-only search, on the episodes we know:
+
+| Person | Known episodes | Old | New | How the new one found the extra ones |
+|---|---|---|---|---|
+| Ann Barron-DiCamillo | 3 (Citi The Cyber World, FinCyber Today, Leader's Edge) | 3 | 3 | — |
+| Dilip Venkatachari | 4 (CIO Classified, Technovation, CIO Leadership Live, Inspired Execution) | 4 | 4 | — |
+| Beatrice Rubini | 1 | 0 | 1 | Exa transcripts |
+| Mike McNeil | 1 | 0 | 1 | Exa transcripts |
+
+The price is a longer list for the agent to read (86–201 results per person against 4–66). Spend about
+21 ¢ (Exa). Not yet done: using Exa's ready-made transcript instead of transcribing an episode ourselves.
 
 ## 3. Transcription
 
