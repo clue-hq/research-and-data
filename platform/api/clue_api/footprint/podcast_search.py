@@ -186,6 +186,9 @@ def _pi_shows(body: dict[str, Any]) -> list[EpisodeLead]:
 
 
 _HEADER = re.compile(r"^- \*\*(Podcast|Published|Duration|Hosts|Guests):\*\* (.*)$", re.M)
+#: A passage can start with the episode page's header (show, date, hosts, guests), which the lead
+#: already carries in its own fields; it is left out, up to Exa's "..." separator.
+_PASSAGE_HEADER = re.compile(r"\A(?:- \*\*[^*\n]+:\*\*[^\n]*\n)+\s*(?:\.\.\.\s*)?")
 _LINK_TEXT = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 
 
@@ -218,7 +221,7 @@ def _exa_lead(hit: ExaPodcastHit) -> EpisodeLead | None:
         duration_s=_clock(header["Duration"]) if "Duration" in header else None,
         sources=["exa_podcasts"],
         exa_url=hit.url,
-        passages=[p for p in hit.highlights if p],
+        passages=[q for q in (_PASSAGE_HEADER.sub("", p).strip() for p in hit.highlights) if q],
         heard_hosts=_people(header.get("Hosts", "")),
         heard_guests=_people(header.get("Guests", "")),
     )
@@ -327,3 +330,45 @@ def find_podcasts(
                 feeds[collection] = None
         merged[key] = lead.model_copy(update={"feed_url": feeds[collection]})
     return list(merged.values()), gaps
+
+
+#: Overview lines name sources briefly.
+_SOURCE_SHORT = {"apple": "apple", "podcast_index": "pi", "exa_podcasts": "exa"}
+#: An overview line keeps this much of "show — title".
+OVERVIEW_TITLE_CHARS = 90
+
+
+def overview(leads: Sequence[EpisodeLead], queries: Sequence[str]) -> list[str]:
+    """One short line per result, in the order found, so the agent can scan many results before
+    opening any. Line N is entry N of the full list. Nothing is ranked or left out."""
+    searches = list(dict.fromkeys(queries))
+    number = {q: i for i, q in enumerate(searches, 1)}
+    lines = [
+        f"{len(leads)} results, in the order found (not ranked). Line N is entry N of the full "
+        "list below it.",
+        "Searches:",
+        *(
+            f"[{number[q]}] {q} — {sum(q in lead.found_by for lead in leads)} results"
+            for q in searches
+        ),
+        "Sources: apple = Apple Podcasts, pi = Podcast Index, exa = Exa transcripts (matched what "
+        "was said; heard = the guests Exa's transcription names, its reading of the audio).",
+        "",
+        "  # | date | show — title | length | found by | sources",
+    ]
+    for n, lead in enumerate(leads, 1):
+        if lead.kind == "show":
+            name = f"SHOW: {lead.title}"
+        else:
+            name = f"{lead.show} — {lead.title}" if lead.show else lead.title
+        if len(name) > OVERVIEW_TITLE_CHARS:
+            name = name[: OVERVIEW_TITLE_CHARS - 1] + "…"
+        date = lead.published_at.date().isoformat() if lead.published_at else "-"
+        length = f"{round(lead.duration_s / 60)} min" if lead.duration_s else "-"
+        found = ",".join(str(number[q]) for q in lead.found_by if q in number) or "-"
+        sources = "+".join(_SOURCE_SHORT.get(src, src) for src in lead.sources)
+        line = f"{n:3d} | {date} | {name} | {length} | {found} | {sources}"
+        if lead.heard_guests:
+            line += f" | heard: {', '.join(lead.heard_guests)}"
+        lines.append(line)
+    return lines

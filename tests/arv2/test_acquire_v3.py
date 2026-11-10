@@ -113,3 +113,43 @@ def test_exa_podcast_search_is_limited_to_the_podcast_index():
     with pytest.raises(ValueError, match="500"):
         search("down")
     assert _exa_podcasts(SimpleNamespace(clients=SimpleNamespace()), caller=None) is None
+
+
+def test_podcast_result_opens_with_the_overview_then_the_full_entries():
+    import asyncio
+    import json
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from clue_api.arv2 import footprint_operations as ops
+    from clue_api.arv2.quality_provider_tools import receipt_preview
+    from clue_api.footprint.podcast_search import EpisodeLead
+
+    leads = [
+        EpisodeLead(
+            show="Show A",
+            title=f"Episode {n}",
+            published_at=datetime(2025, 3, 1, tzinfo=UTC),
+            description="a long description " * 40,
+            sources=["apple"],
+            found_by=['"Ada Example"'],
+        )
+        for n in range(1, 151)
+    ]
+
+    async def call_provider(provider, fn):
+        return leads, []
+
+    runtime = SimpleNamespace(call_provider=call_provider, clients=SimpleNamespace())
+    value = asyncio.run(
+        ops._find_podcasts(runtime, ops.FindPodcastsArgs(queries=['"Ada Example"']))
+    )
+    saved = json.dumps(value, ensure_ascii=False, sort_keys=True)  # as the wrapper saves it
+    assert saved.index('"overview"') < saved.index('"podcasts"')
+    assert "results" not in value  # no second copy of the entries
+    assert len(value["podcasts"]) == 150 and value["n_results"] == 150
+    assert value["overview"][0].startswith("150 results")
+    hits, count, empty = receipt_preview(value)
+    assert count == 150 and not empty
+    assert [h["title"] for h in hits] == ["Report"]
+    assert "overview" in hits[0]["snippet"] and len(json.dumps(hits)) < 2000

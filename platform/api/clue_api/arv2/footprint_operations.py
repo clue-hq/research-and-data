@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from clue_api.footprint.handles import find_handles
 from clue_api.footprint.media_sources import MediaSourceKeys, media_keys_of
-from clue_api.footprint.podcast_search import EXA_PODCAST_DOMAIN, find_podcasts
+from clue_api.footprint.podcast_search import EXA_PODCAST_DOMAIN, find_podcasts, overview
 from clue_api.footprint.social import (
     company_linkedin_posts,
     facebook_posts,
@@ -204,27 +204,27 @@ def _exa_podcasts(runtime: Any, caller: Any) -> Callable[[str], Any] | None:
 
 
 async def _find_podcasts(runtime: Any, args: FindPodcastsArgs) -> dict[str, Any]:
+    """The saved file opens with ``overview`` (one short line per result) and holds the full
+    entries under ``podcasts``. The wrapper saves keys in alphabetical order, so these two names
+    keep the overview first; the receipt carries only the ``report`` line."""
     leads, gaps = await runtime.call_provider(
         "podcast_index",
         lambda caller: find_podcasts(
             caller, _keys(runtime), args.queries, exa_search=_exa_podcasts(runtime, caller)
         ),
     )
-    found = [lead.model_dump(mode="json") for lead in leads]
+    lines = overview(leads, args.queries)
     return {
         "state": "complete",
         "gaps": gaps,
-        "n_results": len(found),
-        "leads": found,
-        "results": [
-            {
-                "title": f"{lead.get('show') or ''} — {lead['title']}".strip(" —"),
-                "url": lead.get("episode_url") or lead.get("exa_url") or lead.get("feed_url"),
-                "published": lead.get("published_at"),
-                "text": lead.get("description") or " … ".join(lead.get("passages") or []),
-            }
-            for lead in found
-        ],
+        "n_results": len(leads),
+        "report": (
+            f"{len(leads)} podcast results from {len(dict.fromkeys(args.queries))} searches. "
+            "Read the overview at the top of result_path (one line per result), then open the "
+            "entries you need by number in its podcasts list (line N is podcasts[N-1])."
+        ),
+        "overview": lines,
+        "podcasts": [lead.model_dump(mode="json") for lead in leads],
     }
 
 

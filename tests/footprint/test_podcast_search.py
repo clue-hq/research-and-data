@@ -256,3 +256,72 @@ def test_a_failing_source_is_a_gap_not_an_error():
     leads, gaps = find_podcasts(caller, KEYS, ["Ada Example"], exa_search=None)
     assert [lead.title for lead in leads] == ["Talk"]
     assert any(gap.startswith("apple_podcasts for 'Ada Example'") for gap in gaps)
+
+
+# --- The overview: one short line per result (founder, 2026-11-11) -----------------------------
+
+from clue_api.footprint.podcast_search import overview  # noqa: E402
+
+
+def lead(**kw):
+    base = {
+        "show": "Show A",
+        "title": "Zero trust at scale",
+        "published_at": datetime(2025, 3, 1, tzinfo=UTC),
+        "description": "a talk",
+        "sources": ["apple"],
+        "found_by": ['"Ada Example"'],
+    }
+    return EpisodeLead(**{**base, **kw})
+
+
+def test_overview_is_one_line_per_result_in_the_order_found():
+    searches = ['"Ada Example"', '"Ada Example" Acme']
+    leads = [
+        lead(duration_s=2700, sources=["apple", "podcast_index"], found_by=searches),
+        lead(
+            title="The SME cyber shield",
+            show="Show B",
+            sources=["exa_podcasts"],
+            found_by=[searches[1]],
+            heard_guests=["Bo Plain", "Ada Example"],
+            duration_s=0,
+        ),
+        lead(
+            kind="show", title="The Ada Example Show", show="The Ada Example Show", duration_s=None
+        ),
+    ]
+    lines = overview(leads, searches)
+    assert lines[0].startswith("3 results, in the order found (not ranked)")
+    assert '[1] "Ada Example" — 2 results' in lines
+    assert '[2] "Ada Example" Acme — 2 results' in lines
+    rows = [line for line in lines if line[:4].strip().isdigit()]
+    assert rows == [
+        "  1 | 2025-03-01 | Show A — Zero trust at scale | 45 min | 1,2 | apple+pi",
+        "  2 | 2025-03-01 | Show B — The SME cyber shield | - | 2 | exa"
+        " | heard: Bo Plain, Ada Example",
+        "  3 | 2025-03-01 | SHOW: The Ada Example Show | - | 1 | apple",
+    ]
+
+
+def test_overview_shortens_long_titles():
+    rows = overview([lead(title="x" * 200)], ['"Ada Example"'])
+    row = next(line for line in rows if line.startswith("  1 |"))
+    assert "…" in row and len(row) < 140
+
+
+def test_exa_passages_leave_out_the_episode_header():
+    hit = exa_hit("The SME cyber shield")
+    hit.highlights = (
+        "- **Podcast:** [Show A](https://exa.ai/library/podcast/s1)\n- **Published:** 2026-06-15"
+        "\n- **Guests:** [Ada Example](https://exa.ai/library/person/a)\n\n...\n\n"
+        "Joining me today is Ada Exampel, Executive Director at Acme.",
+        "Later she said zero trust starts with people.",
+    )
+    exa, _ = exa_returning([hit])
+    caller, _ = wire(*script([], []))
+    leads, _ = find_podcasts(caller, KEYS, ['"Ada Example"'], exa_search=exa)
+    assert leads[0].passages == [
+        "Joining me today is Ada Exampel, Executive Director at Acme.",
+        "Later she said zero trust starts with people.",
+    ]
