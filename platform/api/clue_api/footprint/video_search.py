@@ -1,15 +1,16 @@
-"""Find videos a person may appear in: YouTube search by quoted name, then each hit's details.
+"""Find videos a person may appear in, from the searches the agent writes.
 
-``search.list`` costs 100 of the free 10,000 daily quota units, so about 100 searches a day. When
-the quota is gone (or no key is configured) the caller's Exa search is used instead, and the
-result says so. Each hit comes back with its full description, tags, channel and length for the
-agent to judge before transcribing; nothing is filtered here.
+Each search is run on YouTube, then each hit's details are read. ``search.list`` costs 100 of the
+free 10,000 daily quota units, so about 100 searches a day. When the quota is gone (or no key is
+configured) the caller's Exa search is used instead, and the result says so. Each hit comes back
+with its full description, tags, channel, length and the searches that found it, in the order
+found, for the agent to judge before transcribing; nothing is filtered or ranked here.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import Any, Literal
 from urllib.parse import urlencode
@@ -42,6 +43,8 @@ class VideoLead(BaseModel):
     tags: list[str] = Field(default_factory=list)
     links: list[str] = Field(default_factory=list)
     source: Literal["youtube", "exa"]
+    #: Every search (as the agent wrote it) that found this video.
+    found_by: list[str] = Field(default_factory=list)
 
 
 class _QuotaExhausted(Exception):
@@ -122,8 +125,13 @@ def _from_exa(
     exa_fallback: Callable[[str], list[str]],
 ) -> list[VideoLead]:
     ids: list[str] = []
+    found_by: dict[str, list[str]] = {}
     for query in queries:
-        ids += [v for v in map(_video_id, exa_fallback(query)) if v and v not in ids]
+        for v in map(_video_id, exa_fallback(query)):
+            if v:
+                found_by.setdefault(v, []).append(query)
+                if v not in ids:
+                    ids.append(v)
     detailed: dict[str, VideoLead] = {}
     if key and ids:
         try:
@@ -131,49 +139,57 @@ def _from_exa(
         except (_QuotaExhausted, ValueError):
             detailed = {}
     return [
-        (detailed[v].model_copy(update={"source": "exa"}) if v in detailed else None)
-        or VideoLead(video_id=v, url=f"https://www.youtube.com/watch?v={v}", source="exa")
+        (detailed.get(v) or _bare(v, "exa")).model_copy(
+            update={"source": "exa", "found_by": list(dict.fromkeys(found_by[v]))}
+        )
         for v in ids
     ]
+
+
+def _bare(video_id: str, source: Literal["youtube", "exa"]) -> VideoLead:
+    return VideoLead(
+        video_id=video_id, url=f"https://www.youtube.com/watch?v={video_id}", source=source
+    )
 
 
 def find_videos(
     caller: ProviderCaller,
     keys: MediaSourceKeys,
-    name: str,
-    company: str | None,
+    queries: Sequence[str],
     *,
     exa_fallback: Callable[[str], list[str]] | None,
 ) -> tuple[list[VideoLead], list[str]]:
-    queries = [f'"{name}"', *([f'"{name}" {company}'] if company else [])]
+    queries = list(dict.fromkeys(queries))
     key = keys.youtube_api_key.get_secret_value() if keys.youtube_api_key else None
     if key is None:
         if exa_fallback is None:
             return [], ["youtube_data_api_key_missing"]
-        return _from_exa(caller, None, queries[:1], exa_fallback), [
+        return _from_exa(caller, None, queries, exa_fallback), [
             "youtube_data_api_key_missing_used_exa"
         ]
     ids: list[str] = []
+    found_by: dict[str, list[str]] = {}
     try:
         for query in queries:
             params = urlencode({"part": "snippet", "type": "video", "maxResults": 25, "q": query})
             body = _youtube(caller, key, f"{YOUTUBE_SEARCH_URL}?{params}", "search.list")
             for item in body.get("items") or []:
                 vid = (item.get("id") or {}).get("videoId")
-                if isinstance(vid, str) and vid not in ids:
-                    ids.append(vid)
+                if isinstance(vid, str):
+                    found_by.setdefault(vid, []).append(query)
+                    if vid not in ids:
+                        ids.append(vid)
         detailed = _details(caller, key, ids) if ids else {}
     except _QuotaExhausted:
         if exa_fallback is None:
             return [], ["youtube_quota_exhausted"]
-        return _from_exa(caller, key, queries[:1], exa_fallback), [
-            "youtube_quota_exhausted_used_exa"
-        ]
+        return _from_exa(caller, key, queries, exa_fallback), ["youtube_quota_exhausted_used_exa"]
     except ValueError as exc:
         return [], [str(exc)]
     leads = [
-        detailed.get(v)
-        or VideoLead(video_id=v, url=f"https://www.youtube.com/watch?v={v}", source="youtube")
+        (detailed.get(v) or _bare(v, "youtube")).model_copy(
+            update={"found_by": list(dict.fromkeys(found_by[v]))}
+        )
         for v in ids
     ]
     return leads, []

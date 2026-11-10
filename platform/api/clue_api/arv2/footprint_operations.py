@@ -12,13 +12,13 @@ founder first (plan Task 11) and replaces them.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from clue_api.footprint.handles import find_handles
 from clue_api.footprint.media_sources import MediaSourceKeys, media_keys_of
-from clue_api.footprint.podcast_search import find_podcasts
+from clue_api.footprint.podcast_search import EXA_PODCAST_DOMAIN, find_podcasts
 from clue_api.footprint.social import (
     company_linkedin_posts,
     facebook_posts,
@@ -29,6 +29,7 @@ from clue_api.footprint.social import (
 from clue_api.footprint.social_types import SocialHistory
 from clue_api.footprint.treg_client import TREG_BASE_URL
 from clue_api.footprint.video_search import find_videos
+from clue_spend.errors import ProviderTransportError, RawParseError
 
 #: The receipt previews this many items; the saved file holds them all.
 PREVIEW_ITEMS = 20
@@ -38,14 +39,16 @@ class _Args(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+#: One search the agent writes, e.g. ``"Mike McNeil" Fleet Device Management``.
+Query = Annotated[str, Field(min_length=2, max_length=300)]
+
+
 class FindPodcastsArgs(_Args):
-    name: str = Field(min_length=2, max_length=200)
-    company: str | None = Field(None, max_length=200)
+    queries: list[Query] = Field(min_length=1)
 
 
 class FindVideosArgs(_Args):
-    name: str = Field(min_length=2, max_length=200)
-    company: str | None = Field(None, max_length=200)
+    queries: list[Query] = Field(min_length=1)
 
 
 class FindHandlesArgs(_Args):
@@ -171,10 +174,41 @@ def _keys(runtime: Any) -> MediaSourceKeys:
     return media_keys_of(runtime)
 
 
+#: Hits per search from Exa's podcast transcripts; each search costs about 1.7 cents at 20.
+EXA_PODCAST_RESULTS = 20
+
+
+def _exa_podcasts(runtime: Any, caller: Any) -> Callable[[str], Any] | None:
+    """One search on Exa's podcast index, with the transcript passages that matched."""
+    exa = getattr(runtime.clients, "exa", None)
+    if exa is None:
+        return None
+
+    def search(query: str) -> Any:
+        try:
+            found = exa(caller).search(
+                query,
+                include_domains=[EXA_PODCAST_DOMAIN],
+                num_results=EXA_PODCAST_RESULTS,
+                text_max_chars=1500,  # the episode page's header: show, date, hosts, guests
+                highlights={"query": query, "maxCharacters": 1200},
+                label="footprint.find_podcasts",
+            )
+        except (ProviderTransportError, RawParseError) as exc:
+            raise ValueError(str(exc)[:200]) from exc
+        if found.status >= 400:
+            raise ValueError(f"exa HTTP {found.status}")
+        return found.results
+
+    return search
+
+
 async def _find_podcasts(runtime: Any, args: FindPodcastsArgs) -> dict[str, Any]:
     leads, gaps = await runtime.call_provider(
         "podcast_index",
-        lambda caller: find_podcasts(caller, _keys(runtime), args.name, args.company),
+        lambda caller: find_podcasts(
+            caller, _keys(runtime), args.queries, exa_search=_exa_podcasts(runtime, caller)
+        ),
     )
     found = [lead.model_dump(mode="json") for lead in leads]
     return {
@@ -185,9 +219,9 @@ async def _find_podcasts(runtime: Any, args: FindPodcastsArgs) -> dict[str, Any]
         "results": [
             {
                 "title": f"{lead.get('show') or ''} — {lead['title']}".strip(" —"),
-                "url": lead.get("episode_url") or lead.get("feed_url"),
+                "url": lead.get("episode_url") or lead.get("exa_url") or lead.get("feed_url"),
                 "published": lead.get("published_at"),
-                "text": lead.get("description"),
+                "text": lead.get("description") or " … ".join(lead.get("passages") or []),
             }
             for lead in found
         ],
@@ -205,7 +239,7 @@ async def _find_videos(runtime: Any, args: FindVideosArgs) -> dict[str, Any]:
             )
             return [h.url for h in hits.results if h.url]
 
-        return find_videos(caller, _keys(runtime), args.name, args.company, exa_fallback=exa)
+        return find_videos(caller, _keys(runtime), args.queries, exa_fallback=exa)
 
     leads, gaps = await runtime.call_provider("youtube_data", run)
     found = [lead.model_dump(mode="json") for lead in leads]

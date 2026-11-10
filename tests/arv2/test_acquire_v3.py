@@ -73,3 +73,43 @@ def test_preview_shows_the_original_of_a_repost():
     titles = sorted(r["title"] for r in value["results"])
     assert titles == ["Reposted from Bob: Bob's words", "Very nice (quoting Bob: Bob's words)"]
     assert value["posts"][0]["shared"]["text"] == "Bob's words"
+
+
+def test_podcast_and_video_jobs_take_the_agents_own_searches():
+    import pytest
+    from pydantic import ValidationError
+
+    from clue_api.arv2.footprint_operations import FindPodcastsArgs, FindVideosArgs
+
+    for model in (FindPodcastsArgs, FindVideosArgs):
+        searches = ['"Mike McNeil" podcast', "Fleet Device Management CEO panel"]
+        assert model(queries=searches).queries == searches
+        with pytest.raises(ValidationError):
+            model(name="Mike McNeil", company="Fleet")
+        with pytest.raises(ValidationError):
+            model(queries=[])
+
+
+def test_exa_podcast_search_is_limited_to_the_podcast_index():
+    from types import SimpleNamespace
+
+    import pytest
+
+    from clue_api.arv2.footprint_operations import _exa_podcasts
+
+    asked = []
+
+    class FakeExa:
+        def search(self, query, **kw):
+            asked.append((query, kw))
+            return SimpleNamespace(status=asked[-1][0] == "down" and 500 or 200, results=("hit",))
+
+    runtime = SimpleNamespace(clients=SimpleNamespace(exa=lambda caller: FakeExa()))
+    search = _exa_podcasts(runtime, caller=None)
+    assert search('"Ada Example"') == ("hit",)
+    query, kw = asked[0]
+    assert kw["include_domains"] == ["exa.ai/library/podcast"]
+    assert kw["highlights"]["query"] == '"Ada Example"' and kw["num_results"] == 20
+    with pytest.raises(ValueError, match="500"):
+        search("down")
+    assert _exa_podcasts(SimpleNamespace(clients=SimpleNamespace()), caller=None) is None
