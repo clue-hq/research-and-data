@@ -19,6 +19,7 @@ from typing import Any, Literal
 
 from pydantic import SecretStr
 
+from clue_api.footprint import short_links
 from clue_api.footprint.social_types import (
     HistoryState,
     LinkCard,
@@ -38,6 +39,10 @@ X_TIMELINE = "tikhub.x.user.posts"
 INSTAGRAM_POSTS = "scrapecreators.instagram.user.posts"
 FACEBOOK_POSTS = "scrapecreators.x.v1-facebook-profile-posts"
 COMPANY_LINKEDIN_POSTS = "tikhub.x.linkedin-web-v2-get-company-posts"
+X_TWEET = "tikhub.x.twitter-web-fetch-tweet-detail"
+#: TikHub's copy of a quoted post holds only its first ~280 characters by X's count (checked
+#: 2026-11-10). A quoted post this long or longer may be cut, so it is read in full on its own.
+X_MAY_BE_CUT = 250
 
 #: One page: the posts on it, the query for the next page (``None``: no more), and whether the
 #: account turned out private or unknown.
@@ -126,6 +131,28 @@ def _closed(body: Any, status: int) -> Literal["private", "not_found"] | None:
     if status == 404 or body.get("error") == "not_found" or "not found" in message:
         return "not_found"
     return None
+
+
+def _with_links(
+    caller: ProviderCaller, history: SocialHistory, known: dict[str, str] | None = None
+) -> SocialHistory:
+    """Name the address behind every short link in the posts and what they share. ``known``
+    holds addresses the provider already sent; only the rest are opened."""
+    known = dict(known or {})
+    texts = [p.text for p in history.posts] + [p.shared.text for p in history.posts if p.shared]
+    wanted = {link for text in texts for link in short_links.short_links(text)}
+    known.update(short_links.expand(caller, wanted - known.keys()))
+
+    def found(text: str) -> dict[str, str]:
+        return {s: known[s] for s in short_links.short_links(text) if s in known}
+
+    posts = []
+    for post in history.posts:
+        shared = post.shared
+        if shared is not None:
+            shared = shared.model_copy(update={"links": found(shared.text)})
+        posts.append(post.model_copy(update={"links": found(post.text), "shared": shared}))
+    return history.model_copy(update={"posts": posts})
 
 
 # --- LinkedIn (fetchinio) ----------------------------------------------------------------------
@@ -225,7 +252,7 @@ def linkedin_activity(
         return posts, following, None
 
     tool = LINKEDIN_POSTS if kind == "posts" else LINKEDIN_REACTIONS
-    return _history(caller, token, tool, first, parse, base_url)
+    return _with_links(caller, _history(caller, token, tool, first, parse, base_url))
 
 
 # --- X (TikHub) --------------------------------------------------------------------------------
@@ -242,6 +269,70 @@ def _best_mp4(media: Any) -> list[str]:
         if mp4s:
             urls.append(max(mp4s, key=lambda v: v.get("bitrate") or 0)["url"])
     return urls
+
+
+def _x_entity_links(item: Any) -> dict[str, str]:
+    """The addresses TikHub already sent for a tweet's short links."""
+    entities = item.get("entities") if isinstance(item, dict) else None
+    if not isinstance(entities, dict):
+        return {}
+    return {
+        e["url"]: e["expanded_url"]
+        for key in ("urls", "media")
+        for e in entities.get(key) or []
+        if isinstance(e, dict) and _str(e.get("url")) and _str(e.get("expanded_url"))
+    }
+
+
+def _x_length(text: str) -> int:
+    """Length by X's count: Latin and common punctuation count one, other characters two."""
+    return sum(
+        1 if o <= 4351 or 8192 <= o <= 8205 or 8208 <= o <= 8223 or 8242 <= o <= 8247 else 2
+        for o in map(ord, text)
+    )
+
+
+def _x_full_quotes(
+    caller: ProviderCaller,
+    token: SecretStr,
+    history: SocialHistory,
+    known: dict[str, str],
+    base_url: str,
+) -> SocialHistory:
+    """Read in full each quoted post long enough to have been cut. A post that cannot be read
+    keeps the provider's copy, marked ``text_may_be_cut``."""
+    cost = 0.0
+    posts = []
+    for post in history.posts:
+        shared = post.shared
+        if (
+            post.kind == "repost"  # a retweet's original comes in full
+            or shared is None
+            or shared.post_id is None
+            or _x_length(shared.text) < X_MAY_BE_CUT
+        ):
+            posts.append(post)
+            continue
+        full: str | None = None
+        try:
+            reply = treg_call(
+                caller, token, X_TWEET, {"tweet_id": shared.post_id}, base_url=base_url
+            )
+            cost += reply.cost_usd
+            data = reply.body.get("data") if isinstance(reply.body, dict) else None
+            if reply.status < 400 and isinstance(data, dict):
+                full = _str(data.get("text"))
+                known.update(_x_entity_links(data))
+        except ProviderTransportError:
+            full = None
+        if full is not None and len(full) >= len(shared.text):
+            shared = shared.model_copy(update={"text": full, "text_may_be_cut": False})
+        else:
+            shared = shared.model_copy(update={"text_may_be_cut": True})
+        posts.append(post.model_copy(update={"shared": shared}))
+    return history.model_copy(
+        update={"posts": posts, "cost_usd": round(history.cost_usd + cost, 6)}
+    )
 
 
 def _x_shared(item: Any) -> SharedPost | None:
@@ -273,6 +364,7 @@ def x_posts(
     handle = handle.lstrip("@")
     handle_lower = handle.lower()
     first: dict[str, str | int] = {"screen_name": handle}
+    known: dict[str, str] = {}
 
     def parse(body: Any, status: int, page: int) -> Page:
         data = body.get("data") if isinstance(body, dict) else None
@@ -286,6 +378,8 @@ def x_posts(
             author = item.get("author") or {}
             screen = _str(author.get("screen_name")) or handle
             text = _str(item.get("text")) or ""
+            for part in (item, item.get("retweeted_tweet"), item.get("quoted")):
+                known.update(_x_entity_links(part))
             original = _x_shared(item.get("retweeted_tweet"))
             repost = (
                 original is not None or text.startswith("RT @") or screen.lower() != handle_lower
@@ -312,7 +406,9 @@ def x_posts(
         cursor = _str(data.get("next_cursor"))
         return posts, ({**first, "cursor": cursor} if cursor else None), None
 
-    return _history(caller, token, X_TIMELINE, first, parse, base_url)
+    history = _history(caller, token, X_TIMELINE, first, parse, base_url)
+    history = _x_full_quotes(caller, token, history, known, base_url)
+    return _with_links(caller, history, known)
 
 
 # --- Instagram and Facebook (ScrapeCreators) ---------------------------------------------------
@@ -419,6 +515,30 @@ def company_linkedin_posts(
             if urn is None:
                 continue
             poster = item.get("poster") or {}
+            if item.get("reshared") is True:
+                # TikHub lists a company's reshare as the original post: its author is the
+                # poster, its text and link are the original's. The company adds nothing
+                # (37 of 37 checked 2026-11-11 had no words of the company's own).
+                posts.append(
+                    Post(
+                        platform="linkedin",
+                        post_id=urn,
+                        url=f"https://www.linkedin.com/feed/update/urn:li:activity:{urn}/",
+                        published_at=_date(item.get("posted")),
+                        text="",
+                        kind="repost",
+                        author_url=company,
+                        shared=SharedPost(
+                            post_id=_id(item.get("share_urn")),
+                            url=_str(item.get("url")),
+                            author_name=_str(poster.get("name")),
+                            author_url=_bare(_str(poster.get("linkedin_url"))),
+                            text=_str(item.get("text")) or "",
+                        ),
+                        raw_ref=page,
+                    )
+                )
+                continue
             posts.append(
                 Post(
                     platform="linkedin",
@@ -436,4 +556,5 @@ def company_linkedin_posts(
         following = {**first, "end_date": min(dates).strftime("%Y-%m-%d")} if dates else None
         return posts, following, None
 
-    return _history(caller, token, COMPANY_LINKEDIN_POSTS, first, parse, base_url)
+    history = _history(caller, token, COMPANY_LINKEDIN_POSTS, first, parse, base_url)
+    return _with_links(caller, history)

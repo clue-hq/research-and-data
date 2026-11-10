@@ -426,3 +426,145 @@ def test_plain_post_has_no_extras():
     post = linkedin_activity(caller, TOKEN, "ada", "posts").posts[0]
     assert post.shared is None and post.link is None and post.mentions == []
     assert post.reply_to_id is None
+
+
+# --- Long quoted posts, short links, company reshares (2026-11-11) ----------------------------
+
+from clue_api.footprint import short_links  # noqa: E402
+from tests.footprint._pages import lnkd_page, tco_page  # noqa: E402
+
+QUOTED_PREVIEW = "x" * 270  # what TikHub's timeline sends for a long quoted post: its first ~280
+
+
+def one_at_a_time(monkeypatch):
+    # ScriptedTransport answers in order, so short links are opened one by one in tests.
+    monkeypatch.setattr(short_links, "WORKERS", 1)
+
+
+def tweet_detail(text, *, urls=()):
+    return body(
+        {
+            "code": 200,
+            "data": {
+                "text": text,
+                "entities": {"urls": [{"url": s, "expanded_url": u} for s, u in urls]},
+            },
+        },
+        micro="1000",
+    )
+
+
+def test_long_quoted_post_is_read_in_full(monkeypatch):
+    one_at_a_time(monkeypatch)
+    quote = {**tweet("3", "So true"), "quoted": bob_tweet("30", QUOTED_PREVIEW)}
+    caller, transport = wire(timeline(quote), tweet_detail(LONG))
+    history = x_posts(caller, TOKEN, "ada")
+    shared = history.posts[0].shared
+    assert shared.text == LONG and not shared.text_may_be_cut
+    assert "tikhub.x.twitter-web-fetch-tweet-detail" in transport.requests[1].url
+    assert query(transport.requests[1]) == {"tweet_id": "30"}
+    assert history.cost_usd == 0.0025
+
+
+def test_short_quoted_post_is_not_looked_up():
+    quote = {**tweet("3", "So true"), "quoted": bob_tweet("30", "short and complete")}
+    caller, transport = wire(timeline(quote))
+    post = x_posts(caller, TOKEN, "ada").posts[0]
+    assert post.shared.text == "short and complete" and len(transport.requests) == 1
+
+
+def test_wide_characters_count_double_toward_the_limit(monkeypatch):
+    one_at_a_time(monkeypatch)
+    preview = "地图" * 70  # 140 characters, 280 by X's count
+    quote = {**tweet("3", "看看"), "quoted": bob_tweet("30", preview)}
+    caller, transport = wire(timeline(quote), tweet_detail(preview + "，还有更多"))
+    assert x_posts(caller, TOKEN, "ada").posts[0].shared.text == preview + "，还有更多"
+
+
+def test_quoted_post_that_cannot_be_read_is_marked_possibly_cut(monkeypatch):
+    one_at_a_time(monkeypatch)
+    quote = {**tweet("3", "So true"), "quoted": bob_tweet("30", QUOTED_PREVIEW)}
+    caller, _ = wire(timeline(quote), body({"code": 404, "detail": "gone"}, 404, "0"))
+    shared = x_posts(caller, TOKEN, "ada").posts[0].shared
+    assert shared.text == QUOTED_PREVIEW and shared.text_may_be_cut
+
+
+def test_x_links_come_from_tikhub_and_the_rest_are_opened(monkeypatch):
+    one_at_a_time(monkeypatch)
+    item = {
+        **tweet("5", "Read https://t.co/Known1 and https://t.co/Other2"),
+        "entities": {
+            "urls": [{"url": "https://t.co/Known1", "expanded_url": "https://a.example/1"}]
+        },
+    }
+    rt = {
+        **tweet("6", "RT @bob: see https://t.co/Bob3"),
+        "retweeted_tweet": bob_tweet("60", "see https://t.co/Bob3"),
+    }
+    caller, transport = wire(
+        timeline(item, rt), tco_page("https://bob.example/3"), tco_page("https://b.example/2")
+    )
+    posts = x_posts(caller, TOKEN, "ada").posts
+    assert posts[0].links == {
+        "https://t.co/Known1": "https://a.example/1",
+        "https://t.co/Other2": "https://b.example/2",
+    }
+    assert posts[0].text == "Read https://t.co/Known1 and https://t.co/Other2"  # words unchanged
+    assert posts[1].shared.links == {"https://t.co/Bob3": "https://bob.example/3"}
+    assert len(transport.requests) == 3  # the known link is never opened
+
+
+def test_linkedin_short_links_are_opened(monkeypatch):
+    one_at_a_time(monkeypatch)
+    item = {
+        **li_reshare(9, "Apply: https://lnkd.in/gOwn"),
+        "content": "Apply: https://lnkd.in/gOwn",
+    }
+    item["resharedPost"]["content"] = "Details https://lnkd.in/gOrig"
+    caller, _ = wire(
+        body({"posts": [item], "hasMore": False}),
+        lnkd_page("https://jobs.example.com/1"),
+        lnkd_page("https://events.example.com/2"),
+    )
+    post = linkedin_activity(caller, TOKEN, "ada", "posts").posts[0]
+    assert post.links == {"https://lnkd.in/gOwn": "https://events.example.com/2"}
+    assert post.shared.links == {"https://lnkd.in/gOrig": "https://jobs.example.com/1"}
+
+
+def test_company_reshare_is_a_repost_of_the_original(monkeypatch):
+    one_at_a_time(monkeypatch)
+    reshare = {
+        "urn": "75",
+        "share_urn": "74",
+        "posted": "2026-10-13 18:46:01",
+        "reshared": True,
+        "text": "A leader's own post https://lnkd.in/gL",
+        "url": "https://www.linkedin.com/posts/lee_a-leaders-own-post-ugcPost-74-abcd",
+        "poster": {"name": "Lee Leader", "linkedin_url": "https://www.linkedin.com/in/lee"},
+    }
+    caller, _ = wire(
+        body({"code": 200, "data": {"data": [reshare]}}, micro="1000"),
+        body({"code": 200, "data": {"data": [reshare]}}, micro="1000"),
+        lnkd_page("https://podcast.example/ep"),
+    )
+    post = company_linkedin_posts(caller, TOKEN, "https://www.linkedin.com/company/acme/").posts[0]
+    assert post.kind == "repost" and post.text == ""
+    assert post.url == "https://www.linkedin.com/feed/update/urn:li:activity:75/"
+    assert post.author_url == "https://www.linkedin.com/company/acme/"
+    shared = post.shared
+    assert (
+        shared.author_name == "Lee Leader"
+        and shared.author_url == "https://www.linkedin.com/in/lee"
+    )
+    assert shared.text == reshare["text"] and shared.url == reshare["url"]
+    assert shared.links == {"https://lnkd.in/gL": "https://podcast.example/ep"}
+
+
+def test_company_own_post_keeps_its_words(monkeypatch):
+    one_at_a_time(monkeypatch)
+    caller, _ = wire(
+        body({"code": 200, "data": {"data": [co_post("1", "2026-07-02 20:22:15")]}}, micro="1000"),
+        body({"code": 200, "data": {"data": [co_post("1", "2026-07-02 20:22:15")]}}, micro="1000"),
+    )
+    post = company_linkedin_posts(caller, TOKEN, "acme").posts[0]
+    assert post.kind == "company" and post.text == "company 1" and post.shared is None

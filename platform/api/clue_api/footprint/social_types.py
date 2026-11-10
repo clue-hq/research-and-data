@@ -23,6 +23,10 @@ class SharedPost(BaseModel):
     published_at: datetime | None = None
     text: str
     video_urls: list[str] = Field(default_factory=list)
+    #: Each short link in ``text`` (``t.co``, ``lnkd.in``) and the address it leads to.
+    links: dict[str, str] = Field(default_factory=dict)
+    #: The provider's copy may stop short and the full post could not be read: read it at ``url``.
+    text_may_be_cut: bool = False
 
 
 class LinkCard(BaseModel):
@@ -56,6 +60,9 @@ class Post(BaseModel):
     reply_to_id: str | None = None
     link: LinkCard | None = None
     mentions: list[Mention] = Field(default_factory=list)
+    #: Each short link in ``text`` (``t.co``, ``lnkd.in``) and the address it leads to. ``text``
+    #: itself is never changed.
+    links: dict[str, str] = Field(default_factory=dict)
     #: Which provider page (0-based) this post came from, so it can be found in the saved pages.
     raw_ref: int = 0
 
