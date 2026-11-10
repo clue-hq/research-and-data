@@ -108,6 +108,16 @@ def _treg(runtime: Any) -> tuple[Any, str]:
 _NO_TREG = {"state": "unavailable", "gap": "treg_key_missing"}
 
 
+def _title(post: Mapping[str, Any]) -> str:
+    """A repost's own text is empty and a quote's is only half the story: name the original."""
+    own = post.get("text") or ""
+    shared = post.get("shared")
+    if not shared:
+        return own[:200]
+    original = f"{shared.get('author_name') or 'someone'}: {shared.get('text') or ''}"
+    return (f"{own} (quoting {original})" if own else f"Reposted from {original}")[:200]
+
+
 def _history(history: SocialHistory) -> dict[str, Any]:
     value = history.model_dump(mode="json")
     newest = sorted(value["posts"], key=lambda p: p.get("published_at") or "", reverse=True)[
@@ -116,7 +126,7 @@ def _history(history: SocialHistory) -> dict[str, Any]:
     value["n_results"] = len(value["posts"])
     value["results"] = [
         {
-            "title": (p.get("text") or "")[:200],
+            "title": _title(p),
             "url": p.get("url"),
             "published": p.get("published_at"),
         }

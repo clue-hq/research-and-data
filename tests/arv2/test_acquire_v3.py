@@ -47,3 +47,29 @@ def test_v3_job_names():
 def test_v3_registered_beside_v1_and_v2():
     registry = quality_tools(None, None, purge=False)
     assert {"1", "2", "3"} <= set(registry.versions("acquire_research_evidence"))
+
+
+def test_preview_shows_the_original_of_a_repost():
+    from datetime import UTC, datetime
+
+    from clue_api.arv2.footprint_operations import _history
+    from clue_api.footprint.social_types import Post, SharedPost, SocialHistory
+
+    when = datetime(2026, 11, 6, tzinfo=UTC)
+    original = SharedPost(
+        post_id="20", url="https://x.com/bob/status/20", author_name="Bob", text="Bob's words"
+    )
+    reposted = Post(
+        platform="x",
+        post_id="2",
+        url="u",
+        published_at=when,
+        text="",
+        kind="repost",
+        shared=original,
+    )
+    quoted = reposted.model_copy(update={"post_id": "3", "text": "Very nice", "kind": "own"})
+    value = _history(SocialHistory.of([reposted, quoted], pages=1, cost_usd=0, state="complete"))
+    titles = sorted(r["title"] for r in value["results"])
+    assert titles == ["Reposted from Bob: Bob's words", "Very nice (quoting Bob: Bob's words)"]
+    assert value["posts"][0]["shared"]["text"] == "Bob's words"

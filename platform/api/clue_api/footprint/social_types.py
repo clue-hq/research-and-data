@@ -12,16 +12,50 @@ PostKind = Literal["own", "reaction", "repost", "company"]
 HistoryState = Literal["complete", "partial", "private", "not_found", "unavailable"]
 
 
+class SharedPost(BaseModel):
+    """Someone else's post that this one reposts, quotes or reshares, in full and with its author.
+    Its words are that author's, never the person's."""
+
+    post_id: str | None = None
+    url: str | None = None
+    author_name: str | None = None
+    author_url: str | None = None
+    published_at: datetime | None = None
+    text: str
+    video_urls: list[str] = Field(default_factory=list)
+
+
+class LinkCard(BaseModel):
+    """The link preview a post carries (title and address of the linked page)."""
+
+    title: str | None = None
+    url: str
+
+
+class Mention(BaseModel):
+    """A person or company tagged in the post."""
+
+    name: str
+    url: str | None = None
+
+
 class Post(BaseModel):
     platform: Platform
     post_id: str
     url: str | None
     published_at: datetime | None
+    #: Only the words of this post's author (for a reaction, the author of the liked post). A plain
+    #: repost has none (``""``); what was reposted, quoted or reshared is in ``shared``.
     text: str
     kind: PostKind
     author_name: str | None = None
     author_url: str | None = None
     video_urls: list[str] = Field(default_factory=list)
+    shared: SharedPost | None = None
+    #: The id of the post this one replies to (X).
+    reply_to_id: str | None = None
+    link: LinkCard | None = None
+    mentions: list[Mention] = Field(default_factory=list)
     #: Which provider page (0-based) this post came from, so it can be found in the saved pages.
     raw_ref: int = 0
 

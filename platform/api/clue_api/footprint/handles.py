@@ -49,7 +49,8 @@ def _instagram(
     except ProviderTransportError:
         return None
     body = reply.body if isinstance(reply.body, dict) else {}
-    user = (body.get("data") or {}).get("user") if isinstance(body.get("data"), dict) else None
+    data = body.get("data")
+    user = data.get("user") if isinstance(data, dict) else None
     if reply.status >= 400 or not isinstance(user, dict):
         return None
     return HandleCandidate(
@@ -58,7 +59,7 @@ def _instagram(
         url=f"https://www.instagram.com/{handle}/",
         source="same_handle",
         private=bool(user.get("is_private")),
-        bio=user.get("biography") or None,
+        bio=bio if isinstance(bio := user.get("biography"), str) and bio else None,
     )
 
 

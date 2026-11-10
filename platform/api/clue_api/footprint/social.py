@@ -19,7 +19,15 @@ from typing import Any, Literal
 
 from pydantic import SecretStr
 
-from clue_api.footprint.social_types import Post, SocialHistory
+from clue_api.footprint.social_types import (
+    HistoryState,
+    LinkCard,
+    Mention,
+    Post,
+    PostKind,
+    SharedPost,
+    SocialHistory,
+)
 from clue_api.footprint.treg_client import TREG_BASE_URL, TregReply, treg_call
 from clue_spend.calls import ProviderCaller
 from clue_spend.errors import ProviderTransportError
@@ -60,6 +68,15 @@ def _str(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _id(value: Any) -> str | None:
+    return _str(str(value)) if isinstance(value, (str, int)) and value != "" else None
+
+
+def _bare(url: str | None) -> str | None:
+    """A profile link without its tracking query (``?miniProfileUrn=…``)."""
+    return url.split("?", 1)[0] if url else None
+
+
 def _history(
     caller: ProviderCaller,
     token: SecretStr,
@@ -70,6 +87,7 @@ def _history(
 ) -> SocialHistory:
     posts: list[Post] = []
     seen: set[str] = set()
+    state: HistoryState
     cost = 0.0
     pages = 0
     query: dict[str, str | int] | None = first
@@ -113,22 +131,63 @@ def _closed(body: Any, status: int) -> Literal["private", "not_found"] | None:
 # --- LinkedIn (fetchinio) ----------------------------------------------------------------------
 
 
+def _li_shared(item: Any) -> SharedPost | None:
+    if not isinstance(item, dict):
+        return None
+    pid = _str(item.get("id")) or _str(item.get("shareUrn"))
+    text = _str(item.get("content"))
+    if pid is None and text is None:
+        return None
+    author = item.get("author") or item.get("profile") or {}
+    video = _str(item.get("videoUrl"))
+    return SharedPost(
+        post_id=pid,
+        url=_str(item.get("shareUrl")),
+        author_name=_str(author.get("name")),
+        author_url=_bare(_str(author.get("url"))),
+        published_at=_date(item.get("date")),
+        text=text or "",
+        video_urls=[video] if video else [],
+    )
+
+
+def _li_link(item: dict[str, Any]) -> LinkCard | None:
+    article = item.get("article")
+    if not isinstance(article, dict) or _str(article.get("link")) is None:
+        return None
+    return LinkCard(title=_str(article.get("title")), url=article["link"])
+
+
+def _li_mentions(item: dict[str, Any]) -> list[Mention]:
+    return [
+        Mention(name=m["name"], url=_str(m.get("url")))
+        for m in item.get("mentions") or []
+        if isinstance(m, dict) and _str(m.get("name"))
+    ]
+
+
 def _li_post(item: dict[str, Any], *, kind: Literal["own", "reaction"], page: int) -> Post | None:
     author = item.get("author") or item.get("profile") or {}
     pid = _str(item.get("id")) or _str(item.get("shareUrn"))
     if pid is None:
         return None
     video = _str(item.get("videoUrl"))
+    text = _str(item.get("content")) or ""
+    shared = _li_shared(item.get("resharedPost"))
     return Post(
         platform="linkedin",
         post_id=pid,
         url=_str(item.get("shareUrl")),
         published_at=_date(item.get("date")),
-        text=_str(item.get("content")) or "",
-        kind=kind,
+        text=text,
+        # A reshare with no words of their own is a repost; with words, it is their post.
+        kind="repost" if kind == "own" and shared and not text else kind,
         author_name=_str(author.get("name")),
-        author_url=_str(author.get("url")),
+        author_url=_bare(_str(author.get("url"))),
         video_urls=[video] if video else [],
+        shared=shared,
+        link=_li_link(item),
+        mentions=_li_mentions(item),
         raw_ref=page,
     )
 
@@ -185,10 +244,34 @@ def _best_mp4(media: Any) -> list[str]:
     return urls
 
 
+def _x_shared(item: Any) -> SharedPost | None:
+    """The original of a retweet or the post a quote tweet quotes, as TikHub sends it."""
+    if not isinstance(item, dict):
+        return None
+    tid = _id(item.get("tweet_id"))
+    text = _str(item.get("text"))
+    if tid is None and text is None:
+        return None
+    screen = _str((item.get("author") or {}).get("screen_name"))
+    return SharedPost(
+        post_id=tid,
+        url=f"https://x.com/{screen}/status/{tid}" if screen and tid else None,
+        author_name=_str((item.get("author") or {}).get("name")),
+        author_url=f"https://x.com/{screen}" if screen else None,
+        published_at=_date(item.get("created_at")),
+        text=text or "",
+        video_urls=_best_mp4(item.get("media")),
+    )
+
+
 def x_posts(
     caller: ProviderCaller, token: SecretStr, handle: str, *, base_url: str = TREG_BASE_URL
 ) -> SocialHistory:
+    """A retweet's ``text`` from TikHub is X's 140-character ``RT @…: …`` form, cut short; the
+    full original comes in ``retweeted_tweet`` and is kept in ``shared``, so a retweet's own text
+    is empty. A quote tweet keeps its own words and the quoted post in ``shared``."""
     handle = handle.lstrip("@")
+    handle_lower = handle.lower()
     first: dict[str, str | int] = {"screen_name": handle}
 
     def parse(body: Any, status: int, page: int) -> Page:
@@ -197,24 +280,32 @@ def x_posts(
             return [], None, _closed(body, status) or "not_found"
         posts: list[Post] = []
         for item in data.get("timeline") or []:
-            tid = _str(str(item.get("tweet_id") or "")) or None
+            tid = _id(item.get("tweet_id"))
             if tid is None:
                 continue
             author = item.get("author") or {}
             screen = _str(author.get("screen_name")) or handle
             text = _str(item.get("text")) or ""
-            repost = text.startswith("RT @") or screen.lower() != handle.lower()
+            original = _x_shared(item.get("retweeted_tweet"))
+            repost = (
+                original is not None or text.startswith("RT @") or screen.lower() != handle_lower
+            )
+            kind: PostKind = "repost" if repost else "own"
+            # A retweet's own text is X's clipped "RT @…" form: keep the full original instead.
+            own = "" if original is not None else text
             posts.append(
                 Post(
                     platform="x",
                     post_id=tid,
                     url=f"https://x.com/{screen}/status/{tid}",
                     published_at=_date(item.get("created_at")),
-                    text=text,
-                    kind="repost" if repost else "own",
+                    text=own,
+                    kind=kind,
                     author_name=_str(author.get("name")),
                     author_url=f"https://x.com/{screen}",
                     video_urls=_best_mp4(item.get("media")),
+                    shared=original or _x_shared(item.get("quoted")),
+                    reply_to_id=_id(item.get("reply_to")),
                     raw_ref=page,
                 )
             )

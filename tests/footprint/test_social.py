@@ -297,3 +297,132 @@ def test_company_posts_page_back_by_date_until_nothing_new():
 def test_company_unknown_is_not_found():
     caller, _ = wire(body({"code": 200, "data": {"data": None}}, micro="1000"))
     assert company_linkedin_posts(caller, TOKEN, "acme").state == "not_found"
+
+
+# --- Reposts, quotes, replies, reshares, link cards and mentions ------------------------------
+# A post's ``text`` is only ever the person's own words. What they repost, quote or reshare is
+# someone else's and lives in ``shared``, in full and with its author.
+
+LONG = "A long original post by Bob. " * 40  # well past X's 140-character retweet form
+
+
+def timeline(*items):
+    return body({"data": {"timeline": list(items), "next_cursor": None, "status": "ok"}})
+
+
+def bob_tweet(tid, text, *, video=None):
+    return {**tweet(tid, text, "bob", video=video), "author": {"screen_name": "bob", "name": "Bob"}}
+
+
+def test_retweet_keeps_the_full_original_not_the_clipped_rt_text():
+    variants = [{"content_type": "video/mp4", "bitrate": 1, "url": "https://v.example/bob.mp4"}]
+    rt = {
+        **tweet("2", "RT @bob: " + LONG[:129] + "…"),
+        "media": [],
+        "retweeted": {"id": "20"},
+        "retweeted_tweet": bob_tweet("20", LONG, video=variants),
+    }
+    caller, _ = wire(timeline(rt))
+    post = x_posts(caller, TOKEN, "ada").posts[0]
+    assert post.kind == "repost" and post.text == ""
+    shared = post.shared
+    assert shared is not None and shared.text == LONG and "…" not in shared.text
+    assert shared.author_name == "Bob" and shared.author_url == "https://x.com/bob"
+    assert shared.url == "https://x.com/bob/status/20" and shared.post_id == "20"
+    assert shared.published_at == datetime(2026, 11, 6, 18, 16, 33, tzinfo=UTC)
+    assert shared.video_urls == ["https://v.example/bob.mp4"]
+
+
+def test_retweet_without_the_original_falls_back_to_the_rt_text():
+    caller, _ = wire(timeline(tweet("2", "RT @bob: theirs")))
+    post = x_posts(caller, TOKEN, "ada").posts[0]
+    assert post.kind == "repost" and post.text == "RT @bob: theirs" and post.shared is None
+
+
+def test_quote_tweet_keeps_own_words_and_the_quoted_post():
+    quote = {**tweet("3", "Very nice"), "quoted": bob_tweet("30", "Bob's launch post")}
+    caller, _ = wire(timeline(quote))
+    post = x_posts(caller, TOKEN, "ada").posts[0]
+    assert post.kind == "own" and post.text == "Very nice"
+    assert post.shared is not None and post.shared.text == "Bob's launch post"
+    assert post.shared.author_name == "Bob" and post.shared.url == "https://x.com/bob/status/30"
+
+
+def test_reply_records_the_tweet_it_answers():
+    reply = {**tweet("4", "and part two"), "reply_to": "3"}
+    caller, _ = wire(timeline(reply))
+    post = x_posts(caller, TOKEN, "ada").posts[0]
+    assert post.reply_to_id == "3" and post.shared is None
+
+
+def li_reshare(pid, own_text):
+    original = {
+        **li_post(90, "2026-10-01T20:28:29.388Z", author="Pat Original"),
+        "content": LONG,
+        "author": {
+            "name": "Pat Original",
+            "url": "https://www.linkedin.com/in/pat?miniProfileUrn=urn%3Ali%3Afsd_profile%3AX",
+        },
+    }
+    return {
+        **li_post(pid, "2026-10-02T10:00:00Z"),
+        "content": own_text,
+        "resharedPostUrn": "urn:li:activity:90",
+        "resharedPost": original,
+    }
+
+
+def test_linkedin_reshare_keeps_the_full_original():
+    caller, _ = wire(body({"posts": [li_reshare(5, "Great team, apply!")], "hasMore": False}))
+    post = linkedin_activity(caller, TOKEN, "ada", "posts").posts[0]
+    assert post.kind == "own" and post.text == "Great team, apply!"
+    shared = post.shared
+    assert shared is not None and shared.text == LONG
+    assert shared.author_name == "Pat Original"
+    assert shared.author_url == "https://www.linkedin.com/in/pat"
+    assert shared.url == "https://www.linkedin.com/posts/ada_90"
+    assert shared.post_id == "urn:li:activity:90"
+
+
+def test_linkedin_reshare_without_comment_is_a_repost():
+    caller, _ = wire(body({"posts": [li_reshare(6, "")], "hasMore": False}))
+    post = linkedin_activity(caller, TOKEN, "ada", "posts").posts[0]
+    assert post.kind == "repost" and post.text == "" and post.shared.text == LONG
+
+
+def test_liked_reshare_keeps_the_original():
+    reaction = {"createdAt": "2026-10-29T13:29:56Z", "post": li_reshare(7, "look at this")}
+    caller, _ = wire(body({"reactions": [reaction], "hasMore": False}))
+    post = linkedin_activity(caller, TOKEN, "ada", "reactions").posts[0]
+    assert post.kind == "reaction" and post.shared is not None and post.shared.text == LONG
+
+
+def test_linkedin_link_card_and_mentions():
+    item = {
+        **li_post(8, "2026-10-25T10:00:00Z"),
+        "article": {
+            "title": "Content Writer @ Example",
+            "subtitle": "jobs.example.com",
+            "link": "https://jobs.example.com/job/1",
+        },
+        "mentions": [
+            {"type": "person", "name": "Dan Example", "url": "https://www.linkedin.com/in/dan"},
+            {"type": "company", "name": "Acme", "url": "https://www.linkedin.com/company/acme/"},
+            {"type": "person", "name": None, "url": None},
+        ],
+    }
+    caller, _ = wire(body({"posts": [item], "hasMore": False}))
+    post = linkedin_activity(caller, TOKEN, "ada", "posts").posts[0]
+    assert post.link is not None and post.link.title == "Content Writer @ Example"
+    assert post.link.url == "https://jobs.example.com/job/1"
+    assert [(m.name, m.url) for m in post.mentions] == [
+        ("Dan Example", "https://www.linkedin.com/in/dan"),
+        ("Acme", "https://www.linkedin.com/company/acme/"),
+    ]
+
+
+def test_plain_post_has_no_extras():
+    caller, _ = wire(body({"posts": [li_post(1, "2026-10-01T10:00:00Z")], "hasMore": False}))
+    post = linkedin_activity(caller, TOKEN, "ada", "posts").posts[0]
+    assert post.shared is None and post.link is None and post.mentions == []
+    assert post.reply_to_id is None
