@@ -39,6 +39,13 @@ chat of 2026-11-11; they are not repeated here.
   rule, "quote without a source"; the word comparison and the "uncited fact" rule are gone; the
   inactive `quality_pages` rules (every sentence cited, the recording-quote rule of I9) are deleted.
   The private-matter word list stays (founder, 2026-11-11).
+- **I12, label part fixed** (review tags `review/speaker-names/start..end`). Founder ruling
+  2026-11-11: Gemini is trusted to name speakers; a line is attributed by the name Gemini wrote on
+  it, Jev stays as a second opinion. `join_windows` writes one label per named speaker across parts
+  (r44a: Ann was `S5`, then `S2`, while another panelist was also `S2`) in both the lines and the
+  text the agent reads; an unnamed number keeps its part. **Still open:** the leading transcription
+  prompt (it states the subject is present and shows their name in the example line); the neutral
+  wording awaits founder approval.
 
 ## Critical
 

@@ -739,6 +739,47 @@ def covered_window(
     return [(start, first), (resume, second)]
 
 
+_NUMBERED_LABEL_RE = re.compile(r"^(S\d+)(?:\s*\((.*)\))?$")
+_NOT_A_NAME_RE = re.compile(r"unknown|unidentified|unclear|^\W*$", re.IGNORECASE)
+
+
+def _speaker_across_parts(label: str, number: int, count: int) -> str:
+    """One speaker label for a joined transcript (founder ruling 2026-11-11).
+
+    Each part is a separate Gemini answer that numbers its speakers afresh, so ``S2`` in one part
+    and ``S2`` in the next can be different people while the same person is ``S5`` then ``S2``. A
+    line is attributed by the name Gemini wrote on it: ``S2 (Ann Barron-DiCamillo)`` becomes
+    ``Ann Barron-DiCamillo``. A number with no name keeps its part (``S2 (part 1 of 2)``) when
+    there is more than one part, so two parts' ``S2`` are never merged. Other labels are untouched.
+    """
+    numbered = _NUMBERED_LABEL_RE.match(label.strip())
+    if numbered is None:
+        return label
+    name = (numbered.group(2) or "").strip()
+    if name and not _NOT_A_NAME_RE.search(name):
+        return name
+    return f"{numbered.group(1)} (part {number} of {count})" if count > 1 else numbered.group(1)
+
+
+def _relabel_text(text: str, number: int, count: int) -> str:
+    """The part's transcript text with each line's label as :func:`_speaker_across_parts` gives
+    it, read with the same rules as :func:`parse_transcript_lines`, so the text the agent reads
+    and the lines the speaker check reads name the same people."""
+    out = []
+    for raw in text.split("\n"):
+        stripped = raw.strip()
+        stamp, remainder = "", stripped
+        timestamped = _TS_LINE_RE.match(stripped)
+        if timestamped is not None:
+            stamp, remainder = f"[{timestamped.group(1)}] ", timestamped.group(2).strip()
+        split = _SPEAKER_SPLIT_RE.match(remainder)
+        if split is not None and _SPEAKER_LABEL_RE.match(split.group(1).strip()):
+            label = _speaker_across_parts(split.group(1).strip(), number, count)
+            raw = f"{stamp}{label}: {split.group(2).strip()}"
+        out.append(raw)
+    return "\n".join(out)
+
+
 def join_windows(parts: Sequence[tuple[int, Transcript]]) -> Transcript:
     """One transcript from windows in order; each window's timestamps shift by its start.
 
@@ -751,10 +792,14 @@ def join_windows(parts: Sequence[tuple[int, Transcript]]) -> Transcript:
     quotes: list[QuoteCandidate] = []
     texts: list[str] = []
     finish: str | None = "STOP"
-    for start, part in parts:
-        texts.append(part.text)
+    for number, (start, part) in enumerate(parts, 1):
+        texts.append(_relabel_text(part.text, number, len(parts)))
         lines.extend(
-            replace(line, ts_s=None if line.ts_s is None else line.ts_s + start)
+            replace(
+                line,
+                ts_s=None if line.ts_s is None else line.ts_s + start,
+                speaker=_speaker_across_parts(line.speaker, number, len(parts)),
+            )
             for line in part.lines
         )
         quotes.extend(

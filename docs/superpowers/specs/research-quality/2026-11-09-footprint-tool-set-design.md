@@ -99,6 +99,12 @@ Proposed 2026-11-08 as four steps; what became of each:
   and their tests.
 - Gemini's YouTube transcripts carry speaker labels too, so Jev picks the label as for Deepgram. Gemini's own
   name on a label is a guess (its prompt names the subject) and is not the proof.
+  **Superseded 2026-11-11 (founder):** a Gemini line is attributed by the name Gemini wrote on it, and
+  Jev's answer stays beside it as a second opinion; the agent decides. A long video is transcribed in
+  parts that each number their speakers afresh, so the joined transcript names a labelled speaker by
+  that name in every part and keeps an unnamed number to its part (`S2 (part 1 of 2)`). Making the
+  transcription prompt neutral (name a speaker only when the recording says or shows who they are) is
+  proposed and awaits the founder's approval of its wording.
 - After a recording with speaker labels is transcribed for a person job, `read_media` asks Jev the three
   agreed questions (present? speaking? which label is that exact person?), with what we know about the person
   and the recording. About 1 s and under $0.001 a question.
