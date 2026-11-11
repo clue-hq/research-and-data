@@ -227,8 +227,13 @@ _NO_TREG = {"state": "unavailable", "gap": "treg_key_missing"}
 
 
 def _title(post: Mapping[str, Any]) -> str:
-    """A repost's own text is empty and a quote's is only half the story: name the original."""
+    """A repost's own text is empty and a quote's is only half the story: name the original. A
+    post by another account in this feed is named as theirs, never shown as the person's words."""
     own = post.get("text") or ""
+    if post.get("kind") == "in_feed":
+        return f"Not this account's post, by {post.get('author_name') or 'someone else'}: {own}"[
+            :200
+        ]
     shared = post.get("shared")
     if not shared:
         return own[:200]

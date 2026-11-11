@@ -8,7 +8,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 Platform = Literal["linkedin", "x", "instagram", "facebook"]
-PostKind = Literal["own", "reaction", "repost", "company"]
+#: ``in_feed``: a post by another account that appears in this account's feed without being a
+#: repost of it (its words and author are that account's, never the person's).
+PostKind = Literal["own", "reaction", "repost", "company", "in_feed"]
 HistoryState = Literal["complete", "partial", "private", "not_found", "unavailable"]
 
 

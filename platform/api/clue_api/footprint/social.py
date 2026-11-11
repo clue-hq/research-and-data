@@ -504,13 +504,18 @@ def x_posts(
 ) -> SocialHistory:
     """A retweet's ``text`` from TikHub is X's 140-character ``RT @…: …`` form, cut short; the
     full original comes in ``retweeted_tweet`` and is kept in ``shared``, so a retweet's own text
-    is empty. A quote tweet keeps its own words and the quoted post in ``shared``."""
-    handle = handle.lstrip("@")
-    handle_lower = handle.lower()
+    is empty. A quote tweet keeps its own words and the quoted post in ``shared``.
+
+    Whose tweet it is never depends on the handle typed, which may be an old one (review I6): a
+    tweet is the account's own when its author's permanent id is the timeline account's id
+    (``data.user.rest_id``), or, without ids, when its author's name is the timeline account's
+    current name (``data.user.profile``). A retweet is one only when X marks it. A tweet by
+    another account that is not a retweet keeps its author and is marked ``in_feed``."""
+    handle = handle.lstrip("@").strip()
     first: dict[str, str | int] = {"screen_name": handle}
     known: dict[str, str] = {}
 
-    def tweet(item: dict[str, Any], page: int) -> Post | None:
+    def tweet(item: dict[str, Any], page: int, account: dict[str, Any]) -> Post | None:
         tid = _id(item.get("tweet_id"))
         if tid is None:
             return None
@@ -520,8 +525,17 @@ def x_posts(
         for part in (item, item.get("retweeted_tweet"), item.get("quoted")):
             known.update(_x_entity_links(part))
         original = _x_shared(item.get("retweeted_tweet"))
-        repost = original is not None or text.startswith("RT @") or screen.lower() != handle_lower
-        kind: PostKind = "repost" if repost else "own"
+        account_id, author_id = _id(account.get("rest_id")), _id(author.get("rest_id"))
+        account_name = _str(account.get("profile")) or handle
+        if account_id and author_id:
+            mine = author_id == account_id
+        else:
+            mine = screen.lower() == account_name.lower()
+        kind: PostKind
+        if original is not None or text.startswith("RT @"):
+            kind = "repost"
+        else:
+            kind = "own" if mine else "in_feed"
         # A retweet's own text is X's clipped "RT @…" form: keep the full original instead.
         own = "" if original is not None else text
         return Post(
@@ -552,7 +566,8 @@ def x_posts(
         data = body.get("data")
         if not isinstance(data, dict) or not isinstance(data.get("timeline"), list):
             return PageRead(failure=f"HTTP {reply.status} without a timeline: {_message(body)}")
-        posts, unreadable = _items(data["timeline"], lambda item: tweet(item, page))
+        account = _dict(data.get("user"))
+        posts, unreadable = _items(data["timeline"], lambda item: tweet(item, page, account))
         cursor = _str(data.get("next_cursor"))
         return PageRead(
             posts=posts,

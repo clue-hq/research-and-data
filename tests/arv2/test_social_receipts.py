@@ -150,3 +150,17 @@ def test_partial_history_with_no_posts_is_not_empty():
     history = SocialHistory.of([], pages=1, cost_usd=0, state="partial", gaps=[gap])
     _, got = receipt(history)
     assert got["status"] == "refused" and got["error_code"] == "history_partial"
+
+
+def test_a_post_by_another_account_names_its_author_in_the_preview():
+    theirs = Post(
+        platform="x",
+        post_id="12",
+        url="https://x.com/bob/status/12",
+        published_at=None,
+        text="Bob's own post",
+        kind="in_feed",
+        author_name="Bob",
+    )
+    _, got = receipt(SocialHistory.of([theirs], pages=1, cost_usd=0, state="complete"))
+    assert got["preview"][0]["title"] == "Not this account's post, by Bob: Bob's own post"
