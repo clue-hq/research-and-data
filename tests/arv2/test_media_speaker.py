@@ -48,3 +48,24 @@ def test_words_nobody_was_given_still_reach_the_check():
         "[00:00] Unlabelled: Thanks everyone for joining.",
         "[00:03] Speaker 0: Hi.",
     ]
+
+
+# --- the identity note the agent writes for the speaker check (founder-approved 2026-11-12) -------
+
+
+def test_read_media_takes_an_identity_note_with_the_approved_description():
+    import pytest
+    from pydantic import ValidationError
+
+    from clue_api.arv2.media_tools import ReadMediaArgs
+
+    schema = ReadMediaArgs.model_json_schema()["properties"]["identity_note"]
+    assert schema["description"].startswith(
+        "What identifies the person we research, for the speaker check."
+    )
+    assert "Write only what your research found; never guess." in schema["description"]
+    assert "also written Jon Doe" in schema["description"]
+    args = ReadMediaArgs(url="https://example.com/a.mp3", purpose="p", identity_note="CISO, Acme")
+    assert args.identity_note == "CISO, Acme"
+    with pytest.raises(ValidationError):
+        ReadMediaArgs(url="https://example.com/a.mp3", purpose="p", identity_note="x" * 1501)

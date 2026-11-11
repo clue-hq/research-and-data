@@ -108,6 +108,19 @@ class DiscoverMediaArgs(MediaModel):
     page_size: int = Field(6, ge=1, le=10)
 
 
+#: Founder-approved wording, 2026-11-12.
+IDENTITY_NOTE_DESCRIPTION = (
+    "What identifies the person we research, for the speaker check. These are the facts a host "
+    "or a caption would use to introduce them. Give their roles and employers with years, past "
+    "ones too, since a recording may be from an earlier job. Add anything else that identifies "
+    "them: where they studied, businesses they founded or own, boards, awards, books, nicknames "
+    "or other spellings of their name. Write only what your research found; never guess.\n"
+    'Example: "VP of Engineering at Acme Bank (2022–now); Head of Infrastructure at Northwind '
+    "Insurance (2015–2022); studied at Ohio State; co-founded the charity Code for Kids; also "
+    'written Jon Doe."'
+)
+
+
 class ReadMediaArgs(MediaModel):
     url: str | None = None
     candidate_ref: UUID | None = None
@@ -116,6 +129,9 @@ class ReadMediaArgs(MediaModel):
     alternate_urls: list[str] = Field(default_factory=list, max_length=8)
     repair_version: UUID | None = None
     refresh_expired: bool = False
+    identity_note: str | None = Field(
+        None, min_length=1, max_length=1500, description=IDENTITY_NOTE_DESCRIPTION
+    )
 
     @model_validator(mode="after")
     def one_source(self) -> ReadMediaArgs:
@@ -414,7 +430,12 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
                     "read. Confidence and timing are machine estimates, not listening verification."
                 )
                 if result.get("version_ref"):
-                    result = await _with_speaker_check(runtime, result, UUID(result["version_ref"]))
+                    result = await _with_speaker_check(
+                        runtime,
+                        result,
+                        UUID(result["version_ref"]),
+                        identity_note=args.identity_note,
+                    )
                 return result
             gaps.append(result.get("gap", result["state"]))
             video = result.get("video") or video
@@ -480,12 +501,12 @@ async def search_transcripts(runtime: Any, args: SearchTranscriptsArgs) -> dict[
 
 
 async def _with_speaker_check(
-    runtime: Any, result: dict[str, Any], version_ref: UUID
+    runtime: Any, result: dict[str, Any], version_ref: UUID, *, identity_note: str | None = None
 ) -> dict[str, Any]:
     """Put a person job's speaker check right after the recording's title, ahead of the text."""
     from clue_api.arv2.media_speaker import speaker_check
 
-    check = await speaker_check(runtime, version_ref)
+    check = await speaker_check(runtime, version_ref, identity_note=identity_note)
     if check is None:
         return result
     ordered: dict[str, Any] = {}

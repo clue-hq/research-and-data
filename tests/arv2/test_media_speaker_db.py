@@ -106,6 +106,26 @@ def test_person_job_speaker_check_built_from_the_transcript():
     run_async(scenario())
 
 
+def test_the_agents_identity_note_reaches_jev_with_the_person():
+    """Founder-approved 2026-11-12: the agent writes what identifies the person (past roles,
+    schools, businesses, awards) and Jev reads it as part of person_we_research."""
+    note = "Head of Cyber Operations at Citi (2021-2026); chairs the FS-ISAC board"
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await person_runtime(conn)
+            _, version = await saved_transcript(rt, conn)
+            await speaker_check(rt, version, identity_note=note)
+            assert rt.clients.calls[0]["person"]["identity_note"] == note
+        async with rollback_conn() as conn:
+            rt = await person_runtime(conn)
+            _, version = await saved_transcript(rt, conn)
+            await speaker_check(rt, version)
+            assert "identity_note" not in rt.clients.calls[0]["person"]
+
+    run_async(scenario())
+
+
 def test_speaker_check_paid_once_per_job():
     async def scenario():
         async with rollback_conn() as conn:
@@ -169,10 +189,16 @@ def test_person_read_media_carries_speaker_check():
             )
             rt._transport_factory = lambda: wire
             result = await read_media(
-                rt, ReadMediaArgs(url="https://example.com/talk.mp3", purpose="Hear them")
+                rt,
+                ReadMediaArgs(
+                    url="https://example.com/talk.mp3",
+                    purpose="Hear them",
+                    identity_note="CISO at Acme since 2021",
+                ),
             )
             assert result["state"] == "available"
             assert result["speaker_check"]["label"] == "Speaker 1"
+            assert rt.clients.calls[0]["person"]["identity_note"] == "CISO at Acme since 2021"
             assert list(result).index("speaker_check") < list(result).index("preview")
             assert "speaker check" in result["next_action"].lower()
             assert json.dumps(result)

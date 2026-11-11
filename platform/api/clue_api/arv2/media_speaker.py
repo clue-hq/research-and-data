@@ -64,14 +64,20 @@ def diarised_lines(saved: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _person(scope: Any) -> dict[str, Any]:
-    return {
+def _person(scope: Any, identity_note: str | None = None) -> dict[str, Any]:
+    person: dict[str, Any] = {
         "name": scope.person_name,
         "title": scope.person_title,
         "employer": scope.account_name,
         "linkedin_url": scope.person_linkedin_url or None,
         "employment_history": list(scope.employment_history),
     }
+    if identity_note:
+        # What the agent's research found identifies them: past roles, schools, businesses,
+        # awards (founder-approved 2026-11-12). Without it a recording from an earlier job read
+        # as a namesake in r44a.
+        person["identity_note"] = identity_note
+    return person
 
 
 async def _recording(conn: Any, workspace_id: str, saved: dict[str, Any]) -> dict[str, Any]:
@@ -90,7 +96,9 @@ async def _recording(conn: Any, workspace_id: str, saved: dict[str, Any]) -> dic
     }
 
 
-async def speaker_check(runtime: Any, version_ref: UUID) -> SpeakerCheck | None:
+async def speaker_check(
+    runtime: Any, version_ref: UUID, *, identity_note: str | None = None
+) -> SpeakerCheck | None:
     """The saved or freshly asked check for a person job; ``None`` on an account job."""
     scope = runtime.scope
     if scope.person_subject_id is None:
@@ -107,7 +115,7 @@ async def speaker_check(runtime: Any, version_ref: UUID) -> SpeakerCheck | None:
         saved = await store.load_transcript(runtime, conn, version_ref)
         recording = await _recording(conn, scope.workspace_id, saved)
     lines = diarised_lines(saved)
-    person = _person(scope)
+    person = _person(scope, identity_note)
     try:
         check: SpeakerCheck = await runtime.call_provider(
             "openrouter",
