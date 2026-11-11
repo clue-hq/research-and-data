@@ -107,6 +107,24 @@ Status: **works** (tested, use it), **limited** (works with a stated limit), **u
 | | treg `anyapi.facebook.user.posts` | untested | Needs POST; not retried |
 | Confirm the person is the speaker | – | none | Current check to be deleted; new design pending |
 
+### What each social provider sends when there is nothing to read (probed 2026-11-11, $0.002)
+
+Probed through treg with made-up handles, to decide when a reader may say "not found" or "private"
+(review finding I1). Only these replies count as an answer about the account; anything else is a
+failure, reported as `unavailable` or `partial` with the reason (`clue_api/footprint/social.py`).
+
+| Reader | Unknown account | Private | Notes |
+|---|---|---|---|
+| LinkedIn posts / reactions (fetchinio) | 404 `{"error": "LinkedIn profile not found", "code": "PROFILE_NOT_FOUND"}`, free | — | |
+| X timeline (TikHub) | 400 `{"detail": {"code": 400, "message": "Request failed. Please retry. …"}}`, free | — | Same reply as a bad request, so it is **not** "not found"; the reader reports the provider's words and says both readings. A made-up cursor gets an ordinary 200 page. |
+| Instagram posts (ScrapeCreators) | 404 `{"success": true, "error": "not_found", "message": "Profile is unavailable on Instagram"}`, free | "Profile is restricted" (section 0a) | |
+| Facebook posts (ScrapeCreators) | 404 `{"success": true, "accountDoesNotExist": true, "message": "Account doesn't exist"}`, free | `isPrivate: true` / "Profile is private" | |
+| Company posts (TikHub) | 200 `{"code": 200, "data": {"data": null}}`, $0.001 | — | On a later page the same reply means nothing older is left. |
+| treg itself | — | — | Its own refusals carry `X-Treg-Error: 1`: a bad key is 401 `{"detail": "invalid token"}`. Out of credit (402) or a refused key stops treg for the job (halt rule). |
+
+Also seen in the r44a trial's saved pages: fetchinio sometimes sends an empty page while still
+saying `hasMore: true` with a new token, so an empty LinkedIn page is not the end of the history.
+
 ## 0b. Google search (checked 2026-11-09, not adopted)
 
 - Google's own Custom Search JSON API is closed to new customers and stops working on 1 January 2027
