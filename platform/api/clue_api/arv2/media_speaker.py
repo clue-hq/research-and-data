@@ -10,6 +10,7 @@ transcript. It is a model's judgement for the agent to weigh: nothing in code ga
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 from uuid import UUID
 
@@ -21,6 +22,9 @@ from clue_api.footprint.jev_client import SpeakerCheck
 
 SPEAKER_CHECK_KIND = "speaker_check"
 #: The item metadata worth giving Jev as "what we know about the recording".
+#: The text between two transcript lines: the next line's ``[mm:ss] Label:`` prefix and nothing
+#: spoken. Sent as its own line it became ``[00:00] Unlabelled: [00:27] S2 (Ann …):`` (r44a).
+_LINE_PREFIX_ONLY = re.compile(r"^\[\d{1,2}:\d{2}(?::\d{2})?\][^\n]{0,64}:$")
 _RECORDING_KEYS = ("show", "channel", "description", "published_at", "duration_s", "family")
 
 
@@ -54,7 +58,7 @@ def diarised_lines(saved: dict[str, Any]) -> list[str]:
     lines = []
     for segment in saved["segments"]:
         words = value[segment.start : segment.end].strip()
-        if not words:
+        if not words or (segment.speaker is None and _LINE_PREFIX_ONLY.match(words)):
             continue
         lines.append(f"[{_clock(segment.time_s)}] {segment.speaker or 'Unlabelled'}: {words}")
     return lines
