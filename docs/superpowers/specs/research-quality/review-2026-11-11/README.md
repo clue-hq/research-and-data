@@ -61,6 +61,10 @@ chat of 2026-11-11; they are not repeated here.
   2026-11-12: the agent writes an `identity_note` on `read_media` (past roles with years, schools,
   businesses, boards, awards, other spellings), passed to Jev unchanged; person prompt v32-person
   asks for it; recipe 45 (current) uses v32-person.
+  Re-check 2026-11-12 (live, $0.0028), r44a's 5 person transcripts with the fixed lines: without
+  a note Jev answered label "none" in all 5 (FS-ISAC podcast: "different_person" 0.90); with an
+  identity note written from the agents' own findings it picked the person's label in all 5
+  (0.51-0.87). The noise fix alone did not restore the label; the career facts did.
 
 ## Critical
 
