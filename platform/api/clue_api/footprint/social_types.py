@@ -68,8 +68,14 @@ class Post(BaseModel):
 
 
 class SocialHistory(BaseModel):
-    """``complete``: every page the provider had. ``partial``: it stopped early and ``gap`` says
-    where. ``private``/``not_found``: nothing to read, which is an answer, not an error."""
+    """How far the reader got, said plainly so a failure is never mistaken for an answer.
+
+    ``complete``: every page the provider had. ``partial``: some pages were read, then the reading
+    stopped for a reason named in ``gaps``; the history is incomplete. ``unavailable``: nothing
+    could be read, for a reason in ``gaps`` that says nothing about the person (our credit, a rate
+    limit, a provider fault). ``private`` / ``not_found``: the provider said so about this account,
+    in the words kept in ``provider_said``; that is an answer about the person.
+    """
 
     state: HistoryState
     posts: list[Post]
@@ -77,7 +83,13 @@ class SocialHistory(BaseModel):
     cost_usd: float
     earliest: datetime | None = None
     latest: datetime | None = None
-    gap: str | None = None
+    #: Why the history is not complete, and anything on the way that could not be read.
+    gaps: list[str] = Field(default_factory=list)
+    #: The provider's own words for a private or unknown account.
+    provider_said: str | None = None
+    #: treg stopped selling (out of credit, or our key refused): later treg calls in the job are
+    #: pointless. The reason code, e.g. ``payment_required``.
+    halted: str | None = None
 
     @classmethod
     def of(
@@ -87,7 +99,9 @@ class SocialHistory(BaseModel):
         pages: int,
         cost_usd: float,
         state: HistoryState,
-        gap: str | None = None,
+        gaps: list[str] | None = None,
+        provider_said: str | None = None,
+        halted: str | None = None,
     ) -> SocialHistory:
         dates = [p.published_at for p in posts if p.published_at is not None]
         return cls(
@@ -97,5 +111,7 @@ class SocialHistory(BaseModel):
             cost_usd=cost_usd,
             earliest=min(dates) if dates else None,
             latest=max(dates) if dates else None,
-            gap=gap,
+            gaps=list(gaps or []),
+            provider_said=provider_said,
+            halted=halted,
         )

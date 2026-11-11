@@ -14,7 +14,7 @@ from pydantic import BaseModel, SecretStr
 from clue_api.footprint.pdl_client import pdl_person
 from clue_api.footprint.treg_client import TREG_BASE_URL, treg_call
 from clue_spend.calls import ProviderCaller
-from clue_spend.errors import ProviderTransportError
+from clue_spend.errors import ProviderHalted, ProviderTransportError
 
 INSTAGRAM_PROFILE = "scrapecreators.instagram.user.profile"
 
@@ -46,7 +46,9 @@ def _instagram(
 ) -> HandleCandidate | None:
     try:
         reply = treg_call(caller, token, INSTAGRAM_PROFILE, {"handle": handle}, base_url=base_url)
-    except ProviderTransportError:
+    except (ProviderTransportError, ProviderHalted):
+        # treg stopping (out of credit) is latched on the caller, so the remaining checks are
+        # refused without a call; the candidates already found are kept.
         return None
     body = reply.body if isinstance(reply.body, dict) else {}
     data = body.get("data")

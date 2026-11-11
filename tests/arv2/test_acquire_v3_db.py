@@ -220,3 +220,93 @@ def test_x_post_link_reads_its_video_file():
             assert wire.requests[1].url.startswith("https://video.twimg.com/")
 
     run_async(case())
+
+
+def treg_reply(value, status=200, *, treg_error=False):
+    headers = {"content-type": "application/json", "X-Treg-Cost-Micro": "0"}
+    if treg_error:
+        headers["X-Treg-Error"] = "1"
+    return HttpResponse(status, headers, json.dumps(value).encode())
+
+
+LINKEDIN = AcquireResearchInputV3(
+    operation="linkedin_activity",
+    arguments={"profile": "https://www.linkedin.com/in/ada", "kind": "posts"},
+)
+
+
+def test_unreadable_history_is_refused_and_an_identical_call_reads_again(tmp_path):
+    """A failure on our side is not the answer for the job: repeating the identical call runs it
+    again (a new attempt), and once it has been read, repeating replays without paying."""
+
+    async def case():
+        async with rollback_conn() as conn:
+            wire = ScriptedTransport([treg_reply({"error": "Upstream timeout"}), li_page()])
+            rt, ctx, *_ = await bound(conn, tmp_path, wire=wire)
+            tool = AcquireResearchToolV3(rt)
+            first = (await tool.invoke(LINKEDIN, ctx)).references
+            assert first["status"] == "refused" and first["error_code"] == "history_unavailable"
+            assert "Upstream timeout" in first["preview"][0]["snippet"]
+            ctx = replace(ctx, operation_id=OperationId(uuid4()))
+            second = (await tool.invoke(LINKEDIN, ctx)).references
+            assert second["status"] == "completed" and second["replayed"] is False
+            assert second["error_code"] is None and second["result_count"] == 1
+            assert second["operation_id"] != first["operation_id"]
+            ctx = replace(ctx, operation_id=OperationId(uuid4()))
+            third = (await tool.invoke(LINKEDIN, ctx)).references
+            assert third["replayed"] is True and third["operation_id"] == second["operation_id"]
+            assert len(wire.requests) == 2
+
+    run_async(case())
+
+
+def test_partial_history_is_completed_with_its_code_and_can_be_read_again(tmp_path):
+    async def case():
+        async with rollback_conn() as conn:
+            more = {
+                "posts": [
+                    {
+                        "id": "urn:li:activity:7",
+                        "content": "Part one.",
+                        "date": "2026-10-07T10:00:00Z",
+                        "shareUrl": "https://www.linkedin.com/posts/ada_7",
+                    }
+                ],
+                "paginationToken": "p2",
+                "hasMore": True,
+            }
+            wire = ScriptedTransport(
+                [treg_reply(more), treg_reply({"error": "Upstream timeout"}), li_page()]
+            )
+            rt, ctx, *_ = await bound(conn, tmp_path, wire=wire)
+            tool = AcquireResearchToolV3(rt)
+            first = (await tool.invoke(LINKEDIN, ctx)).references
+            assert first["status"] == "completed" and first["error_code"] == "history_partial"
+            assert "not the whole history" in first["preview"][0]["snippet"]
+            ctx = replace(ctx, operation_id=OperationId(uuid4()))
+            second = (await tool.invoke(LINKEDIN, ctx)).references
+            assert second["status"] == "completed" and second["error_code"] is None
+            assert len(wire.requests) == 3
+
+    run_async(case())
+
+
+def test_treg_out_of_credit_stops_every_later_treg_job(tmp_path):
+    async def case():
+        async with rollback_conn() as conn:
+            wire = ScriptedTransport(
+                [treg_reply({"detail": "insufficient_balance"}, 402, treg_error=True)]
+            )
+            rt, ctx, *_ = await bound(conn, tmp_path, wire=wire)
+            tool = AcquireResearchToolV3(rt)
+            first = (await tool.invoke(LINKEDIN, ctx)).references
+            assert first["status"] == "refused" and first["error_code"] == "provider_halted"
+            assert "out of credit" in first["preview"][0]["snippet"]
+            ctx = replace(ctx, operation_id=OperationId(uuid4()))
+            other = AcquireResearchInputV3(operation="x_posts", arguments={"handle": "ada"})
+            second = (await tool.invoke(other, ctx)).references
+            assert second["status"] == "refused"
+            assert second["error_code"].startswith("provider_halted")
+            assert len(wire.requests) == 1  # the X job never reached treg
+
+    run_async(case())

@@ -13,7 +13,7 @@ from clue_api.footprint.treg_client import TregReply, treg_call
 from clue_config.secrets import Secrets
 from clue_spend import redact_headers
 from clue_spend.calls import ProviderCaller
-from clue_spend.errors import ProviderTransportError
+from clue_spend.errors import ProviderHalted, ProviderTransportError
 from clue_spend.sinks import MemoryLedger, MemoryRawSink
 from clue_spend.transport import HttpResponse, ScriptedTransport
 
@@ -81,3 +81,48 @@ def test_token_never_in_ledger_row():
 def test_treg_key_loads_from_the_environment(monkeypatch):
     monkeypatch.setenv("CLUE_TREG_API_KEY", "abc")
     assert Secrets(_env_file=None).treg_api_key.get_secret_value() == "abc"
+
+
+# --- treg's own refusals (shapes probed live 2026-11-11) ---------------------------------------
+
+
+def treg_refusal(status, detail):
+    return HttpResponse(
+        status,
+        {"content-type": "application/json", "X-Treg-Error": "1", "X-Treg-Call-Id": "call-1"},
+        json.dumps({"detail": detail}).encode(),
+    )
+
+
+def test_out_of_credit_stops_treg():
+    """A 402 means treg will not sell: the call raises and every later treg call on this caller is
+    refused without touching the wire (money truth blocks, as for Exa and AI Ark)."""
+    caller, transport, _, ledger = wire(treg_refusal(402, "insufficient_balance"), reply({}))
+    with pytest.raises(ProviderHalted) as first:
+        treg_call(caller, TOKEN, "tikhub.x.user.posts", {"screen_name": "ada"})
+    assert first.value.reason_code == "payment_required"
+    with pytest.raises(ProviderHalted):
+        treg_call(caller, TOKEN, "fetchinio.linkedin.user.posts", {"profileUrlOrUrn": "x"})
+    assert len(transport.requests) == 1
+    assert [r.outcome for r in ledger.rows if r.phase == "result"] == ["halted"]
+
+
+def test_refused_key_stops_treg():
+    caller, *_ = wire(treg_refusal(401, "invalid token"))
+    with pytest.raises(ProviderHalted) as halted:
+        treg_call(caller, TOKEN, "tikhub.x.user.posts", {"screen_name": "ada"})
+    assert halted.value.reason_code == "auth_invalid"
+
+
+def test_a_relayed_provider_401_does_not_stop_treg():
+    """Only treg's own refusal (marked X-Treg-Error) is about our key; a provider's 401 relayed
+    through treg is that provider's answer."""
+    caller, *_ = wire(reply({"message": "unauthorized"}, status=401, cost_micro="0"))
+    out = treg_call(caller, TOKEN, "tikhub.x.user.posts", {"screen_name": "ada"})
+    assert out.status == 401 and out.treg_error is False
+
+
+def test_treg_error_mark_is_kept():
+    caller, *_ = wire(treg_refusal(403, "capability_pinned"))
+    out = treg_call(caller, TOKEN, "tikhub.x.user.posts", {"screen_name": "ada"})
+    assert out.status == 403 and out.treg_error is True

@@ -235,8 +235,52 @@ def _title(post: Mapping[str, Any]) -> str:
     return (f"{own} (quoting {original})" if own else f"Reposted from {original}")[:200]
 
 
+#: How each outcome of a social history is named on the receipt (``error_code``).
+_OUTCOME_CODES: Mapping[str, str] = {
+    "partial": "history_partial",
+    "unavailable": "history_unavailable",
+    "not_found": "account_not_found",
+    "private": "account_private",
+}
+
+
+def _outcome(history: SocialHistory) -> dict[str, Any]:
+    """The receipt's first preview line (``report``), its ``recovery`` and ``outcome_code``: what
+    happened, said so the agent cannot take a failure for an answer about the person."""
+    gaps = "; ".join(history.gaps)
+    n, pages = len(history.posts), history.pages
+    if history.state == "complete":
+        return {"report": f"All {n} posts over {pages} page(s). Also: {gaps}"} if gaps else {}
+    if history.state in ("not_found", "private"):
+        said = f': "{history.provider_said}"' if history.provider_said else ""
+        what = "does not exist" if history.state == "not_found" else "is private"
+        return {
+            "outcome_code": _OUTCOME_CODES[history.state],
+            "report": f"The provider says this account {what}{said}.",
+        }
+    if history.halted:
+        return {
+            "outcome_code": "provider_halted",
+            "report": f"Read {n} posts, then stopped: {gaps}. This is not about the person.",
+            "recovery": "treg is stopped for the rest of this job, so no LinkedIn, X, "
+            "Instagram, Facebook or company-page job will run again; note the gap.",
+        }
+    if history.state == "partial":
+        report = (
+            f"Read {n} posts over {pages} page(s), then the reading stopped: {gaps}. "
+            "This is not the whole history."
+        )
+    else:
+        report = f"Nothing was read: {gaps}. This says nothing about the person."
+    return {
+        "outcome_code": _OUTCOME_CODES[history.state],
+        "report": report,
+        "recovery": "Call again with the same arguments to read it again.",
+    }
+
+
 def _history(history: SocialHistory) -> dict[str, Any]:
-    value = history.model_dump(mode="json")
+    value = history.model_dump(mode="json", exclude={"halted"})
     newest = sorted(value["posts"], key=lambda p: p.get("published_at") or "", reverse=True)[
         :PREVIEW_ITEMS
     ]
@@ -249,6 +293,7 @@ def _history(history: SocialHistory) -> dict[str, Any]:
         }
         for p in newest
     ]
+    value.update(_outcome(history))
     return value
 
 
@@ -257,6 +302,11 @@ async def _social(runtime: Any, call: Callable[[Any, Any, str], SocialHistory]) 
     if token is None:
         return dict(_NO_TREG)
     history = await runtime.call_provider("treg", lambda caller: call(caller, token, base_url))
+    if history.halted:
+        # treg stopped selling inside this call (the reader keeps what it read rather than
+        # raising): latch it for the job as call_provider does for a provider that raises.
+        reason = "out of credit" if history.halted == "payment_required" else history.halted
+        runtime.halted.setdefault("treg", f"treg stopped selling: {reason}")
     return _history(history)
 
 

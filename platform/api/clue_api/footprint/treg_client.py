@@ -6,6 +6,11 @@ call. A catalog tool is ``GET https://treg.to/call/<tool id>?<query>`` with the 
 ``X-Treg-Cost-Micro`` header, in micro-USD; a provider refusal treg relays (any 4xx) costs nothing
 and is returned to the caller to read, not raised. A 5xx or a dropped connection, after the
 wrapper's retries, raises :class:`~clue_spend.errors.ProviderTransportError`.
+
+treg marks its own refusals with ``X-Treg-Error: 1`` (probed 2026-11-11: a bad key is a 401
+``{"detail": "invalid token"}`` carrying that header; a provider's answer relayed through treg
+does not carry it). Out of credit (402) and a refused key stop treg for the rest of the caller's
+life, the way Exa and AI Ark stop: the call raises :class:`~clue_spend.errors.ProviderHalted`.
 """
 
 from __future__ import annotations
@@ -28,11 +33,26 @@ class TregReply(BaseModel):
     cost_usd: float
     call_id: str | None
     status: int
+    #: treg itself refused (``X-Treg-Error: 1``), as opposed to relaying the provider's answer.
+    treg_error: bool = False
 
 
 def _header(response: HttpResponse, name: str) -> str | None:
     wanted = name.lower()
     return next((v for k, v in response.headers.items() if k.lower() == wanted), None)
+
+
+def _treg_error(response: HttpResponse) -> bool:
+    return _header(response, "X-Treg-Error") == "1"
+
+
+def treg_halt_rule(response: HttpResponse) -> str | None:
+    """Does this reply prove treg will not sell to us? Out of credit, or our key refused."""
+    if response.status == 402:
+        return "payment_required"
+    if response.status == 401 and _treg_error(response):
+        return "auth_invalid"
+    return None
 
 
 def _cost_micro(response: HttpResponse) -> int | None:
@@ -72,6 +92,7 @@ def treg_call(
                 timeout_s=120,
             ),
             cost_reader=_cost_reader,
+            halt_rule=treg_halt_rule,
         )
     )
     response = result.response
@@ -87,4 +108,5 @@ def treg_call(
         cost_usd=micro / 1_000_000 if micro is not None else 0.0,
         call_id=_header(response, "X-Treg-Call-Id"),
         status=response.status,
+        treg_error=_treg_error(response),
     )

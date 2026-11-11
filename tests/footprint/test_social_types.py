@@ -16,7 +16,7 @@ def test_history_dates_follow_posts():
         state="complete",
     )
     assert history.earliest == early and history.latest == late
-    assert history.pages == 2 and history.cost_usd == 0.003 and history.gap is None
+    assert history.pages == 2 and history.cost_usd == 0.003 and history.gaps == []
     assert [p.post_id for p in history.posts] == ["a", "b", "c"]
 
 

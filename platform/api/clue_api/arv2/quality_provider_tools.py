@@ -107,6 +107,43 @@ class AcquireResearchReceipt(ToolOutput):
     replayed: bool = False
 
 
+#: Outcomes that are a failure on our side, not an answer: repeating the identical call runs it
+#: again instead of replaying the failure (a social history that could not be read, or stopped
+#: part-way). An uncertain dispatch is never among them, so nothing paid for is bought twice blind.
+RETRY_ON_REPEAT = frozenset({"history_partial", "history_unavailable"})
+
+
+def settle_outcome(value: Any) -> tuple[bool, bool, str | None]:
+    """``(unknown, refused, code)`` for a job's result. A job may name its own outcome in
+    ``outcome_code`` (the social histories do); a ``partial`` result is not refused, since what it
+    read is kept, but its code still tells the agent it is incomplete."""
+    domain_state = value.get("state") if isinstance(value, dict) else None
+    unknown = domain_state in {"unknown", "dispatched", "reserved"}
+    refused = isinstance(value, dict) and (
+        bool(value.get("error"))
+        or domain_state
+        in {
+            "unavailable",
+            "empty",
+            "ambiguous",
+            "not_found",
+            "refused",
+            "failed",
+        }
+    )
+    named = value.get("outcome_code") if isinstance(value, dict) else None
+    code = (
+        "dispatch_outcome_unknown"
+        if unknown
+        else str(named or value.get("code") or value.get("gap") or "provider_refusal")
+        if refused
+        else str(named)
+        if named
+        else None
+    )
+    return unknown, refused, code
+
+
 class AcquireResearchTool(Tool):
     name = "acquire_research_evidence"
     input_model: ClassVar[type[ToolInput]] = AcquireResearchInput
@@ -248,27 +285,7 @@ class AcquireResearchTool(Tool):
             assert tool is not None
             raw = await tool.ainvoke(args.arguments)
             value = json.loads(raw) if isinstance(raw, str) else raw
-        domain_state = value.get("state") if isinstance(value, dict) else None
-        unknown = domain_state in {"unknown", "dispatched", "reserved"}
-        refused = isinstance(value, dict) and (
-            bool(value.get("error"))
-            or domain_state
-            in {
-                "unavailable",
-                "empty",
-                "ambiguous",
-                "not_found",
-                "refused",
-                "failed",
-            }
-        )
-        code = (
-            "dispatch_outcome_unknown"
-            if unknown
-            else str(value.get("code") or value.get("gap") or "provider_refusal")
-            if refused
-            else None
-        )
+        unknown, refused, code = settle_outcome(value)
         assert runtime.storage is not None
         async with ctx.conn_factory() as conn:
             from clue_api.arv2.quality_media import index_transcripts
@@ -558,3 +575,22 @@ class AcquireResearchToolV3(AcquireResearchToolV2):
 
         kept = {n: t for n, t in self.operations.items() if n in ACQUISITIONS_V3}
         self.operations = {**kept, **{t.name: t for t in footprint_tools(runtime)}}
+
+    async def begin_dispatch(
+        self, ctx: ToolContext, operation: str, arguments: dict[str, Any]
+    ) -> tuple[Any, bool]:
+        """As in version 2, except that an identical call after a failure on our side
+        (:data:`RETRY_ON_REPEAT`) runs again as a new attempt instead of replaying the failure.
+        Attempt ``n`` is keyed on ``{"arguments": ..., "attempt": n}``, so each attempt is still
+        recorded once and the first attempt keeps the plain arguments' key."""
+        attempt = 0
+        while True:
+            request = arguments if attempt == 0 else {"arguments": arguments, "attempt": attempt}
+            operation_row, won = await super().begin_dispatch(ctx, operation, request)
+            if (
+                won
+                or operation_row.state not in {"succeeded", "failed"}
+                or operation_row.error_code not in RETRY_ON_REPEAT
+            ):
+                return operation_row, won
+            attempt += 1

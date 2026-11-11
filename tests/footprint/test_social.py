@@ -113,13 +113,14 @@ def test_failure_mid_history_keeps_fetched_pages():
     )
     history = linkedin_activity(caller, TOKEN, "ada", "posts")
     assert history.state == "partial" and len(history.posts) == 1
-    assert history.gap and "page 2" in history.gap
+    assert "page 2" in history.gaps[0] and "did not answer" in history.gaps[0]
 
 
 def test_first_page_failure_is_unavailable():
     caller, _ = wire(*[TransportFailure("connection reset")] * 4)
     history = linkedin_activity(caller, TOKEN, "ada", "posts")
-    assert history.state == "unavailable" and history.posts == [] and history.gap
+    assert history.state == "unavailable" and history.posts == []
+    assert "page 1" in history.gaps[0]
 
 
 def test_private_instagram_is_private_not_error():
@@ -131,8 +132,18 @@ def test_private_instagram_is_private_not_error():
 
 
 def test_unknown_handle_is_not_found():
-    caller, _ = wire(body({"success": False, "message": "User not found"}, 404, "0"))
-    assert instagram_posts(caller, TOKEN, "nobody").state == "not_found"
+    # ScrapeCreators' real reply for an unknown Instagram handle (probed 2026-11-11).
+    unknown = {
+        "success": True,
+        "credits_charged": 0,
+        "error": "not_found",
+        "errorStatus": 404,
+        "message": "Profile is unavailable on Instagram",
+    }
+    caller, _ = wire(body(unknown, 404, "0"))
+    history = instagram_posts(caller, TOKEN, "nobody")
+    assert history.state == "not_found"
+    assert history.provider_said == "Profile is unavailable on Instagram"
 
 
 def test_instagram_posts_and_video():

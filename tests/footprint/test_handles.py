@@ -179,3 +179,24 @@ def test_pdl_key_loads_from_either_name(monkeypatch):
     assert Secrets(_env_file=None).pdl_api_key.get_secret_value() == "shared"
     monkeypatch.setenv("CLUE_PDL_API_KEY", "ours")
     assert Secrets(_env_file=None).pdl_api_key.get_secret_value() == "ours"
+
+
+def test_treg_out_of_credit_keeps_the_pdl_handles():
+    """treg stopping selling during the Instagram check leaves the X and Facebook candidates PDL
+    already found, and the remaining Instagram checks are not sent."""
+    out_of_credit = HttpResponse(
+        402,
+        {"content-type": "application/json", "X-Treg-Error": "1"},
+        b'{"detail": "insufficient_balance"}',
+    )
+    caller, transport, _ = wire(reply(PDL_MATCH), out_of_credit)
+    found = find_handles(
+        caller,
+        TOKEN,
+        PDL,
+        name="Ada Example",
+        company="Acme",
+        linkedin_url="https://www.linkedin.com/in/ada-example/",
+    )
+    assert [(h.platform, h.handle) for h in found] == [("x", "adaex"), ("facebook", "ada.example")]
+    assert len(transport.requests) == 2
