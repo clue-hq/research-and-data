@@ -87,7 +87,7 @@ def test_only_recipes_2_to_5_fail_to_resolve():
 
     tools = quality_tools(None, None, purge=False)
     failing = set()
-    for version in range(1, 43):
+    for version in range(1, 44):
         for person in (False, True):
             try:
                 quality_profiles(tools, version=version, person=person)
