@@ -444,3 +444,202 @@ def test_feed_key_normalises_scheme_www_case_and_slash():
 def test_keys_of_missing_links_are_none():
     assert audio_key(None) is None and audio_key("") is None
     assert feed_key(None) is None and feed_key("  ") is None
+
+
+# --- Review I14: results merge only on proof that they are one episode ------------------------
+
+import itertools  # noqa: E402
+
+from clue_api.footprint.podcast_search import _group  # noqa: E402
+
+DAY = datetime(2024, 10, 8, 18, 0, tzinfo=UTC)
+
+
+def ep(source="podcast_index", **kw):
+    """An episode lead as a source would give it; every identifier is opt-in."""
+    base = {
+        "show": "Show A",
+        "title": "Episode 12",
+        "published_at": DAY,
+        "description": f"from {source}",
+        "sources": [source],
+        "found_by": ["q1"],
+    }
+    return EpisodeLead(**{**base, **kw})
+
+
+def test_two_different_episode_12s_stay_two():
+    """The reviewer's case: same show name and title, different feeds, GUIDs and audio."""
+    a = ep(
+        guid="g-a",
+        feed_url="https://feeds.one/a.xml",
+        audio_url="https://audio.one/12.mp3",
+        description="Bob Smith on ransomware",
+        source_ids=["pi:1"],
+    )
+    b = ep(
+        guid="g-b",
+        feed_url="https://feeds.two/b.xml",
+        audio_url="https://audio.two/12.mp3",
+        description="Ada Example, CISO of Acme, on accountability in AI",
+        source_ids=["pi:2"],
+    )
+    shows = [
+        ep(
+            kind="show",
+            title="Show A",
+            feed_url="https://feeds.one/a.xml",
+            source_ids=["pi_show:1"],
+        ),
+        ep(
+            kind="show",
+            title="Show A",
+            feed_url="https://feeds.two/b.xml",
+            source_ids=["pi_show:2"],
+        ),
+    ]
+    leads = _group([a, b, *shows])
+    assert len(leads) == 4
+    episodes = [lead for lead in leads if lead.kind == "episode"]
+    assert {(e.audio_url, e.description) for e in episodes} == {
+        ("https://audio.one/12.mp3", "Bob Smith on ransomware"),
+        ("https://audio.two/12.mp3", "Ada Example, CISO of Acme, on accountability in AI"),
+    }
+
+
+def test_same_episode_from_apple_and_pi_is_one():
+    apple = ep("apple", guid="g-1", show_id="77", source_ids=["apple:5"], found_by=["q1"])
+    pi = ep("podcast_index", guid="g-1", show_id="77", source_ids=["pi:9"], found_by=["q2"])
+    [lead] = _group([apple, pi])
+    assert lead.sources == ["apple", "podcast_index"]
+    assert lead.found_by == ["q1", "q2"]
+    assert sorted(lead.source_ids) == ["apple:5", "pi:9"]
+
+
+def test_same_source_id_found_by_two_searches_is_one():
+    [lead] = _group(
+        [ep(source_ids=["pi:9"], found_by=["q1"]), ep(source_ids=["pi:9"], found_by=["q2"])]
+    )
+    assert lead.found_by == ["q1", "q2"]
+
+
+def test_same_guid_in_another_show_stays_separate():
+    a = ep(guid="g-1", show_id="1", feed_url="https://feeds.one/a.xml", source_ids=["pi:1"])
+    b = ep(guid="g-1", show_id="2", feed_url="https://feeds.two/b.xml", source_ids=["pi:2"])
+    assert len(_group([a, b])) == 2
+
+
+def test_same_guid_same_feed_but_two_apple_show_ids_is_one():
+    a = ep("apple", guid="g-1", show_id="1", feed_url="https://feeds.one/a.xml")
+    b = ep("apple", guid="g-1", show_id="2", feed_url="http://www.feeds.one/a.xml/")
+    assert len(_group([a, b])) == 1
+
+
+def test_tracker_wrapped_and_plain_audio_is_one():
+    a = ep("apple", audio_url="https://chrt.fm/track/3B5/traffic.megaphone.fm/X1.mp3?u=1")
+    b = ep("podcast_index", show="Another name", audio_url="https://traffic.megaphone.fm/X1.mp3")
+    assert len(_group([a, b])) == 1
+
+
+def test_rule3_mirror_feed_merges_only_with_same_show_and_close_date_and_length():
+    from datetime import timedelta
+
+    def mirror(**kw):
+        return ep(guid="g-b", audio_url="https://cdn.two/b.mp3", show_id="7", **kw)
+
+    a = ep(guid="g-a", audio_url="https://cdn.one/a.mp3", show_id="7", duration_s=2202)
+    assert len(_group([a, mirror(published_at=DAY + timedelta(minutes=10), duration_s=2201)])) == 1
+    assert len(_group([a, mirror(published_at=DAY + timedelta(days=3), duration_s=2201)])) == 2
+    assert len(_group([a, mirror(duration_s=None)])) == 2
+    assert len(_group([a, mirror(duration_s=2400)])) == 2
+    other_show = ep(guid="g-b", audio_url="https://cdn.two/b.mp3", duration_s=2201)
+    assert len(_group([a, other_show])) == 2
+
+
+def test_missing_values_never_match():
+    assert len(_group([ep(), ep()])) == 2
+    assert len(_group([ep(guid="g"), ep(guid="g")])) == 2  # a GUID needs the same show too
+
+
+def test_exa_merges_only_on_show_title_and_date():
+    from datetime import timedelta
+
+    def exa(**kw):
+        return ep(
+            "exa_podcasts",
+            exa_url="https://exa.ai/library/podcast/s1/episode/12",
+            source_ids=["exa:https://exa.ai/library/podcast/s1/episode/12"],
+            passages=["she said it"],
+            heard_guests=["Ada Example"],
+            **kw,
+        )
+
+    feed = ep(guid="g", show_id="7", audio_url="https://cdn.one/12.mp3")
+    [lead] = _group([feed, exa(published_at=DAY + timedelta(hours=6))])
+    assert lead.sources == ["exa_podcasts", "podcast_index"]
+    assert lead.heard_guests == ["Ada Example"] and lead.passages == ["she said it"]
+    assert lead.audio_url == "https://cdn.one/12.mp3"
+    assert len(_group([feed, exa(title="Episode 12: Ada Example")])) == 2
+    assert len(_group([feed, exa(published_at=None)])) == 2
+
+
+def test_heard_names_come_only_from_exa():
+    a = ep("apple", guid="g", show_id="7", heard_guests=["Not Exa"])
+    b = ep("podcast_index", guid="g", show_id="7")
+    [lead] = _group([a, b])
+    assert lead.heard_guests == []
+
+
+def test_shows_merge_on_feed_or_show_id_only():
+    def show(**kw):
+        return ep(kind="show", title="Show A", **kw)
+
+    assert len(_group([show(feed_url="https://f.one/a"), show(feed_url="https://f.two/b")])) == 2
+    assert len(_group([show(show_id="5"), show(show_id="5", feed_url="https://f.two/b")])) == 1
+    assert len(_group([show(feed_url="https://f.one/a"), ep(feed_url="https://f.one/a")])) == 2
+
+
+def test_merge_is_transitive_and_order_independent():
+    a = ep("apple", guid="g", show_id="7", description="short", source_ids=["apple:1"])
+    b = ep("podcast_index", guid="g", show_id="7", audio_url="https://cdn.host.fm/x.mp3")
+    c = ep(
+        "apple",
+        show="Mirror",
+        audio_url="https://pdst.fm/e/cdn.host.fm/x.mp3",
+        source_ids=["apple:2"],
+    )
+    other = ep(guid="z", audio_url="https://cdn.host.fm/other.mp3", source_ids=["pi:99"])
+    results = []
+    for order in itertools.permutations([a, b, c, other]):
+        leads = _group(list(order))
+        assert len(leads) == 2
+        results.append(sorted(lead.model_dump_json(exclude={"found_by"}) for lead in leads))
+    assert all(r == results[0] for r in results)
+
+
+def test_order_found_is_kept():
+    first = ep(guid="1", show_id="7", audio_url="https://cdn/1.mp3", title="First")
+    second = ep(guid="2", show_id="7", audio_url="https://cdn/2.mp3", title="Second")
+    again = ep("apple", guid="1", show_id="7", title="First")
+    assert [lead.title for lead in _group([first, second, again])] == ["First", "Second"]
+
+
+def test_reviewer_case_through_find_podcasts_keeps_both_episodes():
+    one = {
+        **pi_episode("Episode 12", "Bob Smith joins", 1700000000, feed="https://feeds.one/a.xml"),
+        "id": 1,
+        "guid": "g-a",
+        "enclosureUrl": "https://audio.one/12.mp3",
+    }
+    two = {
+        **pi_episode("Episode 12", "Ada Example joins", 1700000000, feed="https://feeds.two/b.xml"),
+        "id": 2,
+        "guid": "g-b",
+        "enclosureUrl": "https://audio.two/12.mp3",
+    }
+    caller, _ = wire(*script([], [one, two]))
+    leads, _ = find_podcasts(caller, KEYS, ["Ada Example"], exa_search=None)
+    assert [(lead.audio_url, lead.description) for lead in leads] == [
+        ("https://audio.one/12.mp3", "Bob Smith joins"),
+        ("https://audio.two/12.mp3", "Ada Example joins"),
+    ]
