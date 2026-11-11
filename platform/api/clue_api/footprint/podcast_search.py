@@ -78,6 +78,13 @@ class EpisodeLead(BaseModel):
     #: Hosts and guests as Exa's transcription heard them: its reading of the audio, not a fact.
     heard_hosts: list[str] = Field(default_factory=list)
     heard_guests: list[str] = Field(default_factory=list)
+    #: The publisher's own id for the episode (the RSS item's GUID), as the source gave it.
+    guid: str | None = None
+    #: Apple's id for the show: Apple ``collectionId``, Podcast Index ``feedItunesId``.
+    show_id: str | None = None
+    #: Each source's own id for this result: ``apple:<trackId>``, ``pi:<id>``,
+    #: ``pi_show:<id>``, ``exa:<url>``.
+    source_ids: list[str] = Field(default_factory=list)
 
 
 def _when(value: Any) -> datetime | None:
@@ -89,6 +96,14 @@ def _when(value: Any) -> datetime | None:
     except (ValueError, OverflowError, OSError):
         return None
     return None
+
+
+def _text_id(value: Any) -> str | None:
+    """An identifier as a trimmed string; ``None`` when absent or empty."""
+    if value is None or isinstance(value, bool):
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _links(text: str) -> list[str]:
@@ -124,6 +139,9 @@ def _apple(caller: ProviderCaller, name: str) -> list[tuple[EpisodeLead, int | N
                     if isinstance(r.get("trackTimeMillis"), int)
                     else None,
                     sources=["apple"],
+                    guid=_text_id(r.get("episodeGuid")),
+                    show_id=_text_id(r.get("collectionId")),
+                    source_ids=[f"apple:{t}"] if (t := _text_id(r.get("trackId"))) else [],
                 ),
                 r.get("collectionId"),
             )
@@ -167,6 +185,9 @@ def _pi_episodes(body: dict[str, Any]) -> list[EpisodeLead]:
                 episode_url=r.get("link") or None,
                 duration_s=r["duration"] if isinstance(r.get("duration"), int) else None,
                 sources=["podcast_index"],
+                guid=_text_id(r.get("guid")),
+                show_id=_text_id(r.get("feedItunesId")),
+                source_ids=[f"pi:{i}"] if (i := _text_id(r.get("id"))) else [],
             )
         )
     return out
@@ -184,6 +205,8 @@ def _pi_shows(body: dict[str, Any]) -> list[EpisodeLead]:
             feed_url=f["url"],
             episode_url=f.get("link") or None,
             sources=["podcast_index"],
+            show_id=_text_id(f.get("itunesId")),
+            source_ids=[f"pi_show:{i}"] if (i := _text_id(f.get("id"))) else [],
         )
         for f in body.get("feeds") or []
         if isinstance(f, dict) and isinstance(f.get("url"), str)
@@ -229,6 +252,7 @@ def _exa_lead(hit: ExaPodcastHit) -> EpisodeLead | None:
         passages=[q for q in (_PASSAGE_HEADER.sub("", p).strip() for p in hit.highlights) if q],
         heard_hosts=_people(header.get("Hosts", "")),
         heard_guests=_people(header.get("Guests", "")),
+        source_ids=[f"exa:{hit.url}"] if hit.url else [],
     )
 
 

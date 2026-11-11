@@ -329,3 +329,49 @@ def test_exa_passages_leave_out_the_episode_header():
         "Joining me today is Ada Exampel, Executive Director at Acme.",
         "Later she said zero trust starts with people.",
     ]
+
+
+# --- Review I14: leads keep their sources' identifiers --------------------------------------
+
+
+def test_apple_lead_keeps_guid_show_id_and_track_id():
+    ep = {
+        **apple_episode("Talk", "x", "2025-01-01T00:00:00Z", feed="https://feeds.example/a.xml"),
+        "trackId": 1000380704402,
+        "episodeGuid": "  tag:soundcloud,2010:tracks/1  ",
+        "collectionId": 1201668380,
+    }
+    caller, _ = wire(*script([ep], []))
+    [found], _ = find_podcasts(caller, KEYS, ["Ada Example"], exa_search=None)
+    assert found.source_ids == ["apple:1000380704402"]
+    assert found.guid == "tag:soundcloud,2010:tracks/1"
+    assert found.show_id == "1201668380"
+
+
+def test_pi_lead_keeps_guid_show_id_and_episode_id():
+    ep = {**pi_episode("Talk", "x", 1740787200), "id": 42, "guid": "g-1", "feedItunesId": 777}
+    caller, _ = wire(*script([], [ep]))
+    [found], _ = find_podcasts(caller, KEYS, ["Ada Example"], exa_search=None)
+    assert (found.source_ids, found.guid, found.show_id) == (["pi:42"], "g-1", "777")
+
+
+def test_pi_lead_without_itunes_id_has_no_show_id():
+    ep = {**pi_episode("Talk", "x", 1740787200), "id": 42, "guid": "g-1", "feedItunesId": None}
+    caller, _ = wire(*script([], [ep]))
+    [found], _ = find_podcasts(caller, KEYS, ["Ada Example"], exa_search=None)
+    assert found.show_id is None
+
+
+def test_pi_show_keeps_itunes_id():
+    feed = {"id": 9, "title": "Show A", "url": "https://feeds.example/a.xml", "itunesId": 555}
+    caller, _ = wire(*script([], [], pi_feeds=[feed]))
+    [found], _ = find_podcasts(caller, KEYS, ["Ada Example"], exa_search=None)
+    assert (found.kind, found.show_id, found.source_ids) == ("show", "555", ["pi_show:9"])
+
+
+def test_exa_lead_has_its_url_as_source_id():
+    hit = exa_hit("The SME cyber shield")
+    exa, _ = exa_returning([hit])
+    caller, _ = wire(*script([], []))
+    [found], _ = find_podcasts(caller, KEYS, ["Ada Example"], exa_search=exa)
+    assert found.source_ids == [f"exa:{hit.url}"]
