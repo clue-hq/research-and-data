@@ -107,3 +107,24 @@ def test_account_research_is_told_to_use_the_footprint_jobs():
     launch = json.loads(_text("launch-v4-r43.json"))
     assert "skills/account-dossier/v19/SKILL.md" in launch["resources"]
     assert "skills/account-dossier/v18/SKILL.md" not in launch["resources"]
+
+
+@pytest.mark.parametrize("version", [42, 43])
+def test_recipe_passes_the_graph_validation_its_install_runs(version):
+    """Installing a recipe validates its graph against the registered tools; recipe 43 first failed
+    here (`missing_tool_pin`: acquire@3 allowed, its requirements still naming version 2)."""
+    from clue_execution import RecipeDefinition, validate_graph
+
+    definition = RecipeDefinition.model_validate_json(
+        (_ROOT / f"recipe-v{version}.json").read_bytes()
+    )
+    result = validate_graph(
+        definition.graph,
+        parameter_schema=definition.parameter_schema,
+        tool_catalog=quality_tools(None, None, purge=False),
+        max_nodes=definition.max_nodes,
+        max_depth=definition.max_depth,
+        max_fanout=definition.max_fanout,
+        execution_requirements=definition.compatibility.execution,
+    )
+    assert result.valid, [f"{i.location}:{i.code}" for i in result.issues]
