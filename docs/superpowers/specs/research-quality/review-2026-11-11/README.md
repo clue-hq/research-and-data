@@ -47,6 +47,12 @@ chat of 2026-11-11; they are not repeated here.
   parts in both the lines and the text the agent reads; an unnamed number keeps its part. The
   transcription prompts no longer say the person is present, name a speaker only when the recording
   says or shows who they are, and ask only for META and TRANSCRIPT (QUOTES and BUYING dropped).
+- **C2 fixed** (review tags `review/linkedin-author/start..end`). A LinkedIn post is the person's own
+  when its `authorProfileId` (the poster's permanent id, present on every fetchinio item) is the
+  person's id: taken from a `urn:li:fsd_profile:` profile, else learnt from the feed's items whose
+  author handle is the profile's handle. Any other poster's post is `in_feed`, named as theirs in
+  the preview. A post the person made in a group (where `author` is the group) stays theirs. With
+  no author information at all an item stays theirs. Replaying r44a's 470 stored posts: all `own`.
 
 ## Critical
 

@@ -585,3 +585,72 @@ def test_company_own_post_keeps_its_words(monkeypatch):
     )
     post = company_linkedin_posts(caller, TOKEN, "acme").posts[0]
     assert post.kind == "company" and post.text == "company 1" and post.shared is None
+
+
+# --- whose LinkedIn post it is (review C2) ------------------------------------------------------
+# Shaped like fetchinio's real replies (r44a): every item carries ``authorProfileId``, the poster's
+# permanent id; ``author`` is the person, or the group when they posted into a group.
+
+
+def li_by(pid, *, poster_id, handle=None, name="Dilip V", group=None):
+    author = (
+        {"name": group, "url": f"https://www.linkedin.com/groups/1?q=x{pid}", "id": ""}
+        if group
+        else {
+            "name": name,
+            "publicIdentifier": handle,
+            "id": poster_id,
+            "url": f"https://www.linkedin.com/in/{handle}?miniProfileUrn=urn%3Ali%3Ax",
+        }
+    )
+    return {**li_post(pid, "2026-10-01T10:00:00Z"), "authorProfileId": poster_id, "author": author}
+
+
+DILIP = "https://www.linkedin.com/in/dilip-v-12/"
+
+
+def test_another_persons_post_in_the_feed_is_marked_in_feed():
+    """The sources ledger records a Meera Mani post in Dilip's feed."""
+    meera = li_by(2, poster_id="ACoM", handle="meera-mani", name="Meera Mani")
+    caller, _ = wire(body({"posts": [li_by(1, poster_id="ACoD", handle="dilip-v-12"), meera]}))
+    posts = linkedin_activity(caller, TOKEN, DILIP, "posts").posts
+    assert [p.kind for p in posts] == ["own", "in_feed"]
+    assert posts[1].author_name == "Meera Mani" and posts[1].text == "post 2"
+
+
+def test_the_persons_own_id_is_learnt_even_when_their_post_comes_later():
+    other = li_by(1, poster_id="ACoM", handle="meera-mani", name="Meera Mani")
+    first = body({"posts": [other], "paginationToken": "p2", "hasMore": True})
+    second = body({"posts": [li_by(2, poster_id="ACoD", handle="Dilip-V-12")], "hasMore": False})
+    caller, _ = wire(first, second)
+    posts = linkedin_activity(caller, TOKEN, DILIP, "posts").posts
+    assert [p.kind for p in posts] == ["in_feed", "own"]
+
+
+def test_a_post_the_person_made_in_a_group_is_their_own():
+    own = li_by(1, poster_id="ACoD", handle="dilip-v-12")
+    in_group = li_by(2, poster_id="ACoD", group="Chief Executives: AI Strategy")
+    caller, _ = wire(body({"posts": [in_group, own]}))
+    assert [p.kind for p in linkedin_activity(caller, TOKEN, DILIP, "posts").posts] == [
+        "own",
+        "own",
+    ]
+
+
+def test_a_profile_given_by_its_id_decides_without_a_handle():
+    mine = li_by(1, poster_id="ACoD", group="A group")
+    theirs = li_by(2, poster_id="ACoM", group="A group")
+    caller, _ = wire(body({"posts": [mine, theirs]}))
+    posts = linkedin_activity(caller, TOKEN, "urn:li:fsd_profile:ACoD", "posts").posts
+    assert [p.kind for p in posts] == ["own", "in_feed"]
+
+
+def test_without_any_id_the_author_handle_decides():
+    caller, _ = wire(body({"posts": [li_post(1, "2026-10-01T10:00:00Z")]}))
+    assert linkedin_activity(caller, TOKEN, "ada", "posts").posts[0].kind == "own"
+    stranger = {
+        **li_post(2, "2026-10-01T10:00:00Z"),
+        "author": {"name": "Bo", "url": "https://www.linkedin.com/in/bo"},
+    }
+    caller, _ = wire(body({"posts": [stranger]}))
+    assert linkedin_activity(caller, TOKEN, "ada", "posts").posts[0].kind == "in_feed"

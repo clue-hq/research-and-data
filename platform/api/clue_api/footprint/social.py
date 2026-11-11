@@ -24,10 +24,12 @@ ScrapeCreators; company LinkedIn posts — TikHub (cheaper and five times denser
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
+from urllib.parse import unquote
 
 from pydantic import SecretStr
 
@@ -318,7 +320,30 @@ def _li_mentions(item: dict[str, Any]) -> list[Mention]:
     ]
 
 
-def _li_post(item: dict[str, Any], *, kind: Literal["own", "reaction"], page: int) -> Post | None:
+#: A LinkedIn member's permanent id in a profile urn (``urn:li:fsd_profile:<id>``), the same id
+#: fetchinio gives each item as ``authorProfileId``.
+_LI_MEMBER_ID = re.compile(r"urn:li:fsd_profile:([A-Za-z0-9_-]+)")
+_LI_HANDLE = re.compile(r"linkedin\.com/in/([^/?#]+)", re.IGNORECASE)
+
+
+def _li_handle(value: str | None) -> str | None:
+    found = _LI_HANDLE.search(value or "")
+    return unquote(found.group(1)).lower() if found else None
+
+
+def _li_poster(item: dict[str, Any]) -> tuple[str | None, str | None]:
+    """Who posted an item: their permanent id and their profile handle, as far as the reply says.
+    ``author`` is the group, not the person, when they posted into a group; the id still names
+    the person."""
+    author = _dict(item.get("author")) or _dict(item.get("profile"))
+    member = _str(item.get("authorProfileId")) or _str(author.get("id"))
+    handle = _str(author.get("publicIdentifier"))
+    return member, (handle.lower() if handle else _li_handle(_str(author.get("url"))))
+
+
+def _li_post(
+    item: dict[str, Any], *, kind: Literal["own", "reaction"], page: int, mine: bool = True
+) -> Post | None:
     author = _dict(item.get("author")) or _dict(item.get("profile"))
     pid = _str(item.get("id")) or _str(item.get("shareUrn"))
     if pid is None:
@@ -332,8 +357,11 @@ def _li_post(item: dict[str, Any], *, kind: Literal["own", "reaction"], page: in
         url=_str(item.get("shareUrl")),
         published_at=_date(item.get("date")),
         text=text,
-        # A reshare with no words of their own is a repost; with words, it is their post.
-        kind="repost" if kind == "own" and shared and not text else kind,
+        # A reshare with no words of their own is a repost; with words, it is their post. A post by
+        # someone else in this feed is theirs, never the person's (review C2).
+        kind=("in_feed" if not mine else "repost" if shared and not text else "own")
+        if kind == "own"
+        else kind,
         author_name=_str(author.get("name")),
         author_url=_bare(_str(author.get("url"))),
         video_urls=[video] if video else [],
@@ -354,6 +382,20 @@ def linkedin_activity(
 ) -> SocialHistory:
     first: dict[str, str | int] = {"profileUrlOrUrn": profile, "count": 50}
     key = "posts" if kind == "posts" else "reactions"
+    # Whose feed this is: the id the profile was given by, else learnt from the feed's own items,
+    # those whose author handle is the profile's handle (review C2).
+    wanted = _li_handle(profile) or (None if "urn:" in profile else profile.strip().lower())
+    given = _LI_MEMBER_ID.search(profile)
+    owner: dict[str, str | None] = {"id": given.group(1) if given else None}
+
+    def mine(item: dict[str, Any]) -> bool:
+        member, handle = _li_poster(item)
+        if owner["id"] and member:
+            return member == owner["id"]
+        if handle and wanted:
+            return handle == wanted
+        # Nothing in the reply says who posted it: it is in their feed, so it stays theirs.
+        return member is None and handle is None
 
     def liked(item: dict[str, Any], page: int) -> Post | None:
         post = _li_post(_dict(item.get("post")), kind="reaction", page=page)
@@ -374,9 +416,16 @@ def linkedin_activity(
             return PageRead(failure=f"HTTP {reply.status} carrying an error: {_message(body)}")
         if body.get(key) is not None and not isinstance(body.get(key), list):
             return PageRead(failure=f"the reply's {key} were not a list")
+        items = body.get(key)
+        if kind == "posts" and owner["id"] is None and wanted and isinstance(items, list):
+            for item in items:
+                member, handle = _li_poster(_dict(item))
+                if member and handle == wanted:
+                    owner["id"] = member
+                    break
         posts, unreadable = _items(
             body.get(key),
-            (lambda item: _li_post(item, kind="own", page=page))
+            (lambda item: _li_post(item, kind="own", page=page, mine=mine(_dict(item))))
             if kind == "posts"
             else (lambda item: liked(item, page)),
         )
