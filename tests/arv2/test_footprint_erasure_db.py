@@ -78,7 +78,20 @@ def test_speaker_check_holds_no_personal_text():
         "label",
         "label_probabilities",
         "windows",
+        "pieces",
         "model",
         "cost_usd",
         "reason",
+    }
+    # A long recording's per-piece answers (review I11) add only times, never transcript text.
+    from clue_api.footprint.jev_client import SpeakerPiece
+
+    assert set(SpeakerPiece.model_fields) == {
+        "start",
+        "end",
+        "presence",
+        "presence_probabilities",
+        "is_speaking",
+        "label",
+        "label_probabilities",
     }

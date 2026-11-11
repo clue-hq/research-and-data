@@ -69,6 +69,10 @@ chat of 2026-11-11; they are not repeated here.
   transcript asked about in pieces is no longer averaged: each piece's answer is listed with the
   times it covers (`pieces`), and the headline is the piece where the person most likely speaks, so
   someone heard only in the last hour of a livestream is reported as speaking there.
+- **I13 fixed** (review tags `review/jev-failures/start..end`). A failed speaker check (timeout,
+  error, unreadable answer) is now saved with its reason; the next read retries once; after that
+  the saved failure is shown on every transcript page without asking Jev again (each ask can wait
+  300 s twice). A saved answer always wins over saved failures. Not seen in r44a (all 5 answered).
 
 ## Critical
 

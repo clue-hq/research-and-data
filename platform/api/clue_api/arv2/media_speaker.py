@@ -28,20 +28,40 @@ _LINE_PREFIX_ONLY = re.compile(r"^\[\d{1,2}:\d{2}(?::\d{2})?\][^\n]{0,64}:$")
 _RECORDING_KEYS = ("show", "channel", "description", "published_at", "duration_s", "family")
 
 
-async def saved_speaker_check(
+#: How many times a job asks Jev about one transcript before it shows the saved failure instead:
+#: the first ask and one retry on a later read (review I13). Each ask can wait 300 s twice.
+SPEAKER_CHECK_ASKS = 2
+
+
+async def _saved_checks(
     conn: Any, *, workspace_id: str, job_id: UUID, version_id: UUID
-) -> dict[str, Any] | None:
-    row = (
+) -> list[dict[str, Any]]:
+    """Every saved check for this job and transcript, newest first: answers and failures."""
+    rows = (
         await conn.execute(
             text("""SELECT data FROM arv2_media_attempt
         WHERE workspace_id=:ws AND job_id=:job AND version_id=:version AND kind=:kind
-        ORDER BY created_at DESC LIMIT 1"""),
+        ORDER BY created_at DESC"""),
             {"ws": workspace_id, "job": job_id, "version": version_id, "kind": SPEAKER_CHECK_KIND},
         )
-    ).scalar_one_or_none()
-    if row is None:
-        return None
-    return row if isinstance(row, dict) else json.loads(row)
+    ).scalars()
+    return [row if isinstance(row, dict) else json.loads(row) for row in rows]
+
+
+async def saved_speaker_check(
+    conn: Any, *, workspace_id: str, job_id: UUID, version_id: UUID
+) -> dict[str, Any] | None:
+    """The saved answer, or (when Jev never answered) the last failure."""
+    checks = await _saved_checks(
+        conn, workspace_id=workspace_id, job_id=job_id, version_id=version_id
+    )
+    return _preferred(checks)
+
+
+def _preferred(checks: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """An answer whenever one was saved, whatever the order (rows saved in one transaction share a
+    timestamp); otherwise the newest failure."""
+    return next((c for c in checks if c.get("state") == "answered"), checks[0] if checks else None)
 
 
 def _clock(seconds: float | None) -> str:
@@ -104,11 +124,16 @@ async def speaker_check(
     if scope.person_subject_id is None:
         return None
     async with runtime._conn_factory() as conn:
-        saved_check = await saved_speaker_check(
+        checks = await _saved_checks(
             conn, workspace_id=scope.workspace_id, job_id=scope.job_id, version_id=version_ref
         )
-        if saved_check is not None:
-            return SpeakerCheck.model_validate(saved_check)
+        # An answer is kept for good; a failure is retried once on a later read, then shown as
+        # saved instead of asking on every transcript page (review I13).
+        best = _preferred(checks)
+        if best is not None and (
+            best.get("state") == "answered" or len(checks) >= SPEAKER_CHECK_ASKS
+        ):
+            return SpeakerCheck.model_validate(best)
         ask = getattr(runtime.clients, "speaker_check", None)
         if ask is None:
             return SpeakerCheck(state="unavailable", reason="speaker_check_not_configured")
@@ -123,16 +148,15 @@ async def speaker_check(
         )
     except RefusalError as exc:
         return SpeakerCheck(state="unavailable", reason=f"provider_halted: {exc}"[:300])
-    if check.state == "answered":
-        async with runtime._conn_factory() as conn:
-            await store.attempt(
-                runtime,
-                conn,
-                kind=SPEAKER_CHECK_KIND,
-                outcome="answered",
-                purpose="speaker check",
-                item_id=saved["item_id"],
-                version_id=version_ref,
-                data=check.model_dump(mode="json"),
-            )
+    async with runtime._conn_factory() as conn:
+        await store.attempt(
+            runtime,
+            conn,
+            kind=SPEAKER_CHECK_KIND,
+            outcome=check.state,
+            purpose="speaker check",
+            item_id=saved["item_id"],
+            version_id=version_ref,
+            data=check.model_dump(mode="json"),
+        )
     return check

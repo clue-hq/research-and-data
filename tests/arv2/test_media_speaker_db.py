@@ -149,15 +149,51 @@ def test_account_job_has_no_speaker_check():
     run_async(scenario())
 
 
-def test_jev_unavailable_is_not_saved_and_retried():
+class FlakyClients(SpeakerClients):
+    """Jev fails the first ``failures`` times it is asked, then answers."""
+
+    def __init__(self, failures: int) -> None:
+        super().__init__()
+        self.failures = failures
+
+    def speaker_check(self, caller, *, person, recording, lines):
+        self.calls.append({"person": person})
+        if len(self.calls) <= self.failures:
+            return SpeakerCheck(state="unavailable", reason="ReadTimeout: jev timed out")
+        return self.answer
+
+
+def test_a_failed_check_is_saved_retried_once_then_not_asked_again():
+    """Review I13. A failed check used to be asked again on every transcript page, each ask waiting
+    up to 300 s twice. It is now saved with its reason; the next read retries once; after that the
+    saved failure is shown straight away."""
+
     async def scenario():
         async with rollback_conn() as conn:
             rt = await person_runtime(conn)
-            rt.clients = SpeakerClients(SpeakerCheck(state="unavailable", reason="jev down"))
+            rt.clients = FlakyClients(failures=99)
             _, version = await saved_transcript(rt, conn)
             first = await speaker_check(rt, version)
-            assert first.state == "unavailable"
+            assert first.state == "unavailable" and "timed out" in first.reason
             await speaker_check(rt, version)
+            third = await speaker_check(rt, version)
+            fourth = await speaker_check(rt, version)
+            assert len(rt.clients.calls) == 2
+            assert third.state == fourth.state == "unavailable"
+            assert "timed out" in fourth.reason
+
+    run_async(scenario())
+
+
+def test_a_retry_that_answers_is_kept():
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await person_runtime(conn)
+            rt.clients = FlakyClients(failures=1)
+            _, version = await saved_transcript(rt, conn)
+            assert (await speaker_check(rt, version)).state == "unavailable"
+            assert (await speaker_check(rt, version)).label == "Speaker 1"
+            assert (await speaker_check(rt, version)).label == "Speaker 1"
             assert len(rt.clients.calls) == 2
 
     run_async(scenario())
