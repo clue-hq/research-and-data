@@ -53,6 +53,14 @@ chat of 2026-11-11; they are not repeated here.
   author handle is the profile's handle. Any other poster's post is `in_feed`, named as theirs in
   the preview. A post the person made in a group (where `author` is the group) stays theirs. With
   no author information at all an item stays theirs. Replaying r44a's 470 stored posts: all `own`.
+- **Jev inputs fixed** (review tags `review/jev-inputs/start..end`). r44a's speaker checks said
+  "speaking" (0.82-0.97) but answered "none" for the label in 4 of 5, against 15 of 15 right in the
+  9-10 Nov test. Causes: (1) Gemini transcripts reached Jev with every label prefix as an extra
+  "Unlabelled" line (fixed: `diarised_lines`); (2) Ann, Carrara and Kuhn, nominated from a web page,
+  had no career history, so a recording from an earlier employer looked like a namesake. Founder
+  2026-11-12: the agent writes an `identity_note` on `read_media` (past roles with years, schools,
+  businesses, boards, awards, other spellings), passed to Jev unchanged; person prompt v32-person
+  asks for it; recipe 45 (current) uses v32-person.
 
 ## Critical
 

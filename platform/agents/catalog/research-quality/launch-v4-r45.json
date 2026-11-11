@@ -1,0 +1,29 @@
+{
+  "catalog_version": "v4",
+  "recipe_version": 45,
+  "resources": {
+    "provider-requests/account-deep/v1/exa-system.md": "283426f186e5f41c847b79f501e9a08dd01d02833976984bc618b22a22a0d83e",
+    "provider-requests/account-deep/v1/request-config.json": "fcc059b0b22ae43063ab8ff4c524357d0c1ec03de0b2ca42423b15bb2f33163f",
+    "provider-requests/person-deep/v1/exa-system.md": "f5add6a444e962aaa431425d29599c8593291e31b0d81dcd9ee10c9661f52c6a",
+    "provider-requests/person-deep/v1/request-config.json": "efa29f22347258deaa5cda957c7d4b2af8fc54911e784ba27e0788e54592a7bc",
+    "skills/governed-evidence/v3/SKILL.md": "8a7395a71f1c85e29b6519604c36819f8da553747cea45957211edebf787de22",
+    "prompts/quality-research-claims/v15/SYSTEM.md": "0bddd7b35e4f75db4d07e26c05e4b9a0bd69fd8870468f31633a40579cc05294",
+    "prompts/quality-research-narrative/v15/SYSTEM.md": "8932ca816dd726e6a9ce838c2bf74f00c98c2001099823d6eb74bb5f6df6775d",
+    "skills/governed-evidence/v5/SKILL.md": "ac9b6e1fd47f96191f395f75f47a851aeda66ea107f7794e859406c76b6e2380",
+    "skills/claim-ready-account-dossier/v4/SKILL.md": "8d8066dbc6a8ea024c734ba63e250fec1658d3ccfe856b46f957294fefb9ba07",
+    "profiles/quality-research-claims/v19/profile.yaml": "c6ed5bf71ede3cd2f9cce8452403e7e479d862ad1aaccb53e212e3edcdfe3340",
+    "profiles/quality-research-narrative/v19/profile.yaml": "33410a4f30dda0dd51894de7b972ad8499445cf6cd239b459a865de363d7b800",
+    "skills/account-dossier/v19/SKILL.md": "fbdaf5f5f425d3dcdd8d5f1eb01ddc4b448ba44707503a88226429c3332beea2",
+    "skills/person-dossier/v7/SKILL.md": "f32f0497903770049d8c1e3f4decfefdb0ec0bdee6ee6c5e12be4daeb7d50a08",
+    "skills/person-depth-charter/v3/SKILL.md": "1cfa4e39ddf032c74517a22f5663886df547702d1484218fca4209a946a1aac5",
+    "skills/person-research-briefing/v7/SKILL.md": "96518e0728c370930fa70045e240dc94656a2a0025e9d5675e59180fd0edd0bf",
+    "prompts/quality-account-research/v42/SYSTEM.md": "220dc6c004b1a52eda53954533d6308dd35149bad2729b0f0ecfc6a03344af91",
+    "profiles/quality-account-research/v42/profile.yaml": "5eaa28a400926cc09f903efebef39e7653a30cfcb28a3a5573ad07c699452bfe",
+    "recipe-v45.json": "5907b56aa162781d53ca5a641d1f667bc9ff33f7a3cdfa8a00a11b85ddb789c9",
+    "prompts/quality-person-research/v32-person/SYSTEM.md": "5d570408a5e88789fe228147c99a9c55551f4116040f467c1e1faa67afec09e5",
+    "profiles/quality-person-research/v32-person/profile.yaml": "05eb5e9dba6039e417cf35f47c1e84c16bb104433ff554492745bd938322e316",
+    "skills/claim-ready-person-dossier/v6/SKILL.md": "0e0614cb91726f697850477d186ce5fad5b52b5d65702eb2a2b0a0829d90dc90",
+    "skills/account-review/v2/SKILL.md": "09b1f7bcb6cf66ac1fa9ef0c95aa2f1936ca59e78cd8862fa03b066d2a742998"
+  },
+  "review_policy": "advisory"
+}

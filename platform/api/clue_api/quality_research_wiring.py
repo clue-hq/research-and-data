@@ -343,8 +343,11 @@ def quality_profiles(
         engine_tool_ceiling=frozenset(authority),
         required_roles=active_roles,
         selected_profile_versions={
+            # Recipe 45: the person prompt asks for read_media's identity note (2026-11-12).
+            role: ("v32-person" if person else "v42")
+            if version >= 45 and role == AgentRole.ACCOUNT_RESEARCH
             # Recipe 44 is recipe 43 with its graph's tool pins corrected; same profiles.
-            role: ("v31-person" if person else "v42")
+            else ("v31-person" if person else "v42")
             if version >= 43 and role == AgentRole.ACCOUNT_RESEARCH
             else ("v30-person" if person else "v41")
             if version >= 42 and role == AgentRole.ACCOUNT_RESEARCH

@@ -108,7 +108,7 @@ def test_recipe_44_is_43_corrected_and_current():
     """Recipe 44 is recipe 43 with only the research tool's requirement pins set to version 3."""
     r43 = json.loads(_text("recipe-v43.json"))
     r44 = json.loads(_text("recipe-v44.json"))
-    assert CURRENT_RECIPE_VERSION == 44
+    assert CURRENT_RECIPE_VERSION >= 44  # recipe 45 is current since 2026-11-12
     r43["version"] = 44
     for requirements in _requirement_lists(r43):
         for r in requirements:
