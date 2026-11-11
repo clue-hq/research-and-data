@@ -65,6 +65,10 @@ chat of 2026-11-11; they are not repeated here.
   a note Jev answered label "none" in all 5 (FS-ISAC podcast: "different_person" 0.90); with an
   identity note written from the agents' own findings it picked the person's label in all 5
   (0.51-0.87). The noise fix alone did not restore the label; the career facts did.
+- **I11 fixed** (review tags `review/jev-pieces/start..end`, founder-approved 2026-11-12). A
+  transcript asked about in pieces is no longer averaged: each piece's answer is listed with the
+  times it covers (`pieces`), and the headline is the piece where the person most likely speaks, so
+  someone heard only in the last hour of a livestream is reported as speaking there.
 
 ## Critical
 

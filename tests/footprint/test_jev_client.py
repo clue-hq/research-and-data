@@ -1,4 +1,4 @@
-"""The Jev speaker check: the three agreed questions, one combined answer, never an exception."""
+"""The Jev speaker check: the three agreed questions, an answer per piece, never an exception."""
 
 from __future__ import annotations
 
@@ -124,13 +124,42 @@ def test_namesake_answer_is_none():
     assert check.label == "none" and check.presence == "different_person"
 
 
-def test_long_transcript_split_and_combined():
-    lines = ["[00:00] Speaker 1: " + "a" * 40, "[00:10] Speaker 1: " + "b" * 40]
-    caller, transport, _ = wire(answer(p_label=0.9), answer(p_label=0.7))
+def test_a_person_heard_in_one_piece_of_a_long_recording_is_reported_as_speaking():
+    """Review I11, approved 2026-11-12. A long transcript is asked about in pieces. Averaging them
+    reported Ann as a different person when she spoke only in the last of three pieces; now the
+    headline is the piece where she most likely speaks, and every piece is listed with its time."""
+    lines = [
+        "[00:00] Speaker 0: " + "a" * 40,
+        "[1:10:00] Speaker 0: " + "b" * 40,
+        "[2:20:00] Speaker 1: " + "c" * 10,
+        "[2:59:00] Speaker 1: " + "d" * 10,
+    ]
+    absent = answer(label="none", p_label=0.0, presence="different_person", is_speaking=0.05)
+    caller, transport, _ = wire(absent, absent, answer(p_label=0.95, is_speaking=0.95))
     check = run(caller, lines=lines, max_chars=70)
-    assert len(transport.requests) == 2 and check.windows == 2
-    assert round(check.label_probabilities["Speaker 1"], 6) == 0.8 and check.label == "Speaker 1"
-    assert round(check.cost_usd, 6) == 0.001068
+    assert len(transport.requests) == 3 and check.windows == 3
+    assert check.presence == "speaking" and check.label == "Speaker 1"
+    assert check.is_speaking == 0.95 and check.label_probabilities["Speaker 1"] == 0.95
+    assert [(p.start, p.end, p.presence, p.label) for p in check.pieces] == [
+        ("00:00", "00:00", "different_person", "none"),
+        ("1:10:00", "1:10:00", "different_person", "none"),
+        ("2:20:00", "2:59:00", "speaking", "Speaker 1"),
+    ]
+    assert check.pieces[2].is_speaking == 0.95
+    assert round(check.cost_usd, 6) == round(3 * 0.000534, 6)
+
+
+def test_when_several_pieces_hear_them_the_headline_is_the_most_certain():
+    lines = ["[00:00] Speaker 1: " + "a" * 40, "[00:10] Speaker 1: " + "b" * 40]
+    caller, *_ = wire(answer(p_label=0.7, is_speaking=0.8), answer(p_label=0.9, is_speaking=0.96))
+    check = run(caller, lines=lines, max_chars=70)
+    assert check.is_speaking == 0.96 and check.label_probabilities["Speaker 1"] == 0.9
+    assert [p.is_speaking for p in check.pieces] == [0.8, 0.96]
+
+
+def test_a_recording_asked_about_in_one_go_lists_no_pieces():
+    caller, *_ = wire(answer())
+    assert run(caller).pieces == []
 
 
 def test_error_returns_unavailable():

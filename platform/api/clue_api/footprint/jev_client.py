@@ -55,6 +55,22 @@ NONE_CRITERION = (
 _LABEL = re.compile(r"^\[[^\]]*\]\s*([^:]+):")
 
 
+_STAMP = re.compile(r"^\[([^\]]*)\]")
+
+
+class SpeakerPiece(BaseModel):
+    """Jev's answer for one piece of a transcript too long to send whole, with the times the piece
+    covers (its first and last line's timestamps)."""
+
+    start: str | None = None
+    end: str | None = None
+    presence: str
+    presence_probabilities: dict[str, float]
+    is_speaking: float
+    label: str
+    label_probabilities: dict[str, float]
+
+
 class SpeakerCheck(BaseModel):
     state: Literal["answered", "unavailable"]
     presence: str | None = None
@@ -63,6 +79,9 @@ class SpeakerCheck(BaseModel):
     label: str | None = None
     label_probabilities: dict[str, float] = Field(default_factory=dict)
     windows: int = 0
+    #: Each piece's own answer when the transcript was asked about in pieces (review I11): a person
+    #: often speaks in one part of a long recording only.
+    pieces: list[SpeakerPiece] = Field(default_factory=list)
     model: str | None = None
     cost_usd: float = 0.0
     reason: str | None = None
@@ -165,13 +184,21 @@ def _ask(
     }, float(cost or 0)
 
 
-def _combine(parts: list[tuple[dict[str, float], int]]) -> dict[str, float]:
-    total = sum(weight for _, weight in parts) or 1
-    keys = {k for probs, _ in parts for k in probs}
-    return {
-        k: round(sum(probs.get(k, 0.0) * weight for probs, weight in parts) / total, 6)
-        for k in keys
-    }
+def _stamp(line: str) -> str | None:
+    found = _STAMP.match(line)
+    return found.group(1) if found else None
+
+
+def _piece(answer: dict[str, Any], window: list[str]) -> SpeakerPiece:
+    return SpeakerPiece(
+        start=_stamp(window[0]),
+        end=_stamp(window[-1]),
+        presence=max(answer["presence"], key=answer["presence"].__getitem__),
+        presence_probabilities=answer["presence"],
+        is_speaking=answer["is_speaking"],
+        label=max(answer["label"], key=answer["label"].__getitem__),
+        label_probabilities=answer["label"],
+    )
 
 
 def check_speaker(
@@ -187,7 +214,7 @@ def check_speaker(
     labels = _labels(lines)
     if not lines:
         return SpeakerCheck(state="unavailable", reason="empty_transcript")
-    answers: list[tuple[dict[str, Any], int]] = []
+    answers: list[tuple[dict[str, Any], list[str]]] = []
     cost = 0.0
     for window in _windows(lines, max_chars):
         try:
@@ -208,18 +235,21 @@ def check_speaker(
                 windows=len(answers),
             )
         cost += spent
-        answers.append((answer, sum(len(line) + 1 for line in window)))
-    presence = _combine([(a["presence"], w) for a, w in answers])
-    label_probs = _combine([(a["label"], w) for a, w in answers])
-    is_speaking = _combine([({"p": a["is_speaking"]}, w) for a, w in answers])["p"]
+        answers.append((answer, window))
+    pieces = [_piece(answer, window) for answer, window in answers]
+    # Never an average (review I11, approved 2026-11-12): someone who speaks in one piece speaks
+    # in the recording, so the headline is the piece where they most likely speak; every piece
+    # is listed for the agent to weigh.
+    best = max(pieces, key=lambda piece: piece.is_speaking)
     return SpeakerCheck(
         state="answered",
-        presence=max(presence, key=presence.__getitem__),
-        presence_probabilities=presence,
-        is_speaking=is_speaking,
-        label=max(label_probs, key=label_probs.__getitem__),
-        label_probabilities=label_probs,
-        windows=len(answers),
+        presence=best.presence,
+        presence_probabilities=best.presence_probabilities,
+        is_speaking=best.is_speaking,
+        label=best.label,
+        label_probabilities=best.label_probabilities,
+        windows=len(pieces),
+        pieces=pieces if len(pieces) > 1 else [],
         model=answers[0][0]["model"],
         cost_usd=cost,
     )
