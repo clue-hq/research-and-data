@@ -310,3 +310,74 @@ def test_treg_out_of_credit_stops_every_later_treg_job(tmp_path):
             assert len(wire.requests) == 1  # the X job never reached treg
 
     run_async(case())
+
+
+def test_find_handles_stores_no_personal_data_from_pdl(tmp_path):
+    """Review C1: PDL's record carries personal emails, phones and birth dates; only the handle
+    fields may reach storage, the evidence index or the agent."""
+
+    class PdlClients(TregClients):
+        pdl_key = SecretStr("pdl-test-key")
+
+    match = {
+        "status": 200,
+        "likelihood": 8,
+        "data": {
+            "twitter_username": "adaex",
+            "facebook_username": "ada.example",
+            "personal_emails": ["ada@home.example"],
+            "mobile_phone": "+1 555 0100",
+            "birth_date": "1980-01-01",
+        },
+    }
+    not_on_instagram = treg_reply({"error": "not_found", "message": "Profile is unavailable"}, 404)
+
+    async def case():
+        async with rollback_conn() as conn:
+            wire = ScriptedTransport(
+                [
+                    HttpResponse(
+                        200, {"content-type": "application/json"}, json.dumps(match).encode()
+                    ),
+                    not_on_instagram,
+                    not_on_instagram,
+                ]
+            )
+            rt, ctx, storage, scope, *_ = await bound(
+                conn, tmp_path, clients=PdlClients(), wire=wire
+            )
+            result = await AcquireResearchToolV3(rt).invoke(
+                AcquireResearchInputV3(
+                    operation="find_handles", arguments={"name": "Ada Example", "company": "Acme"}
+                ),
+                ctx,
+            )
+            assert result.references["status"] == "completed", result
+            assert "likelihood 8/10" in result.references["preview"][0]["title"]
+            keys = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT artifact_key FROM arv2_evidence_source WHERE workspace_id=:ws "
+                            "AND job_id=:job UNION SELECT response_artifact_key FROM "
+                            "provider_call_ledger WHERE entity_research_job_id=:job "
+                            "AND response_artifact_key IS NOT NULL"
+                        ),
+                        {"ws": scope.workspace_id, "job": scope.job_id},
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert keys, "nothing was stored"
+            for key in keys:
+                stored = await storage.get(key)
+                for private in (
+                    b"personal_emails",
+                    b"ada@home.example",
+                    b"mobile_phone",
+                    b"1980-01-01",
+                ):
+                    assert private not in stored, (key, private)
+
+    run_async(case())

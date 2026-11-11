@@ -144,3 +144,90 @@ def test_exa_stopped_earlier_in_the_job_is_not_asked():
         else:
             raise AssertionError("an Exa stopped earlier must not be asked")
     assert exa.asked == []
+
+
+# --- find_handles (review I5) -------------------------------------------------------------------
+
+
+def handles_runtime(found, tally, *, halted=None, pdl="k", treg="t"):
+    seen = {}
+
+    async def call_provider(provider, fn):
+        seen["provider"] = provider
+        return found, tally
+
+    rt = SimpleNamespace(
+        call_provider=call_provider,
+        clients=SimpleNamespace(treg_token=treg, pdl_key=pdl),
+        settings=SimpleNamespace(treg_base_url="https://treg.to"),
+        halted=dict(halted or {}),
+    )
+    return rt, seen
+
+
+ARGS = ops.FindHandlesArgs(name="Ada Example", company="Acme", linkedin_url=None)
+
+
+def test_handles_failure_is_partial_with_the_reason():
+    tally = Tally(answered=1)
+    tally.fail("People Data Labs lookup failed: HTTP 429: Too many requests")
+    from clue_api.footprint.handles import HandleCandidate
+
+    ig = HandleCandidate(
+        platform="instagram",
+        handle="ada",
+        url="https://www.instagram.com/ada/",
+        source="same_handle",
+    )
+    rt, _ = handles_runtime([ig], tally)
+    got = receipt(asyncio.run(ops._find_handles(rt, ARGS)))
+    assert got["status"] == "completed" and got["error_code"] == "handles_partial"
+    assert "429" in got["preview"][0]["snippet"] and "same arguments" in got["recovery"]
+    # With nothing found, a failure is never "empty" (which means the sources had nothing).
+    rt, _ = handles_runtime([], tally)
+    got = receipt(asyncio.run(ops._find_handles(rt, ARGS)))
+    assert got["status"] == "refused" and got["error_code"] == "handles_partial"
+
+
+def test_handles_none_answering_is_refused():
+    tally = Tally()
+    tally.fail("Instagram check of @ada failed: HTTP 500")
+    rt, _ = handles_runtime([], tally)
+    got = receipt(asyncio.run(ops._find_handles(rt, ARGS)))
+    assert got["status"] == "refused" and got["error_code"] == "handles_unavailable"
+
+
+def test_handles_stops_are_latched_and_a_stopped_provider_is_not_asked():
+    tally = Tally(answered=1)
+    tally.stop("pdl", "payment_required", "People Data Labs lookup failed: PDL refused")
+    rt, seen = handles_runtime([], tally, halted={"treg": "treg stopped selling: out of credit"})
+    asyncio.run(ops._find_handles(rt, ARGS))
+    assert "pdl" in rt.halted
+    # The job runs under its own label, so a stopped treg does not block the PDL lookup.
+    assert seen["provider"] not in {"treg", "pdl"}
+
+
+def test_handles_skip_a_provider_stopped_earlier():
+    captured = {}
+
+    async def call_provider(provider, fn):
+        def spy(caller, token, pdl_key, **kw):
+            captured["token"], captured["pdl"] = token, pdl_key
+            return [], Tally(answered=1)
+
+        module_find = ops.find_handles
+        ops.find_handles = spy
+        try:
+            return fn(None)
+        finally:
+            ops.find_handles = module_find
+
+    rt = SimpleNamespace(
+        call_provider=call_provider,
+        clients=SimpleNamespace(treg_token="t", pdl_key="k"),
+        settings=SimpleNamespace(treg_base_url="https://treg.to"),
+        halted={"pdl": "pdl stopped selling: payment_required", "treg": "x"},
+    )
+    value = asyncio.run(ops._find_handles(rt, ARGS))
+    assert captured == {"token": None, "pdl": None}
+    assert any("stopped earlier" in g for g in value["gaps"])

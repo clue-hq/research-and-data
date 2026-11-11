@@ -67,7 +67,7 @@ def test_handles_are_candidates_with_source():
         reply({"message": "User not found"}, 404, "0"),  # adaex
         reply({"message": "User not found"}, 404, "0"),  # ada.example
     )
-    found = find_handles(
+    found, tally = find_handles(
         caller,
         TOKEN,
         PDL,
@@ -75,6 +75,7 @@ def test_handles_are_candidates_with_source():
         company="Acme",
         linkedin_url="https://www.linkedin.com/in/ada-example/",
     )
+    assert tally.state == "complete" and tally.gaps == []
     assert all(isinstance(h, HandleCandidate) for h in found)
     assert [(h.platform, h.handle, h.source) for h in found] == [
         ("x", "adaex", "pdl"),
@@ -89,7 +90,7 @@ def test_handles_are_candidates_with_source():
 
 def test_private_instagram_marked():
     caller, *_ = wire(reply(ig_profile(True)))
-    found = find_handles(
+    found, _ = find_handles(
         caller, TOKEN, None, name="Ada", company=None, linkedin_url="https://linkedin.com/in/ada"
     )
     assert found == [
@@ -106,17 +107,20 @@ def test_private_instagram_marked():
 
 def test_no_pdl_key_returns_instagram_only():
     caller, transport, _ = wire(reply({"message": "User not found"}, 404, "0"))
-    found = find_handles(
+    found, tally = find_handles(
         caller, TOKEN, None, name="Ada", company=None, linkedin_url="https://linkedin.com/in/ada"
     )
     assert found == [] and len(transport.requests) == 1
+    assert tally.state == "complete" and "People Data Labs" in tally.gaps[0]
 
 
 def test_pdl_no_match_is_none_and_costs_nothing():
     caller, _, ledger = wire(
         HttpResponse(404, {"content-type": "application/json"}, b'{"status":404}')
     )
-    assert pdl_person(caller, PDL, name="Ada", company="Acme", linkedin_url=None) is None
+    assert (
+        pdl_person(caller, PDL, name="Ada", company="Acme", linkedin_url=None).state == "no_match"
+    )
     result = [r for r in ledger.rows if r.phase == "result"][0]
     assert not result.cost_usd
 
@@ -125,9 +129,8 @@ def test_pdl_match_is_priced():
     caller, _, ledger = wire(
         HttpResponse(200, {"content-type": "application/json"}, json.dumps(PDL_MATCH).encode())
     )
-    assert (
-        pdl_person(caller, PDL, name="Ada", company="Acme", linkedin_url=None) == PDL_MATCH["data"]
-    )
+    found = pdl_person(caller, PDL, name="Ada", company="Acme", linkedin_url=None)
+    assert found.state == "matched" and found.data == PDL_MATCH["data"] and found.likelihood == 9
     result = [r for r in ledger.rows if r.phase == "result"][0]
     assert float(result.cost_usd) == 0.28
 
@@ -190,7 +193,7 @@ def test_treg_out_of_credit_keeps_the_pdl_handles():
         b'{"detail": "insufficient_balance"}',
     )
     caller, transport, _ = wire(reply(PDL_MATCH), out_of_credit)
-    found = find_handles(
+    found, _ = find_handles(
         caller,
         TOKEN,
         PDL,

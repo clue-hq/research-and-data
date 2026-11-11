@@ -551,7 +551,9 @@ class AcquireResearchToolV2(AcquireResearchTool):
         status: Literal["completed", "empty", "refused", "outcome_unknown"]
         if unknown:
             status = "outcome_unknown"
-        elif refused:
+        elif refused or (empty and code in RETRY_ON_REPEAT):
+            # Nothing came back because something failed: never "empty", which means the
+            # sources answered and had nothing.
             status = "refused"
         elif empty:
             status = "empty"

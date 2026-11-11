@@ -468,13 +468,30 @@ async def _find_videos(runtime: Any, args: FindVideosArgs) -> dict[str, Any]:
     }
 
 
+#: How the handle lookup's state is named on the receipt (``error_code``).
+_HANDLE_CODES: Mapping[str, str] = {
+    "partial": "handles_partial",
+    "unavailable": "handles_unavailable",
+}
+
+
 async def _find_handles(runtime: Any, args: FindHandlesArgs) -> dict[str, Any]:
+    """PDL and the Instagram checks run under the job's own label, so a stopped treg does not
+    block the PDL lookup (or the reverse); a provider stopped earlier in the job is not asked."""
     token, base_url = _treg(runtime)
-    if token is None:
-        return dict(_NO_TREG)
     pdl = getattr(runtime.clients, "pdl_key", None)
-    handles = await runtime.call_provider(
-        "treg",
+    skipped: list[str] = []
+    for provider, name in (("treg", "Instagram was not checked"), ("pdl", "PDL was not asked")):
+        if provider in runtime.halted:
+            skipped.append(
+                f"{name}: {provider} stopped earlier in this job ({runtime.halted[provider]})."
+            )
+    if "treg" in runtime.halted:
+        token = None
+    if "pdl" in runtime.halted:
+        pdl = None
+    handles, tally = await runtime.call_provider(
+        "footprint_handles",
         lambda caller: find_handles(
             caller,
             token,
@@ -485,17 +502,31 @@ async def _find_handles(runtime: Any, args: FindHandlesArgs) -> dict[str, Any]:
             base_url=base_url,
         ),
     )
+    for provider, reason in tally.stopped.items():
+        runtime.halted.setdefault(provider, f"{provider} stopped selling: {reason}")
+    gaps = [*skipped, *tally.gaps]
     found = [h.model_dump(mode="json") for h in handles]
-    return {
-        "state": "complete",
-        "gaps": [] if pdl else ["pdl_key_missing"],
+    value: dict[str, Any] = {
+        "state": tally.state,
+        "gaps": gaps,
         "n_results": len(found),
         "handles": found,
         "results": [
-            {"title": f"{h['platform']} @{h['handle']}", "url": h["url"], "text": h.get("bio")}
+            {
+                "title": f"{h['platform']} @{h['handle']}"
+                + (f" (PDL likelihood {h['likelihood']}/10)" if h.get("likelihood") else ""),
+                "url": h["url"],
+                "text": h.get("bio"),
+            }
             for h in found
         ],
     }
+    if gaps:
+        value["report"] = f"{len(found)} candidate handle(s). Problems: {'; '.join(gaps)}"
+    if tally.state != "complete":
+        value["outcome_code"] = _HANDLE_CODES[tally.state]
+        value["recovery"] = "Call again with the same arguments to look them up again."
+    return value
 
 
 JOBS: tuple[tuple[str, type[BaseModel], Callable[[Any, Any], Any]], ...] = (

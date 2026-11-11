@@ -143,3 +143,10 @@ def test_treg_stopping_stops_every_later_treg_job():
     )
     asyncio.run(ops._x_posts(runtime, ops.XPostsArgs(handle="ada")))
     assert "out of credit" in runtime.halted["treg"]
+
+
+def test_partial_history_with_no_posts_is_not_empty():
+    gap = "fetchinio.linkedin.user.posts stopped at page 2: the provider answered HTTP 429"
+    history = SocialHistory.of([], pages=1, cost_usd=0, state="partial", gaps=[gap])
+    _, got = receipt(history)
+    assert got["status"] == "refused" and got["error_code"] == "history_partial"
