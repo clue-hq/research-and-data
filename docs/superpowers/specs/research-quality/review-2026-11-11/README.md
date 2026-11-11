@@ -39,13 +39,14 @@ chat of 2026-11-11; they are not repeated here.
   rule, "quote without a source"; the word comparison and the "uncited fact" rule are gone; the
   inactive `quality_pages` rules (every sentence cited, the recording-quote rule of I9) are deleted.
   The private-matter word list stays (founder, 2026-11-11).
-- **I12, label part fixed** (review tags `review/speaker-names/start..end`). Founder ruling
-  2026-11-11: Gemini is trusted to name speakers; a line is attributed by the name Gemini wrote on
-  it, Jev stays as a second opinion. `join_windows` writes one label per named speaker across parts
-  (r44a: Ann was `S5`, then `S2`, while another panelist was also `S2`) in both the lines and the
-  text the agent reads; an unnamed number keeps its part. **Still open:** the leading transcription
-  prompt (it states the subject is present and shows their name in the example line); the neutral
-  wording awaits founder approval.
+- **I12 fixed** (review tags `review/speaker-names/start..end` and `review/neutral-prompt/start..end`).
+  Founder 2026-11-12, after the evidence check (Google: speaker separation Experimental; a 2026 study:
+  Gemini 3 Pro wrong on ~1/3 of "who said what" lines; r44a: Gemini put a Google Cloud panelist's
+  lines under Ann, caught by Ann's agent): Gemini's name on a line is a strong hint, not proof; the
+  agent decides with the transcript and Jev. `join_windows` writes one label per named speaker across
+  parts in both the lines and the text the agent reads; an unnamed number keeps its part. The
+  transcription prompts no longer say the person is present, name a speaker only when the recording
+  says or shows who they are, and ask only for META and TRANSCRIPT (QUOTES and BUYING dropped).
 
 ## Critical
 

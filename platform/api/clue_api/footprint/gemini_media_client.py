@@ -5,8 +5,9 @@ Appendix A law 11's two-model recipe, ported from the proof-of-concept's ``z4a``
 around:
 
 * A **short** item (≤ ``short_max_seconds``) is transcribed in one cheap chat completion through
-  OpenRouter, asking for the ``META`` / ``TRANSCRIPT`` / ``QUOTES`` /
-  ``BUYING_AND_VENDOR_SIGNALS`` structure. Timestamps and speaker labels survive that path.
+  OpenRouter, asking for the ``META`` / ``TRANSCRIPT`` structure (the ``QUOTES`` and
+  ``BUYING_AND_VENDOR_SIGNALS`` sections were dropped 2026-11-12). Timestamps and speaker labels
+  survive that path.
 * A **long** item is not. One-shot transcription of the 42:49 podcast on the cheap model produced
   329 timestamped lines of which only 120 were unique — it re-emitted earlier dialogue under new
   timestamps from [12:41] onward. So a long item goes to the dedicated transcription model, and
@@ -510,55 +511,68 @@ class MediaBudget:
 # ----------------------------------------------------------------------------------- prompts --
 
 
-def short_transcription_prompt(context: SpeakerContext) -> str:
-    """The ``z4b`` structured-transcription prompt, addressed to this subject.
+def _researching(context: SpeakerContext, *, short: bool) -> str:
+    """Who we research, without saying they are in the recording (founder wording 2026-11-12)."""
+    if context.person_name and short:
+        return (
+            f"We are researching {context.description}. "
+            "They may or may not speak in this recording."
+        )
+    if context.person_name:
+        return f"We are researching {context.description}; they may or may not speak in it."
+    return f"We are researching {context.organisation}." if context.organisation else ""
 
-    The four sections are load-bearing and parsed by name: ``META`` carries the identity evidence
-    :func:`verify_speaker` reads, ``TRANSCRIPT`` is the only text a quote may be checked against,
-    and the last two are what the research lane is actually looking for.
+
+#: One line in the prompt (each META field is one line of Gemini's answer).
+_SPEAKERS_LINE = (
+    "speakers: <label every distinct speaker S1/S2/...; add a name only when the recording says "
+    "or shows who they are (an introduction, an on-screen name or caption), and give that evidence>"
+)
+
+
+def short_transcription_prompt(context: SpeakerContext) -> str:
+    """The structured-transcription prompt: the speakers and the whole transcript.
+
+    ``META`` carries the identity evidence :func:`verify_speaker` reads and ``TRANSCRIPT`` is the
+    only text a quote may be checked against. Gemini is not told the person is present nor shown
+    their name on a label (on a namesake recording that invites it to name someone as them), and
+    the earlier ``QUOTES`` and ``BUYING_AND_VENDOR_SIGNALS`` sections are gone: nothing used them
+    as evidence. Founder-approved wording, 2026-11-12.
     """
-    subject = context.description
-    name = context.person_name or "the subject"
+    name = context.person_name or "the person we are researching"
+    researching = _researching(context, short=True)
     return f"""You are transcribing a public recording for a business-research record.
-The subject is {subject}.
+{researching}
 
 Return ONLY this structure, in plain text:
 
 ## META
-speakers: <label every distinct speaker S1/S2/... with your best identification and the evidence>
-guest_identity_evidence: <verbatim words in the audio that identify the subject; else NOT STATED>
+{_SPEAKERS_LINE}
+guest_identity_evidence: <verbatim words in the audio, or text on screen, that identify \
+{name}; else NOT STATED>
 duration_mmss: <total duration you observed>
 
 ## TRANSCRIPT
 A full transcript of the WHOLE recording. Every line MUST start with an [MM:SS] timestamp and a
 speaker label, like:
-[03:41] S2 ({name}): <verbatim words>
+[03:41] S2 (Jane Doe): <verbatim words>
 Do not summarise, do not skip, do not stop early. Use the real spoken words.
-
-## QUOTES
-Exactly 5 verbatim quotes from {name} that reveal how they think, what they value, how they
-buy/evaluate tools or vendors, what they are proud of, or what frustrates them. Format:
-- "[MM:SS]" "<verbatim quote>" -> why it matters: <one line>
-
-## BUYING_AND_VENDOR_SIGNALS
-Any moment where {name} talks about buying, evaluating, choosing, or being sold to by
-vendors/tools, or about how they run go-to-market/marketing. Each as: [MM:SS] verbatim + one line.
-If none exist, write: NONE IN THIS RECORDING.
 
 Never invent words. If audio is unintelligible write [inaudible]."""
 
 
 def long_transcription_prompt(context: SpeakerContext) -> str:
-    """The ``z4d`` prompt for the dedicated transcription model.
+    """The prompt for the dedicated transcription model.
 
     "Never repeat a passage you have already emitted" is the whole reason this prompt exists: the
-    cheap model looped without it, and this model is what the re-run proved does not.
+    cheap model looped without it, and this model is what the re-run proved does not. Like the
+    short prompt, it does not say the person is present (founder-approved wording, 2026-11-12).
     """
-    name = context.person_name or "the subject"
-    return f"""Transcribe this entire recording. The main subject is {context.description}.
-
-Output ONLY transcript lines, each starting with an [MM:SS] timestamp and a speaker label:
-[03:41] {name}: <verbatim words>
+    researching = _researching(context, short=False)
+    return f"""Transcribe this entire recording. {researching}
+Output ONLY transcript lines, each starting with an [MM:SS] timestamp and a speaker label (S1, S2…).
+Add a name only when the recording says who the speaker is, e.g.
+[03:41] S2 (Jane Doe): <verbatim words>
 Cover the WHOLE recording from 00:00 to the end. Never repeat a passage you have already emitted.
 Never invent words. Mark unintelligible audio [inaudible]."""
 
