@@ -86,3 +86,24 @@ def test_recipe_42_still_pins_acquire_v2():
     profile = yaml.safe_load(_text("profiles/quality-person-research/v30-person/profile.yaml"))
     pin = next(t for t in profile["tools"] if t["name"] == "acquire_research_evidence")
     assert pin["version"] == "2"
+
+
+def test_account_research_is_told_to_use_the_footprint_jobs():
+    """Founder-approved 2026-11-11: the account agent looks for the company's and its leaders'
+    recordings with find_podcasts/find_videos, finds the company's X account first, and the old
+    discovery wording is gone."""
+    prompt = _text("prompts/quality-account-research/v42/SYSTEM.md")
+    assert "Look for recordings with find_podcasts and find_videos" in prompt
+    assert "Find the company's X account through web search or its own website" in prompt
+    assert "Discover media" not in prompt
+    skill = _text("skills/account-dossier/v19/SKILL.md")
+    assert "Use find_podcasts and find_videos to find recordings" in skill
+    assert "Follow candidate references" not in skill
+    profile = yaml.safe_load(_text("profiles/quality-account-research/v42/profile.yaml"))
+    pinned = {s["name"]: s for s in profile["skills"]}["account-dossier"]
+    assert pinned["version"] == "v19"
+    sha = hashlib.sha256((_ROOT / "skills/account-dossier/v19/SKILL.md").read_bytes()).hexdigest()
+    assert pinned["sha256"] == sha
+    launch = json.loads(_text("launch-v4-r43.json"))
+    assert "skills/account-dossier/v19/SKILL.md" in launch["resources"]
+    assert "skills/account-dossier/v18/SKILL.md" not in launch["resources"]

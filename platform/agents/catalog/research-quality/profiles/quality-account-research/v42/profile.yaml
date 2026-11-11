@@ -7,14 +7,14 @@ role: account_research
 prompt:
   name: quality-account-research
   version: v42
-  sha256: 68a3ac3249a6e3f3f268063cd7021d962a6fa001ba12e095323b59f3ae5103f1
+  sha256: 220dc6c004b1a52eda53954533d6308dd35149bad2729b0f0ecfc6a03344af91
 skills:
 - name: governed-evidence
   version: v5
   sha256: ac9b6e1fd47f96191f395f75f47a851aeda66ea107f7794e859406c76b6e2380
 - name: account-dossier
-  version: v18
-  sha256: 934e747bd360f2023083eed064ede136b10d979f60c548ab8deceb64f2d98f41
+  version: v19
+  sha256: fbdaf5f5f425d3dcdd8d5f1eb01ddc4b448ba44707503a88226429c3332beea2
 - name: person-research-briefing
   version: v7
   sha256: 96518e0728c370930fa70045e240dc94656a2a0025e9d5675e59180fd0edd0bf

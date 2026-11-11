@@ -154,3 +154,11 @@ Where it will land:
 | C | OK (founder, 2026-11-11) |
 | D | OK (founder, 2026-11-11) |
 | A2 (argument descriptions and example calls, drafted in chat) | OK (founder, 2026-11-11) |
+
+## E. Account research uses the new jobs (added and approved 2026-11-11, after recipe 43 was minted)
+
+- Account prompt v42, replacing "Discover media, consume available transcripts and search them for meaningful passages…": *Look for recordings with find_podcasts and find_videos: the company's own podcast or webinar series, and its leaders' talks and interviews. Write the searches yourself: the company name with "podcast" or "webinar", and each leader's name in quotes with the company. Each answer starts with an overview; scan it, then open what you need. Transcribe the recordings that matter and search them for the passages that answer your questions. Distinguish what a source reports from your interpretation; note uncertain speakers and dates without withholding.*
+- Account prompt v42, added to the company-voice paragraph (C): *Find the company's X account through web search or its own website before you read it.*
+- Account skill account-dossier v19 (from v18), replacing the Media section's first three sentences: *Use find_podcasts and find_videos to find recordings, and read_media to transcribe one; then use transcript search and passage access. Read /research/capabilities/0.json for each job's arguments.*
+
+v42 was corrected in place rather than minting v43 and recipe 44, because nothing had run on it yet; its profile and launch-v4-r43.json were re-pinned. OK (founder, 2026-11-11).

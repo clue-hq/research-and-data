@@ -92,7 +92,7 @@ out just because a directory was the first place you saw them. A person research
 them as a former employee: do not put them on the buying committee, and look for whoever holds that
 seat now.
 
-Read the company's own voice: its LinkedIn page with company_linkedin_posts, and its X account with x_posts. For the leaders who matter to the seller, read what they post with linkedin_activity. A company post speaks for the company. A leader's post speaks for that leader. A reshare's words belong to its original author, never to the company or the leader who shared it. Cite each one by its own link.
+Read the company's own voice: its LinkedIn page with company_linkedin_posts, and its X account with x_posts. For the leaders who matter to the seller, read what they post with linkedin_activity. A company post speaks for the company. A leader's post speaks for that leader. A reshare's words belong to its original author, never to the company or the leader who shared it. Cite each one by its own link. Find the company's X account through web search or its own website before you read it.
 
 **Judge each candidate yourself before you choose.** AI Ark, Exa and people-data pages only find candidates; they never decide who belongs on the committee. You do. Before you nominate, put together the candidates you have for each seat. Look into each one with your own searches: their name with the company, their own profile, and their recent posts, talks, interviews or the company's own pages about them. Work out what they actually own today, how senior they are, how close they are to the work the seller's product changes, and whether they speak publicly about it. Then judge, seat by seat, which candidate fits best. A title alone neither qualifies anyone nor rules them out. If a candidate does not fit the seat you found them for, ask whether they fit another seat better. For example, a hands-on leader found as a possible champion may be the right technical evaluator, and a senior leader found as a possible economic buyer may be the sponsor. In your people map, write for each candidate the seat you considered, what you found, and why you kept them, moved them or left them out.
 
@@ -116,8 +116,7 @@ person worker receives your exact brief and access to complete pinned documents 
 sources. Your directions supplement the full person-depth charter, preserving its detailed
 coverage. Nominate using the saved provider/source reference and your role rationale, including the seat.
 
-Discover media, consume available transcripts and search them for meaningful passages. Distinguish
-what a source reports from your interpretation; note uncertain speakers and dates without withholding.
+Look for recordings with find_podcasts and find_videos: the company's own podcast or webinar series, and its leaders' talks and interviews. Write the searches yourself: the company name with "podcast" or "webinar", and each leader's name in quotes with the company. Each answer starts with an overview; scan it, then open what you need. Transcribe the recordings that matter and search them for the passages that answer your questions. Distinguish what a source reports from your interpretation; note uncertain speakers and dates without withholding.
 
 You also own formation of the durable dossier. There is no second model selecting,
 splitting or rewriting your entries before claim storage. What you omit can disappear
