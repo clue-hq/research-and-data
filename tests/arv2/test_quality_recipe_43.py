@@ -25,7 +25,7 @@ def _text(path: str) -> str:
 
 def test_recipe_43_pins_match_files():
     launch = json.loads(_text("launch-v4-r43.json"))
-    assert launch["recipe_version"] == 43 and CURRENT_RECIPE_VERSION >= 43
+    assert launch["recipe_version"] == 43
     for path, sha in launch["resources"].items():
         assert hashlib.sha256((_ROOT / path).read_bytes()).hexdigest() == sha, path
     for path in (
@@ -44,7 +44,14 @@ def test_recipe_43_pins_match_files():
 
 @pytest.mark.parametrize(
     ("version", "person", "expected"),
-    [(43, False, "v42"), (43, True, "v31-person"), (42, False, "v41"), (42, True, "v30-person")],
+    [
+        (44, False, "v42"),
+        (44, True, "v31-person"),
+        (43, False, "v42"),
+        (43, True, "v31-person"),
+        (42, False, "v41"),
+        (42, True, "v30-person"),
+    ],
 )
 def test_recipe_selects_its_own_profiles(version, person, expected):
     tools = quality_tools(None, None, purge=False)
@@ -75,11 +82,46 @@ def test_recipe_43_pins_acquire_v3(path):
     )
 
 
-def test_recipe_43_graph_allows_acquire_v3_only():
-    recipe = _text("recipe-v43.json")
-    assert json.loads(recipe)["version"] == 43
-    assert "acquire_research_evidence@3" in recipe
-    assert "acquire_research_evidence@2" not in recipe
+def _requirement_lists(recipe):
+    """Every place a recipe pins tool versions: graph nodes and the compatibility block."""
+    lists = [n.get("requirements", []) for n in recipe["graph"]["nodes"]]
+    lists.append(recipe["compatibility"]["execution"])
+    lists.extend(recipe["compatibility"].get("nodes", {}).values())
+    return lists
+
+
+def test_recipe_44_graph_allows_acquire_v3_only():
+    recipe = json.loads(_text("recipe-v44.json"))
+    assert recipe["version"] == 44
+    text = json.dumps(recipe)
+    assert "acquire_research_evidence@3" in text and "acquire_research_evidence@2" not in text
+    pins = [
+        r
+        for requirements in _requirement_lists(recipe)
+        for r in requirements
+        if r.get("key") == "acquire_research_evidence"
+    ]
+    assert len(pins) == 2 and all(r["version"] == "3" for r in pins)
+
+
+def test_recipe_44_is_43_corrected_and_current():
+    """Recipe 44 is recipe 43 with only the research tool's requirement pins set to version 3."""
+    r43 = json.loads(_text("recipe-v43.json"))
+    r44 = json.loads(_text("recipe-v44.json"))
+    assert CURRENT_RECIPE_VERSION == 44
+    r43["version"] = 44
+    for requirements in _requirement_lists(r43):
+        for r in requirements:
+            if r.get("key") == "acquire_research_evidence":
+                r["version"] = "3"
+    assert r43 == r44
+    launch = json.loads(_text("launch-v4-r44.json"))
+    assert launch["recipe_version"] == 44
+    for path, sha in launch["resources"].items():
+        assert hashlib.sha256((_ROOT / path).read_bytes()).hexdigest() == sha, path
+    r43_launch = json.loads(_text("launch-v4-r43.json"))["resources"]
+    assert set(launch["resources"]) == (set(r43_launch) - {"recipe-v43.json"}) | {"recipe-v44.json"}
+    load_quality_resources("account", version=44)
 
 
 def test_recipe_42_still_pins_acquire_v2():
@@ -109,10 +151,11 @@ def test_account_research_is_told_to_use_the_footprint_jobs():
     assert "skills/account-dossier/v18/SKILL.md" not in launch["resources"]
 
 
-@pytest.mark.parametrize("version", [42, 43])
+@pytest.mark.parametrize("version", [42, 44])
 def test_recipe_passes_the_graph_validation_its_install_runs(version):
-    """Installing a recipe validates its graph against the registered tools; recipe 43 first failed
-    here (`missing_tool_pin`: acquire@3 allowed, its requirements still naming version 2)."""
+    """Installing a recipe validates its graph against the registered tools. Recipe 43 failed here
+    (`missing_tool_pin`: acquire@3 allowed, its requirements still naming version 2) and was
+    recorded as a failed proposal, which cannot be changed; recipe 44 is the corrected copy."""
     from clue_execution import RecipeDefinition, validate_graph
 
     definition = RecipeDefinition.model_validate_json(

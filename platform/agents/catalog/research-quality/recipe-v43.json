@@ -74,7 +74,7 @@
           {
             "kind": "tool",
             "key": "acquire_research_evidence",
-            "version": "3"
+            "version": "2"
           },
           {
             "kind": "tool",
@@ -164,7 +164,7 @@
         {
           "kind": "tool",
           "key": "acquire_research_evidence",
-          "version": "3"
+          "version": "2"
         },
         {
           "kind": "tool",
