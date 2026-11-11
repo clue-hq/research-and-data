@@ -128,19 +128,6 @@ def test_a_complete_cited_page_passes() -> None:
             "unknown refs",
         ),
         (
-            {"why-this-person": _section("why-this-person", intro=[_sentence("Uncited fact.")])},
-            "uncited fact",
-        ),
-        (
-            {
-                "why-this-person": _section(
-                    "why-this-person",
-                    intro=[_sentence('He said "we hire only robots now".', ["F001"])],
-                )
-            },
-            "quote not in cited findings",
-        ),
-        (
             {
                 "angles": _section(
                     "angles",
@@ -169,6 +156,36 @@ def test_a_complete_cited_page_passes() -> None:
 def test_correctness_problems_are_reported(fill: dict[str, object], expected: str) -> None:
     errors = check_pages(_pages(["contact"], fill), ["contact"], TEXTS, set())
     assert any(expected in e for e in errors), errors
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        _sentence("Her words on automation.", kind="quote"),
+        _sentence('She said "we automate before we hire" at the summit.'),
+        _sentence("She said “we automate before we hire” at the summit.", kind="inference"),
+    ],
+)
+def test_a_quote_without_a_source_is_refused(sentence: dict[str, object]) -> None:
+    """Founder ruling 2026-11-11: a quote on a page must name the finding it came from."""
+    fill = {"why-this-person": _section("why-this-person", intro=[sentence])}
+    errors = check_pages(_pages(["contact"], fill), ["contact"], TEXTS, set())
+    assert any("quote without a source" in e for e in errors), errors
+
+
+def test_quoted_words_are_not_compared_with_the_finding() -> None:
+    """Founder ruling 2026-11-11: code checks that a quote has a source, never its words, and
+    leaves uncited plain sentences to the writer."""
+    fill = {
+        "why-this-person": _section(
+            "why-this-person",
+            intro=[
+                _sentence('She said "words the finding does not contain" here.', ["F001"]),
+                _sentence("A plain sentence with no source."),
+            ],
+        )
+    }
+    assert check_pages(_pages(["contact"], fill), ["contact"], TEXTS, set()) == []
 
 
 def test_company_benefit_programmes_are_not_private_matters() -> None:
@@ -375,27 +392,9 @@ def test_the_writer_sees_the_researchers_interpretation_only_where_there_is_one(
     assert rendered.count("Interpretation:") == 1
 
 
-def test_an_interpretation_is_never_quotable_as_a_source() -> None:
-    # It is the researcher's reading, so quotation marks around it must fail the quote check.
+def test_an_interpretation_is_not_part_of_the_finding_text() -> None:
+    # It is the researcher's reading, not the source's words.
     assert "staffing account work" not in finding_texts(INTERPRETED)["F001"]
-    from clue_api.arv2.page_writer import SECTIONS as current
-
-    pages = ("contact",)
-    sections = [{"key": k, "intro": [], "items": [], "gaps": []} for k in current["contact"]]
-    sections[0]["intro"] = [
-        {
-            "text": 'She said "staffing account work by hand" is the problem.',
-            "kind": "quote",
-            "refs": ["F001"],
-        }
-    ]
-    errors = check_pages(
-        {"pages": [{"page": "contact", "sections": sections}]},
-        pages,
-        finding_texts(INTERPRETED),
-        set(),
-    )
-    assert any("quote not in cited findings" in e for e in errors)
 
 
 def test_v2_guides_tell_the_writer_about_interpretations_and_lead_with_the_argument() -> None:

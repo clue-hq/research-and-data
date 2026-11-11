@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import re
-import unicodedata
 from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -135,7 +134,7 @@ PRIVATE = re.compile(
     re.I,
 )
 
-_QUOTE = re.compile(r'[“"]([^”"]{12,})[”"]')
+_QUOTED = re.compile(r'[“"][^”"]+[”"]')
 _KINDS = {"fact", "quote", "inference", "gap", "qualified"}
 
 
@@ -158,13 +157,6 @@ def contact_system(version: str = GUIDE_VERSION) -> str:
 
 def seller_brief_system(version: str = GUIDE_VERSION) -> str:
     return guide("seller-brief", version)
-
-
-def _norm(value: str) -> str:
-    value = unicodedata.normalize("NFKC", value)
-    for a, b in (("’", "'"), ("‘", "'"), ("“", '"'), ("”", '"'), ("–", "-"), ("—", "-")):
-        value = value.replace(a, b)
-    return re.sub(r"\s+", " ", value).lower()
 
 
 def _sentences(section: Mapping[str, Any]) -> Iterator[tuple[str, Mapping[str, Any]]]:
@@ -221,17 +213,12 @@ def check_pages(
                     errors.append(f"{where}: unknown sentence kind {s.get('kind')}")
                 if unknown := [r for r in refs if r not in texts]:
                     errors.append(f"{where}: unknown refs {unknown}")
-                if s.get("kind") in ("fact", "quote") and not refs and slot != "send_line":
-                    errors.append(f"{where}: uncited {s.get('kind')}: {text[:80]}")
+                # A quote names the finding it came from; its words are the writer's to get right.
+                quotes = s.get("kind") == "quote" or _QUOTED.search(text)
+                if quotes and not refs and slot != "send_line":
+                    errors.append(f"{where}: quote without a source: {text[:80]}")
                 if PRIVATE.search(text):
                     errors.append(f"{where}: mentions a private matter: {text[:80]}")
-                if slot == "send_line":
-                    continue
-                cited = _norm(" ".join(texts.get(r, "") for r in refs))
-                for quote in _QUOTE.findall(text):
-                    parts = [p for p in re.split(r"\.\.\.|…", quote) if len(p.strip()) >= 10]
-                    if not all(_norm(p).strip(" .,;:") in cited for p in parts):
-                        errors.append(f"{where}: quote not in cited findings: “{quote[:90]}”")
     return errors
 
 

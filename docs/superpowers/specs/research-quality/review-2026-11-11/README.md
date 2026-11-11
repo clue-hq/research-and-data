@@ -33,6 +33,12 @@ chat of 2026-11-11; they are not repeated here.
   call (founder ruling 2026-11-11: whole call, not only the missing part).
 - **Correction:** I9 is not live. The rule at `quality_pages.py:211` sits after the advisory return
   every recipe from 6 on takes (line 148); it is a leftover the spec had listed for deletion.
+- **I9, I10 fixed** (review tags `review/quote-sources/start..end`). Founder ruling 2026-11-11: a
+  quote on a page must cite the finding it came from; code never compares its words with the
+  finding, and plain sentences are not checked for citations. `page_writer.check_pages` keeps one
+  rule, "quote without a source"; the word comparison and the "uncited fact" rule are gone; the
+  inactive `quality_pages` rules (every sentence cited, the recording-quote rule of I9) are deleted.
+  The private-matter word list stays (founder, 2026-11-11).
 
 ## Critical
 

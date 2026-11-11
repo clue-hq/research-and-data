@@ -155,8 +155,6 @@ async def _validate_sections(
     for section in draft.sections:
         recipe = next(r for r in recipes if r.section_key == section.key)
         for sentence in section.sentences():
-            if sentence.kind != "gap" and not sentence.claim_ids:
-                raise ValueError("every factual or inferred sentence needs claim support")
             if (
                 sentence.kind in ("qualified", "gap")
                 and sentence.claim_ids
@@ -204,20 +202,6 @@ async def _validate_sections(
                         raise ValueError(
                             "closed, historical or undated hiring must remain qualified"
                         )
-                if sentence.kind == "quote" and (
-                    (
-                        claim["entity_type"] == "contact"
-                        and claim["source_key"] == "research:transcript"
-                        and (markers.get("media") or {}).get("attribution") != "evidence_backed"
-                    )
-                    or markers.get("claim_kind") not in ("observation", "attributed_statement")
-                    or claim["source_key"] not in ("research:web_snapshot", "research:transcript")
-                    or not claim["evidence_span"]
-                    or sentence.text not in claim["evidence_span"]
-                ):
-                    raise ValueError(
-                        "primary quotes must be exact original evidence, not report excerpts"
-                    )
                 if markers.get("claim_kind") == "inference" and sentence.kind not in (
                     "inference",
                     "gap",
