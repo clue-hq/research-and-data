@@ -500,8 +500,13 @@ def test_guide_v4_is_v3_plus_the_recording_quote_line():
     assert line in page_writer.account_system("v4") and line in page_writer.contact_system("v4")
     assert line not in page_writer.account_system("v3")
     assert page_writer.sections_for("v4") == page_writer.sections_for("v3")
-    for name in ("account-pages", "contact-page"):
+    for name in ("account-pages", "contact-page", "seller-brief"):
         assert page_writer.guide(name, "v4") == page_writer.guide(name, "v3")
+    # Every guide the writer loads exists for v4 (the r44a trial failed on a missing seller-brief).
+    for version in ("v1", "v2", "v3", "v4"):
+        page_writer.account_system(version)
+        page_writer.contact_system(version)
+        page_writer.seller_brief_system(version)
     assert page_writer.uses_page_brief("v4") and page_writer.uses_page_brief("v3")
     assert not page_writer.uses_page_brief("v2")
     assert Settings(arv2_page_guide_version="v4").arv2_page_guide_version == "v4"
