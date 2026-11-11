@@ -73,8 +73,12 @@ def q(request):
 def test_videos_full_details():
     caller, transport = wire(search(VID1), search(VID1, VID2), details(VID1, VID2))
     queries = ['"Ada Example"', '"Ada Example" Acme']
-    leads, gaps = find_videos(caller, KEYS, queries, exa_fallback=None)
-    assert gaps == [] and [lead.video_id for lead in leads] == [VID1, VID2]
+    leads, tally = find_videos(caller, KEYS, queries, exa_fallback=None)
+    assert (
+        tally.gaps == []
+        and tally.state == "complete"
+        and [lead.video_id for lead in leads] == [VID1, VID2]
+    )
     assert leads[0].found_by == queries and leads[1].found_by == ['"Ada Example" Acme']
     lead = leads[0]
     assert isinstance(lead, VideoLead) and lead.duration_s == 2110 and lead.channel == "Conf"
@@ -95,29 +99,28 @@ def test_video_quota_falls_back_to_exa():
         return [f"https://www.youtube.com/watch?v={VID2}", "https://example.com/not-youtube"]
 
     caller, _ = wire(QUOTA, QUOTA)
-    leads, gaps = find_videos(caller, KEYS, ['"Ada Example"', "Acme panel"], exa_fallback=exa)
+    leads, tally = find_videos(caller, KEYS, ['"Ada Example"', "Acme panel"], exa_fallback=exa)
     assert calls == ['"Ada Example"', "Acme panel"]
-    assert gaps == ["youtube_quota_exhausted_used_exa"]
+    assert tally.state == "complete" and "daily quota" in tally.gaps[0] and "Exa" in tally.gaps[0]
     assert [(lead.video_id, lead.source) for lead in leads] == [(VID2, "exa")]
 
 
 def test_video_quota_without_fallback_returns_gap():
     caller, _ = wire(QUOTA)
-    leads, gaps = find_videos(caller, KEYS, ['"Ada Example"'], exa_fallback=None)
-    assert leads == [] and gaps == ["youtube_quota_exhausted"]
+    leads, tally = find_videos(caller, KEYS, ['"Ada Example"'], exa_fallback=None)
+    assert leads == [] and tally.state == "unavailable" and "daily quota" in tally.gaps[0]
 
 
 def test_no_youtube_key_uses_exa():
     caller, _ = wire()
-    leads, gaps = find_videos(
+    leads, tally = find_videos(
         caller,
         MediaSourceKeys(),
         ['"Ada Example"'],
         exa_fallback=lambda q: [f"https://youtu.be/{VID1}"],
     )
-    assert [lead.video_id for lead in leads] == [VID1] and gaps == [
-        "youtube_data_api_key_missing_used_exa"
-    ]
+    assert [lead.video_id for lead in leads] == [VID1] and tally.state == "complete"
+    assert tally.gaps == ["No YouTube key is set: every search went to Exa."]
 
 
 def test_videos_keep_the_order_found_and_rank_nothing():

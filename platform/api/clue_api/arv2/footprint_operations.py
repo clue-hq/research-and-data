@@ -12,7 +12,7 @@ founder first (plan Task 11) and replaces them.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from clue_api.footprint.handles import find_handles
 from clue_api.footprint.media_sources import MediaSourceKeys, media_keys_of
 from clue_api.footprint.podcast_search import EXA_PODCAST_DOMAIN, find_podcasts, overview
+from clue_api.footprint.search_tally import SourceStopped, Tally
 from clue_api.footprint.social import (
     company_linkedin_posts,
     facebook_posts,
@@ -31,7 +32,7 @@ from clue_api.footprint.social_types import SocialHistory
 from clue_api.footprint.treg_client import TREG_BASE_URL
 from clue_api.footprint.video_search import find_videos
 from clue_api.footprint.video_search import overview as video_overview
-from clue_spend.errors import ProviderTransportError, RawParseError
+from clue_spend.errors import ProviderHalted, ProviderTransportError, RawParseError
 
 #: The receipt previews this many items; the saved file holds them all.
 PREVIEW_ITEMS = 20
@@ -342,81 +343,126 @@ def _keys(runtime: Any) -> MediaSourceKeys:
 EXA_PODCAST_RESULTS = 20
 
 
+def _exa(runtime: Any, caller: Any, query: str, **kwargs: Any) -> Any:
+    """One Exa search for a footprint job. A failure is a ``ValueError`` naming it (never zero
+    hits); Exa refusing to sell, now or earlier in the job, is :class:`SourceStopped`, so the
+    search stops asking Exa and only Exa."""
+    if "exa" in runtime.halted:
+        raise SourceStopped("exa", f"stopped earlier in this job: {runtime.halted['exa']}")
+    try:
+        found = runtime.clients.exa(caller).search(query, **kwargs)
+    except ProviderHalted as halted:
+        raise SourceStopped("exa", halted.reason_code.removeprefix("latched:")) from halted
+    except (ProviderTransportError, RawParseError) as exc:
+        raise ValueError(f"Exa did not answer ({str(exc)[:160]})") from exc
+    if found.status >= 400:
+        raise ValueError(f"Exa HTTP {found.status}")
+    return found
+
+
+def _exa_ready(runtime: Any) -> bool:
+    return getattr(runtime.clients, "exa", None) is not None
+
+
 def _exa_podcasts(runtime: Any, caller: Any) -> Callable[[str], Any] | None:
     """One search on Exa's podcast index, with the transcript passages that matched."""
-    exa = getattr(runtime.clients, "exa", None)
-    if exa is None:
+    if not _exa_ready(runtime):
         return None
 
     def search(query: str) -> Any:
-        try:
-            found = exa(caller).search(
-                query,
-                include_domains=[EXA_PODCAST_DOMAIN],
-                num_results=EXA_PODCAST_RESULTS,
-                text_max_chars=1500,  # the episode page's header: show, date, hosts, guests
-                highlights={"query": query, "maxCharacters": 1200},
-                label="footprint.find_podcasts",
-            )
-        except (ProviderTransportError, RawParseError) as exc:
-            raise ValueError(str(exc)[:200]) from exc
-        if found.status >= 400:
-            raise ValueError(f"exa HTTP {found.status}")
-        return found.results
+        return _exa(
+            runtime,
+            caller,
+            query,
+            include_domains=[EXA_PODCAST_DOMAIN],
+            num_results=EXA_PODCAST_RESULTS,
+            text_max_chars=1500,  # the episode page's header: show, date, hosts, guests
+            highlights={"query": query, "maxCharacters": 1200},
+            label="footprint.find_podcasts",
+        ).results
 
     return search
+
+
+def _exa_videos(runtime: Any, caller: Any) -> Callable[[str], list[str]] | None:
+    """One Exa web search limited to YouTube, for searches YouTube itself could not run."""
+    if not _exa_ready(runtime):
+        return None
+
+    def search(query: str) -> list[str]:
+        found = _exa(
+            runtime,
+            caller,
+            query,
+            include_domains=["youtube.com"],
+            num_results=10,
+            label="footprint.find_videos",
+        )
+        return [h.url for h in found.results if h.url]
+
+    return search
+
+
+#: How a search job's state is named on the receipt (``error_code``).
+_SEARCH_CODES: Mapping[str, str] = {
+    "partial": "searches_partial",
+    "unavailable": "searches_unavailable",
+}
+
+
+def _searched(
+    runtime: Any, tally: Tally, what: str, n: int, queries: Sequence[str], listing: str
+) -> dict[str, Any]:
+    """The state, gaps and receipt line of a podcast or video search: the problems are on the
+    line the agent reads, and a failure is never "nothing found"."""
+    for provider, reason in tally.stopped.items():
+        runtime.halted.setdefault(provider, f"{provider} stopped selling: {reason}")
+    searches = len(dict.fromkeys(queries))
+    problems = f" Problems: {'; '.join(tally.gaps)}" if tally.gaps else ""
+    value: dict[str, Any] = {
+        "state": tally.state,
+        "gaps": tally.gaps,
+        "n_results": n,
+        "report": (
+            f"{n} {what} results from {searches} searches.{problems} Read the overview at the "
+            "top of result_path (one line per result), then open the entries you need by number "
+            f"in its {listing} list (line N is {listing}[N-1])."
+        ),
+    }
+    if tally.state != "complete":
+        value["outcome_code"] = _SEARCH_CODES[tally.state]
+        value["recovery"] = "Call again with the same arguments to run the searches again."
+    return value
 
 
 async def _find_podcasts(runtime: Any, args: FindPodcastsArgs) -> dict[str, Any]:
     """The saved file opens with ``overview`` (one short line per result) and holds the full
     entries under ``podcasts``. The wrapper saves keys in alphabetical order, so these two names
     keep the overview first; the receipt carries only the ``report`` line."""
-    leads, gaps = await runtime.call_provider(
+    leads, tally = await runtime.call_provider(
         "podcast_index",
         lambda caller: find_podcasts(
             caller, _keys(runtime), args.queries, exa_search=_exa_podcasts(runtime, caller)
         ),
     )
-    lines = overview(leads, args.queries)
     return {
-        "state": "complete",
-        "gaps": gaps,
-        "n_results": len(leads),
-        "report": (
-            f"{len(leads)} podcast results from {len(dict.fromkeys(args.queries))} searches. "
-            "Read the overview at the top of result_path (one line per result), then open the "
-            "entries you need by number in its podcasts list (line N is podcasts[N-1])."
-        ),
-        "overview": lines,
+        **_searched(runtime, tally, "podcast", len(leads), args.queries, "podcasts"),
+        "overview": overview(leads, args.queries),
         "podcasts": [lead.model_dump(mode="json") for lead in leads],
     }
 
 
 async def _find_videos(runtime: Any, args: FindVideosArgs) -> dict[str, Any]:
-    def run(caller: Any) -> Any:
-        def exa(query: str) -> list[str]:
-            hits = runtime.clients.exa(caller).search(
-                query,
-                include_domains=["youtube.com"],
-                num_results=10,
-                label="footprint.find_videos",
-            )
-            return [h.url for h in hits.results if h.url]
-
-        return find_videos(caller, _keys(runtime), args.queries, exa_fallback=exa)
-
-    leads, gaps = await runtime.call_provider("youtube_data", run)
+    leads, tally = await runtime.call_provider(
+        "youtube_data",
+        lambda caller: find_videos(
+            caller, _keys(runtime), args.queries, exa_fallback=_exa_videos(runtime, caller)
+        ),
+    )
     # As for podcasts: the saved file opens with ``overview``, then the full entries under
     # ``videos`` (keys are saved alphabetically); the receipt carries only the ``report`` line.
     return {
-        "state": "complete",
-        "gaps": gaps,
-        "n_results": len(leads),
-        "report": (
-            f"{len(leads)} video results from {len(dict.fromkeys(args.queries))} searches. "
-            "Read the overview at the top of result_path (one line per result), then open the "
-            "entries you need by number in its videos list (line N is videos[N-1])."
-        ),
+        **_searched(runtime, tally, "video", len(leads), args.queries, "videos"),
         "overview": video_overview(leads, args.queries),
         "videos": [lead.model_dump(mode="json") for lead in leads],
     }

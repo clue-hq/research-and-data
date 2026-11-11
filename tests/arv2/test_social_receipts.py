@@ -121,7 +121,8 @@ def test_complete_history_with_unreadable_items_mentions_them():
 
 
 def test_only_failures_are_retried_on_repeat():
-    assert {"history_partial", "history_unavailable"} == RETRY_ON_REPEAT
+    assert {"history_partial", "history_unavailable"} <= RETRY_ON_REPEAT
+    assert not {"account_not_found", "account_private", "provider_halted"} & RETRY_ON_REPEAT
 
 
 def test_treg_stopping_stops_every_later_treg_job():

@@ -12,6 +12,7 @@ from clue_api.arv2.quality_provider_tools import (
     AcquireResearchToolV2,
     AcquireResearchToolV3,
 )
+from clue_api.footprint.search_tally import Tally
 from clue_api.quality_research_wiring import CATALOG_ROOT, quality_tools
 
 FOOTPRINT_JOBS = {
@@ -104,7 +105,7 @@ def test_exa_podcast_search_is_limited_to_the_podcast_index():
             asked.append((query, kw))
             return SimpleNamespace(status=asked[-1][0] == "down" and 500 or 200, results=("hit",))
 
-    runtime = SimpleNamespace(clients=SimpleNamespace(exa=lambda caller: FakeExa()))
+    runtime = SimpleNamespace(clients=SimpleNamespace(exa=lambda caller: FakeExa()), halted={})
     search = _exa_podcasts(runtime, caller=None)
     assert search('"Ada Example"') == ("hit",)
     query, kw = asked[0]
@@ -112,7 +113,7 @@ def test_exa_podcast_search_is_limited_to_the_podcast_index():
     assert kw["highlights"]["query"] == '"Ada Example"' and kw["num_results"] == 20
     with pytest.raises(ValueError, match="500"):
         search("down")
-    assert _exa_podcasts(SimpleNamespace(clients=SimpleNamespace()), caller=None) is None
+    assert _exa_podcasts(SimpleNamespace(clients=SimpleNamespace(), halted={}), None) is None
 
 
 def test_podcast_result_opens_with_the_overview_then_the_full_entries():
@@ -138,9 +139,9 @@ def test_podcast_result_opens_with_the_overview_then_the_full_entries():
     ]
 
     async def call_provider(provider, fn):
-        return leads, []
+        return leads, Tally(answered=1)
 
-    runtime = SimpleNamespace(call_provider=call_provider, clients=SimpleNamespace())
+    runtime = SimpleNamespace(call_provider=call_provider, clients=SimpleNamespace(), halted={})
     value = asyncio.run(
         ops._find_podcasts(runtime, ops.FindPodcastsArgs(queries=['"Ada Example"']))
     )
@@ -178,9 +179,9 @@ def test_video_result_opens_with_the_overview_then_the_full_entries():
     ]
 
     async def call_provider(provider, fn):
-        return leads, []
+        return leads, Tally(answered=1)
 
-    runtime = SimpleNamespace(call_provider=call_provider, clients=SimpleNamespace())
+    runtime = SimpleNamespace(call_provider=call_provider, clients=SimpleNamespace(), halted={})
     value = asyncio.run(ops._find_videos(runtime, ops.FindVideosArgs(queries=['"Ada Example"'])))
     saved = json.dumps(value, ensure_ascii=False, sort_keys=True)
     assert saved.index('"overview"') < saved.index('"videos"')

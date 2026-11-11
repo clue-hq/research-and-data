@@ -8,8 +8,11 @@ search that found it; a missing feed link is filled from Apple's lookup.
 
 Nothing is dropped or ranked by name: the list keeps the order the searches found it, and whether
 an episode is really this person is the agent's judgement. A transcript often spells a name
-wrongly, so no code may judge an episode by its spelling. A source that fails or has no key is
-reported as a gap and the others still answer.
+wrongly, so no code may judge an episode by its spelling.
+
+Every call is counted in the returned :class:`~clue_api.footprint.search_tally.Tally`: a source
+that fails is a named failure and the others still answer; a source with no key is a note; Exa out
+of credit (:class:`SourceStopped`) stops Exa for the searches left, and only Exa (review I2, I3).
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ from clue_api.footprint.media_sources import (
     _get_json,
     podcast_index_headers,
 )
+from clue_api.footprint.search_tally import SourceStopped, Tally
 from clue_spend.calls import ProviderCaller
 
 PODCAST_INDEX_API = "https://api.podcastindex.org/api/1.0"
@@ -46,7 +50,8 @@ class ExaPodcastHit(Protocol):
     highlights: Sequence[str]
 
 
-#: Runs one search on Exa's podcast index and returns its hits; raises ``ValueError`` on failure.
+#: Runs one search on Exa's podcast index and returns its hits; raises ``ValueError`` on failure
+#: and :class:`SourceStopped` when Exa will not sell.
 ExaPodcastSearch = Callable[[str], Sequence[ExaPodcastHit]]
 APPLE_LOOKUP_URL = "https://itunes.apple.com/lookup"
 
@@ -262,18 +267,20 @@ def _merge(into: EpisodeLead, other: EpisodeLead) -> EpisodeLead:
 def _one_search(
     caller: ProviderCaller,
     keys: MediaSourceKeys,
+    number: int,
     query: str,
     exa_search: ExaPodcastSearch | None,
     collections: dict[str, int | None],
-    gaps: list[str],
+    tally: Tally,
 ) -> list[EpisodeLead]:
     found: list[EpisodeLead] = []
     try:
         for lead, collection in _apple(caller, query):
             found.append(lead)
             collections.setdefault(_key(lead), collection)
+        tally.answer()
     except ValueError as exc:
-        gaps.append(f"apple_podcasts for {query!r}: {exc}")
+        tally.fail(f"Apple search [{number}] {query!r} failed: {exc}")
     if keys.podcast_index_key and keys.podcast_index_secret:
         for path, limit, parse in (
             ("search/byperson", 40, _pi_episodes),
@@ -281,13 +288,22 @@ def _one_search(
         ):
             try:
                 found.extend(parse(_podcast_index(caller, keys, path, query, limit)))
+                tally.answer()
             except ValueError as exc:
-                gaps.append(f"podcast_index {path} for {query!r}: {exc}")
-    if exa_search is not None:
+                tally.fail(f"Podcast Index {path} [{number}] {query!r} failed: {exc}")
+    if exa_search is not None and "exa" not in tally.stopped:
         try:
             found.extend(lead for lead in map(_exa_lead, exa_search(query)) if lead)
+            tally.answer()
+        except SourceStopped as stop:
+            tally.stop(
+                "exa",
+                stop.reason,
+                f"Exa stopped selling at search [{number}] ({stop.reason}); the searches left "
+                "were run without Exa's transcripts.",
+            )
         except ValueError as exc:
-            gaps.append(f"exa_podcasts for {query!r}: {exc}")
+            tally.fail(f"Exa podcast search [{number}] {query!r} failed: {exc}")
     return [lead.model_copy(update={"found_by": [query]}) for lead in found]
 
 
@@ -297,16 +313,16 @@ def find_podcasts(
     queries: Sequence[str],
     *,
     exa_search: ExaPodcastSearch | None,
-) -> tuple[list[EpisodeLead], list[str]]:
-    gaps: list[str] = []
+) -> tuple[list[EpisodeLead], Tally]:
+    tally = Tally()
     if not (keys.podcast_index_key and keys.podcast_index_secret):
-        gaps.append("podcast_index_keys_missing")
+        tally.note("Podcast Index keys are not set: it was not searched.")
     if exa_search is None:
-        gaps.append("exa_podcasts_not_configured")
+        tally.note("Exa's podcast transcripts are not available in this job: not searched.")
     collections: dict[str, int | None] = {}
     merged: dict[str, EpisodeLead] = {}
-    for query in dict.fromkeys(queries):
-        for lead in _one_search(caller, keys, query, exa_search, collections, gaps):
+    for number, query in enumerate(dict.fromkeys(queries), 1):
+        for lead in _one_search(caller, keys, number, query, exa_search, collections, tally):
             key = _key(lead)
             merged[key] = _merge(merged[key], lead) if key in merged else lead
 
@@ -325,11 +341,16 @@ def find_podcasts(
                     url=f"{APPLE_LOOKUP_URL}?id={collection}",
                 )
                 results = body.get("results") or []
-                feeds[collection] = (results[0] or {}).get("feedUrl") if results else None
-            except ValueError:
+                first = results[0] if results and isinstance(results[0], dict) else {}
+                feeds[collection] = first.get("feedUrl") or None
+                tally.answer()
+            except ValueError as exc:
                 feeds[collection] = None
+                tally.fail(
+                    f"Apple lookup of the feed for {lead.show or lead.title!r} failed: {exc}"
+                )
         merged[key] = lead.model_copy(update={"feed_url": feeds[collection]})
-    return list(merged.values()), gaps
+    return list(merged.values()), tally
 
 
 #: Overview lines name sources briefly.

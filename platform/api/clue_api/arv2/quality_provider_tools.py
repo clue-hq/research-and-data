@@ -107,10 +107,20 @@ class AcquireResearchReceipt(ToolOutput):
     replayed: bool = False
 
 
-#: Outcomes that are a failure on our side, not an answer: repeating the identical call runs it
-#: again instead of replaying the failure (a social history that could not be read, or stopped
-#: part-way). An uncertain dispatch is never among them, so nothing paid for is bought twice blind.
-RETRY_ON_REPEAT = frozenset({"history_partial", "history_unavailable"})
+#: Outcomes that are a failure on our side, not an answer: repeating the identical call runs the
+#: whole call again instead of replaying the failure (a social history that could not be read or
+#: stopped part-way; podcast, video or handle searches where some or all calls failed). An
+#: uncertain dispatch is never among them, so nothing paid for is bought twice blind.
+RETRY_ON_REPEAT = frozenset(
+    {
+        "history_partial",
+        "history_unavailable",
+        "searches_partial",
+        "searches_unavailable",
+        "handles_partial",
+        "handles_unavailable",
+    }
+)
 
 
 def settle_outcome(value: Any) -> tuple[bool, bool, str | None]:

@@ -1,10 +1,19 @@
 """Find videos a person may appear in, from the searches the agent writes.
 
 Each search is run on YouTube, then each hit's details are read. ``search.list`` costs 100 of the
-free 10,000 daily quota units, so about 100 searches a day. When the quota is gone (or no key is
-configured) the caller's Exa search is used instead, and the result says so. Each hit comes back
-with its full description, tags, channel, length and the searches that found it, in the order
-found, for the agent to judge before transcribing; nothing is filtered or ranked here.
+free 10,000 daily quota units, so about 100 searches a day. Each hit comes back with its full
+description, tags, channel, length and the searches that found it, in the order found, for the
+agent to judge before transcribing; nothing is filtered or ranked here.
+
+Every search keeps its own results; a failure is counted and named in the returned
+:class:`~clue_api.footprint.search_tally.Tally`, never turned into "no results" (review I2):
+
+- YouTube refusing for its daily quota or a rate limit stops YouTube for this call, and that
+  search and the ones after it go to the caller's Exa search. The quota is a note (asking again
+  today would not help); a rate limit or any other YouTube failure is a failure.
+- A search YouTube fails for any other reason is tried on Exa too.
+- Exa failing is a failure; Exa out of credit (:class:`SourceStopped`) stops Exa for the rest.
+- Details that cannot be read leave the videos as found, without them, and say so.
 """
 
 from __future__ import annotations
@@ -25,6 +34,7 @@ from clue_api.footprint.media_sources import (
     MediaSourceKeys,
     iso_duration_seconds,
 )
+from clue_api.footprint.search_tally import SourceStopped, Tally
 from clue_spend.calls import CallSpec, ProviderCaller
 from clue_spend.errors import ProviderTransportError
 from clue_spend.transport import HttpRequest
@@ -47,8 +57,16 @@ class VideoLead(BaseModel):
     found_by: list[str] = Field(default_factory=list)
 
 
-class _QuotaExhausted(Exception):
-    pass
+#: YouTube's reasons for refusing to answer at all (``error.errors[].reason``).
+_QUOTA_REASONS = {"quotaExceeded", "dailyLimitExceeded"}
+_RATE_REASONS = {"rateLimitExceeded", "userRateLimitExceeded"}
+
+
+class _YouTubeStopped(Exception):
+    def __init__(self, why: str) -> None:
+        super().__init__(why)
+        self.why = why
+        self.quota = why == "its daily quota is used up"
 
 
 def _youtube(caller: ProviderCaller, key: str, url: str, operation: str) -> dict[str, Any]:
@@ -68,45 +86,71 @@ def _youtube(caller: ProviderCaller, key: str, url: str, operation: str) -> dict
             )
         )
     except ProviderTransportError as exc:
-        raise ValueError("youtube_data unreachable") from exc
+        raise ValueError("YouTube did not answer") from exc
     status = result.response.status
     try:
         body = json.loads(result.response.body) if result.response.body else {}
     except ValueError:
         body = {}
-    if status == 403 and "quotaExceeded" in json.dumps(body):
-        raise _QuotaExhausted
+    error = body.get("error") if isinstance(body, dict) else None
+    error = error if isinstance(error, dict) else {}
+    reasons = {e.get("reason") for e in error.get("errors") or [] if isinstance(e, dict)}
+    if reasons & _QUOTA_REASONS:
+        raise _YouTubeStopped("its daily quota is used up")
+    if status == 429 or reasons & _RATE_REASONS:
+        raise _YouTubeStopped(f"a rate limit (HTTP {status})")
     if not 200 <= status < 300 or not isinstance(body, dict):
-        raise ValueError(f"youtube_data HTTP {status}")
+        message = error.get("message")
+        raise ValueError(f"YouTube HTTP {status}" + (f": {message}" if message else ""))
     return body
 
 
-def _details(caller: ProviderCaller, key: str, ids: list[str]) -> dict[str, VideoLead]:
+def _lead(item: dict[str, Any]) -> VideoLead:
+    snippet = item.get("snippet") or {}
+    description = str(snippet.get("description") or "")
+    published = snippet.get("publishedAt")
+    return VideoLead(
+        video_id=item["id"],
+        url=f"https://www.youtube.com/watch?v={item['id']}",
+        title=snippet.get("title"),
+        channel=snippet.get("channelTitle"),
+        published_at=datetime.fromisoformat(published.replace("Z", "+00:00"))
+        if isinstance(published, str)
+        else None,
+        duration_s=iso_duration_seconds(
+            str((item.get("contentDetails") or {}).get("duration") or "")
+        ),
+        description=description,
+        tags=[str(t) for t in snippet.get("tags") or []],
+        links=list(dict.fromkeys(u.rstrip(".,;:!?") for u in _URL.findall(description))),
+        source="youtube",
+    )
+
+
+def _details(
+    caller: ProviderCaller, key: str, ids: list[str], tally: Tally
+) -> dict[str, VideoLead]:
+    """Details for as many videos as YouTube will give; a chunk that fails is named and its
+    videos keep only what the search gave."""
     out: dict[str, VideoLead] = {}
     for start in range(0, len(ids), 50):
         chunk = ids[start : start + 50]
         query = urlencode({"part": "snippet,contentDetails", "id": ",".join(chunk)})
-        body = _youtube(caller, key, f"{YOUTUBE_VIDEOS_URL}?{query}", "videos.list")
-        for item in body.get("items") or []:
-            snippet = item.get("snippet") or {}
-            description = str(snippet.get("description") or "")
-            published = snippet.get("publishedAt")
-            out[item["id"]] = VideoLead(
-                video_id=item["id"],
-                url=f"https://www.youtube.com/watch?v={item['id']}",
-                title=snippet.get("title"),
-                channel=snippet.get("channelTitle"),
-                published_at=datetime.fromisoformat(published.replace("Z", "+00:00"))
-                if isinstance(published, str)
-                else None,
-                duration_s=iso_duration_seconds(
-                    str((item.get("contentDetails") or {}).get("duration") or "")
-                ),
-                description=description,
-                tags=[str(t) for t in snippet.get("tags") or []],
-                links=list(dict.fromkeys(u.rstrip(".,;:!?") for u in _URL.findall(description))),
-                source="youtube",
+        try:
+            body = _youtube(caller, key, f"{YOUTUBE_VIDEOS_URL}?{query}", "videos.list")
+        except _YouTubeStopped as stop:
+            rest = len(ids) - start
+            tally.fail(
+                f"Details of {rest} video(s) not read: YouTube stopped answering ({stop.why})"
             )
+            break
+        except ValueError as exc:
+            tally.fail(f"Details of {len(chunk)} video(s) not read: {exc}")
+            continue
+        tally.answer()
+        for item in body.get("items") or []:
+            if isinstance(item, dict) and isinstance(item.get("id"), str):
+                out[item["id"]] = _lead(item)
     return out
 
 
@@ -116,34 +160,6 @@ def _video_id(url: str) -> str | None:
     except ValueError:
         return None
     return found[1].removeprefix("youtube:") if found else None
-
-
-def _from_exa(
-    caller: ProviderCaller,
-    key: str | None,
-    queries: list[str],
-    exa_fallback: Callable[[str], list[str]],
-) -> list[VideoLead]:
-    ids: list[str] = []
-    found_by: dict[str, list[str]] = {}
-    for query in queries:
-        for v in map(_video_id, exa_fallback(query)):
-            if v:
-                found_by.setdefault(v, []).append(query)
-                if v not in ids:
-                    ids.append(v)
-    detailed: dict[str, VideoLead] = {}
-    if key and ids:
-        try:
-            detailed = _details(caller, key, ids)
-        except (_QuotaExhausted, ValueError):
-            detailed = {}
-    return [
-        (detailed.get(v) or _bare(v, "exa")).model_copy(
-            update={"source": "exa", "found_by": list(dict.fromkeys(found_by[v]))}
-        )
-        for v in ids
-    ]
 
 
 def _bare(video_id: str, source: Literal["youtube", "exa"]) -> VideoLead:
@@ -158,41 +174,86 @@ def find_videos(
     queries: Sequence[str],
     *,
     exa_fallback: Callable[[str], list[str]] | None,
-) -> tuple[list[VideoLead], list[str]]:
+) -> tuple[list[VideoLead], Tally]:
+    """``exa_fallback`` runs one search on Exa and returns its links; it raises ``ValueError``
+    on a failure and :class:`SourceStopped` when Exa will not sell."""
     queries = list(dict.fromkeys(queries))
+    tally = Tally()
     key = keys.youtube_api_key.get_secret_value() if keys.youtube_api_key else None
     if key is None:
-        if exa_fallback is None:
-            return [], ["youtube_data_api_key_missing"]
-        return _from_exa(caller, None, queries, exa_fallback), [
-            "youtube_data_api_key_missing_used_exa"
-        ]
+        tally.note("No YouTube key is set: every search went to Exa.")
+    youtube_stopped: _YouTubeStopped | None = None
+    exa_stopped: str | None = None
     ids: list[str] = []
+    source: dict[str, Literal["youtube", "exa"]] = {}
     found_by: dict[str, list[str]] = {}
-    try:
-        for query in queries:
+
+    def found(video_id: str, query: str, origin: Literal["youtube", "exa"]) -> None:
+        found_by.setdefault(video_id, []).append(query)
+        if video_id not in ids:
+            ids.append(video_id)
+            source[video_id] = origin
+
+    for number, query in enumerate(queries, 1):
+        if key is not None and youtube_stopped is None:
             params = urlencode({"part": "snippet", "type": "video", "maxResults": 25, "q": query})
-            body = _youtube(caller, key, f"{YOUTUBE_SEARCH_URL}?{params}", "search.list")
-            for item in body.get("items") or []:
-                vid = (item.get("id") or {}).get("videoId")
-                if isinstance(vid, str):
-                    found_by.setdefault(vid, []).append(query)
-                    if vid not in ids:
-                        ids.append(vid)
-        detailed = _details(caller, key, ids) if ids else {}
-    except _QuotaExhausted:
+            try:
+                body = _youtube(caller, key, f"{YOUTUBE_SEARCH_URL}?{params}", "search.list")
+            except _YouTubeStopped as stop:
+                youtube_stopped = stop
+                text = (
+                    f"YouTube stopped answering at search [{number}] ({stop.why}); that search "
+                    "and the ones after it went to Exa."
+                )
+                tally.note(text) if stop.quota else tally.fail(text)
+            except ValueError as exc:
+                tally.fail(f"YouTube search [{number}] {query!r} failed ({exc}); tried on Exa.")
+            else:
+                tally.answer()
+                for item in body.get("items") or []:
+                    vid = (item.get("id") or {}).get("videoId") if isinstance(item, dict) else None
+                    if isinstance(vid, str):
+                        found(vid, query, "youtube")
+                continue
         if exa_fallback is None:
-            return [], ["youtube_quota_exhausted"]
-        return _from_exa(caller, key, queries, exa_fallback), ["youtube_quota_exhausted_used_exa"]
-    except ValueError as exc:
-        return [], [str(exc)]
+            tally.fail(f"Search [{number}] {query!r} was not run: no Exa search is configured.")
+            continue
+        if exa_stopped is not None:
+            tally.fail(
+                f"Search [{number}] {query!r} was not run on Exa: Exa stopped ({exa_stopped})."
+            )
+            continue
+        try:
+            links = exa_fallback(query)
+        except SourceStopped as stop:
+            exa_stopped = stop.reason
+            tally.stop(
+                "exa",
+                stop.reason,
+                f"Exa stopped selling at search [{number}] ({stop.reason}); the searches left "
+                "were not run on Exa.",
+            )
+            continue
+        except ValueError as exc:
+            tally.fail(f"Exa search [{number}] {query!r} failed: {exc}")
+            continue
+        tally.answer()
+        for vid in map(_video_id, links):
+            if vid:
+                found(vid, query, "exa")
+
+    detailed: dict[str, VideoLead] = {}
+    if key is not None and youtube_stopped is None and ids:
+        detailed = _details(caller, key, ids, tally)
+    elif key is not None and youtube_stopped is not None and ids:
+        tally.note(f"Details of {len(ids)} video(s) not read: YouTube stopped answering.")
     leads = [
-        (detailed.get(v) or _bare(v, "youtube")).model_copy(
-            update={"found_by": list(dict.fromkeys(found_by[v]))}
+        (detailed.get(v) or _bare(v, source[v])).model_copy(
+            update={"source": source[v], "found_by": list(dict.fromkeys(found_by[v]))}
         )
         for v in ids
     ]
-    return leads, []
+    return leads, tally
 
 
 #: An overview line keeps this much of "channel — title".

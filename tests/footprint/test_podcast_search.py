@@ -114,8 +114,8 @@ def test_every_search_runs_on_every_source():
     exa, asked = exa_returning([], [])
     caller, transport = wire(*script([], []), *script([], []))
     queries = ['"Ada Example" podcast', '"Ada Example" Acme']
-    leads, gaps = find_podcasts(caller, KEYS, queries, exa_search=exa)
-    assert leads == [] and gaps == []
+    leads, tally = find_podcasts(caller, KEYS, queries, exa_search=exa)
+    assert leads == [] and tally.gaps == [] and tally.state == "complete"
     urls = [r.url for r in transport.requests]
     assert [term(r) for r in transport.requests] == [queries[0]] * 3 + [queries[1]] * 3
     assert "entity=podcastEpisode" in urls[0]
@@ -138,14 +138,14 @@ def test_one_episode_found_twice_is_listed_once_with_both_searches():
         ),
         *script([], [pi_episode("Zero trust at scale", "Ada Example of Acme joins", 1740787200)]),
     )
-    leads, gaps = find_podcasts(caller, KEYS, ["Ada Example", "Acme CISO"], exa_search=None)
+    leads, tally = find_podcasts(caller, KEYS, ["Ada Example", "Acme CISO"], exa_search=None)
     assert len(leads) == 1 and isinstance(leads[0], EpisodeLead)
     lead = leads[0]
     assert lead.found_by == ["Ada Example", "Acme CISO"]
     assert sorted(lead.sources) == ["apple", "podcast_index"]
     assert lead.transcript_url == "https://showa.example/t.vtt"
     assert lead.feed_url == "https://feeds.example/a.xml"
-    assert gaps == ["exa_podcasts_not_configured"]
+    assert tally.gaps == ["Exa's podcast transcripts are not available in this job: not searched."]
 
 
 def test_no_ranking_by_name_order_is_as_found():
@@ -175,8 +175,8 @@ def test_exa_transcript_hit_carries_passages_and_the_people_it_heard():
     )
     exa, _ = exa_returning([hit])
     caller, _ = wire(*script([], []))
-    leads, gaps = find_podcasts(caller, KEYS, ['"Ada Example"'], exa_search=exa)
-    assert gaps == []
+    leads, tally = find_podcasts(caller, KEYS, ['"Ada Example"'], exa_search=exa)
+    assert tally.gaps == []
     lead = leads[0]
     assert lead.title == "The SME cyber shield" and lead.show == "Show A"
     assert lead.sources == ["exa_podcasts"] and lead.found_by == ['"Ada Example"']
@@ -208,9 +208,10 @@ def test_exa_failure_is_a_gap_and_the_rest_still_answer():
         raise ValueError("exa HTTP 500")
 
     caller, _ = wire(*script([apple_episode("Talk", "x", "2025-01-01T00:00:00Z", feed="f")], []))
-    leads, gaps = find_podcasts(caller, KEYS, ["Ada Example"], exa_search=broken)
+    leads, tally = find_podcasts(caller, KEYS, ["Ada Example"], exa_search=broken)
     assert [lead.title for lead in leads] == ["Talk"]
-    assert gaps == ["exa_podcasts for 'Ada Example': exa HTTP 500"]
+    assert tally.gaps == ["Exa podcast search [1] 'Ada Example' failed: exa HTTP 500"]
+    assert tally.state == "partial"
 
 
 def test_podcasts_never_dropped():
@@ -241,9 +242,12 @@ def test_shows_from_byterm_are_leads_too():
 
 def test_without_podcast_index_keys_apple_only_and_gap():
     caller, transport = wire(ok({"results": []}))
-    leads, gaps = find_podcasts(caller, MediaSourceKeys(), ["Ada Example"], exa_search=None)
+    leads, tally = find_podcasts(caller, MediaSourceKeys(), ["Ada Example"], exa_search=None)
     assert leads == [] and len(transport.requests) == 1
-    assert gaps == ["podcast_index_keys_missing", "exa_podcasts_not_configured"]
+    assert tally.gaps == [
+        "Podcast Index keys are not set: it was not searched.",
+        "Exa's podcast transcripts are not available in this job: not searched.",
+    ]
 
 
 def test_a_failing_source_is_a_gap_not_an_error():
@@ -253,9 +257,9 @@ def test_a_failing_source_is_a_gap_not_an_error():
         ok({"items": [pi_episode("Talk", "Ada Example", 1740787200)]}),
         ok({"feeds": []}),
     )
-    leads, gaps = find_podcasts(caller, KEYS, ["Ada Example"], exa_search=None)
+    leads, tally = find_podcasts(caller, KEYS, ["Ada Example"], exa_search=None)
     assert [lead.title for lead in leads] == ["Talk"]
-    assert any(gap.startswith("apple_podcasts for 'Ada Example'") for gap in gaps)
+    assert any(gap.startswith("Apple search [1] 'Ada Example' failed") for gap in tally.gaps)
 
 
 # --- The overview: one short line per result (founder, 2026-11-11) -----------------------------
