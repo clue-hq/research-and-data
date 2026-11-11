@@ -23,6 +23,14 @@ chat of 2026-11-11; they are not repeated here.
 - **I1 fixed** in `25de51b1d` (with the social part of I4, and the malformed-item crash of I7 for
   the social readers). Provider replies it relies on: sources ledger, section 0a, "What each social
   provider sends when there is nothing to read".
+- **I2, I3 fixed** in `3aa7d0fcf` (podcast and video searches; search part of I4).
+- **I5 and C1 fixed** in `94e07722e` (find_handles failures named; PDL record trimmed to the
+  handle fields before it is stored; handles part of I4).
+- **I6 fixed** in `1a81709bc` (X ownership by account id; other accounts' tweets marked `in_feed`).
+- **I8 fixed** in `00eedc3af` (short links read, never followed; no spend, evidence or trace
+  noise; the redirect-loop crash of I7 gone).
+- **I4** is complete for every footprint job: an identical call after a failure re-runs the whole
+  call (founder ruling 2026-11-11: whole call, not only the missing part).
 - **Correction:** I9 is not live. The rule at `quality_pages.py:211` sits after the advisory return
   every recipe from 6 on takes (line 148); it is a leftover the spec had listed for deletion.
 

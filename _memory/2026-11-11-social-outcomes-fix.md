@@ -19,3 +19,22 @@ Branch `trial/research-quality`, commits 25de51b1d (code + tests) and e766c1eba 
 - Owed: founder approval of the new agent-facing report/recovery sentences (`footprint_operations._outcome`).
 - Not covered here (separate findings): I2/I3 recording searches, I5 PDL failure in find_handles,
   I8 short-link redirects, the rest of the review list in docs/superpowers/specs/research-quality/review-2026-11-11/.
+
+## Continued 2026-11-11 — I2, I3, I4, I5 + C1, I6, I8 (review tags review/footprint-failures/start..end)
+
+- Searches return a `Tally` (`clue_api/footprint/search_tally.py`): complete / partial / unavailable;
+  `SourceStopped` for a paid source refusing to sell; codes searches_partial / searches_unavailable.
+  YouTube quota = note, rate limit = failure; Exa stop latched as `exa` only (never podcast_index /
+  youtube_data). `footprint_operations._exa` checks status and raises the stop at once if latched.
+- find_handles → `(candidates, Tally)`, runs under label `footprint_handles`; `pdl_person` → `PdlLookup`;
+  PDL halt rule 402/401; `keep_handles_only` raw scrubber (C1); handles_partial / handles_unavailable.
+- Receipt rule: a failure that brought nothing back is `refused`, never `empty`.
+- X: own = author.rest_id == data.user.rest_id (fallback data.user.profile); kind `in_feed` for
+  another account's non-retweet; preview names its author.
+- Short links: `short_links.expand(links)` → `Expanded(addresses, failed)` on
+  `PublicMediaTransport(follow_redirects=False)`; not a provider call (no ledger/evidence/trace);
+  tests/footprint/conftest.py blocks real link opens.
+- Founder rulings: retries re-run the whole call; C1 folded into I5.
+- 402 related tests green (DB tests on clue_research_trial_test).
+- Owed: founder approval of the new agent-facing sentences (receipt report/recovery lines and the
+  `in_feed` preview title).
