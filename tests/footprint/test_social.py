@@ -447,9 +447,12 @@ from tests.footprint._pages import lnkd_page, tco_page  # noqa: E402
 QUOTED_PREVIEW = "x" * 270  # what TikHub's timeline sends for a long quoted post: its first ~280
 
 
-def one_at_a_time(monkeypatch):
-    # ScriptedTransport answers in order, so short links are opened one by one in tests.
+def one_at_a_time(monkeypatch, transport=None):
+    # ScriptedTransport answers in order, so short links are opened one by one in tests, on the
+    # same scripted transport as the provider pages when one is given.
     monkeypatch.setattr(short_links, "WORKERS", 1)
+    if transport is not None:
+        monkeypatch.setattr(short_links, "TRANSPORT", lambda: transport)
 
 
 def tweet_detail(text, *, urls=()):
@@ -515,6 +518,7 @@ def test_x_links_come_from_tikhub_and_the_rest_are_opened(monkeypatch):
     caller, transport = wire(
         timeline(item, rt), tco_page("https://bob.example/3"), tco_page("https://b.example/2")
     )
+    one_at_a_time(monkeypatch, transport)
     posts = x_posts(caller, TOKEN, "ada").posts
     assert posts[0].links == {
         "https://t.co/Known1": "https://a.example/1",
@@ -532,11 +536,12 @@ def test_linkedin_short_links_are_opened(monkeypatch):
         "content": "Apply: https://lnkd.in/gOwn",
     }
     item["resharedPost"]["content"] = "Details https://lnkd.in/gOrig"
-    caller, _ = wire(
+    caller, transport = wire(
         body({"posts": [item], "hasMore": False}),
         lnkd_page("https://jobs.example.com/1"),
         lnkd_page("https://events.example.com/2"),
     )
+    one_at_a_time(monkeypatch, transport)
     post = linkedin_activity(caller, TOKEN, "ada", "posts").posts[0]
     assert post.links == {"https://lnkd.in/gOwn": "https://events.example.com/2"}
     assert post.shared.links == {"https://lnkd.in/gOrig": "https://jobs.example.com/1"}
@@ -553,11 +558,12 @@ def test_company_reshare_is_a_repost_of_the_original(monkeypatch):
         "url": "https://www.linkedin.com/posts/lee_a-leaders-own-post-ugcPost-74-abcd",
         "poster": {"name": "Lee Leader", "linkedin_url": "https://www.linkedin.com/in/lee"},
     }
-    caller, _ = wire(
+    caller, transport = wire(
         body({"code": 200, "data": {"data": [reshare]}}, micro="1000"),
         body({"code": 200, "data": {"data": [reshare]}}, micro="1000"),
         lnkd_page("https://podcast.example/ep"),
     )
+    one_at_a_time(monkeypatch, transport)
     post = company_linkedin_posts(caller, TOKEN, "https://www.linkedin.com/company/acme/").posts[0]
     assert post.kind == "repost" and post.text == ""
     assert post.url == "https://www.linkedin.com/feed/update/urn:li:activity:75/"

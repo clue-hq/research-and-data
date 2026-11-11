@@ -252,15 +252,15 @@ def _history(
     )
 
 
-def _with_links(
-    caller: ProviderCaller, history: SocialHistory, known: dict[str, str] | None = None
-) -> SocialHistory:
+def _with_links(history: SocialHistory, known: dict[str, str] | None = None) -> SocialHistory:
     """Name the address behind every short link in the posts and what they share. ``known``
-    holds addresses the provider already sent; only the rest are opened."""
+    holds addresses the provider already sent; only the rest are opened (free, not a provider
+    call). Links that could not be opened stay as written and are counted in ``gaps``."""
     known = dict(known or {})
     texts = [p.text for p in history.posts] + [p.shared.text for p in history.posts if p.shared]
-    wanted = {link for text in texts for link in short_links.short_links(text)}
-    known.update(short_links.expand(caller, wanted - known.keys()))
+    wanted = {link for text in texts for link in short_links.short_links(text)} - known.keys()
+    opened = short_links.expand(wanted)
+    known.update(opened.addresses)
 
     def found(text: str) -> dict[str, str]:
         return {s: known[s] for s in short_links.short_links(text) if s in known}
@@ -271,7 +271,13 @@ def _with_links(
         if shared is not None:
             shared = shared.model_copy(update={"links": found(shared.text)})
         posts.append(post.model_copy(update={"links": found(post.text), "shared": shared}))
-    return history.model_copy(update={"posts": posts})
+    gaps = list(history.gaps)
+    if opened.failed:
+        gaps.append(
+            f"{opened.failed} of {len(wanted)} short link(s) could not be opened; "
+            "they are left as written"
+        )
+    return history.model_copy(update={"posts": posts, "gaps": gaps})
 
 
 # --- LinkedIn (fetchinio) ----------------------------------------------------------------------
@@ -380,7 +386,7 @@ def linkedin_activity(
 
     tool = LINKEDIN_POSTS if kind == "posts" else LINKEDIN_REACTIONS
     history = _history(caller, token, tool, first, parse, base_url, ends_on_empty=False)
-    return _with_links(caller, history)
+    return _with_links(history)
 
 
 # --- X (TikHub) --------------------------------------------------------------------------------
@@ -578,7 +584,7 @@ def x_posts(
     # TikHub keeps handing out a cursor after the last tweet: a page with nothing new is the end.
     history = _history(caller, token, X_TIMELINE, first, parse, base_url, ends_on_empty=True)
     history = _x_full_quotes(caller, token, history, known, base_url)
-    return _with_links(caller, history, known)
+    return _with_links(history, known)
 
 
 # --- Instagram and Facebook (ScrapeCreators) ---------------------------------------------------
@@ -777,4 +783,4 @@ def company_linkedin_posts(
     history = _history(
         caller, token, COMPANY_LINKEDIN_POSTS, first, parse, base_url, ends_on_empty=True
     )
-    return _with_links(caller, history)
+    return _with_links(history)

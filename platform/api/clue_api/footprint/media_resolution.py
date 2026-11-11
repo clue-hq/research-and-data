@@ -140,7 +140,13 @@ def youtube_url(url: str) -> tuple[str, str] | None:
 
 
 class PublicMediaTransport:
-    """Bounded public GETs. Each redirect reconnects only to independently validated DNS IPs."""
+    """Bounded public GETs. Each redirect reconnects only to independently validated DNS IPs.
+
+    With ``follow_redirects=False`` a redirect is returned as it came (its ``location`` header
+    read, never fetched), for callers that only want to know where a link points."""
+
+    def __init__(self, *, follow_redirects: bool = True) -> None:
+        self.follow_redirects = follow_redirects
 
     def send(self, request: HttpRequest) -> HttpResponse:
         import httpx
@@ -189,7 +195,7 @@ class PublicMediaTransport:
 
             result: object = asyncio.run(checked_fetch())
             assert isinstance(result, HttpResponse)
-            if result.status not in {301, 302, 303, 307, 308}:
+            if result.status not in {301, 302, 303, 307, 308} or not self.follow_redirects:
                 return HttpResponse(
                     result.status, {**result.headers, "x-arv2-final-url": url}, result.body
                 )
