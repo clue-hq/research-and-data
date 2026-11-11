@@ -375,3 +375,72 @@ def test_exa_lead_has_its_url_as_source_id():
     caller, _ = wire(*script([], []))
     [found], _ = find_podcasts(caller, KEYS, ["Ada Example"], exa_search=exa)
     assert found.source_ids == [f"exa:{hit.url}"]
+
+
+# --- Review I14: audio and feed link keys (shapes from the r44a replies, names neutral) -------
+
+import pytest  # noqa: E402
+
+from clue_api.footprint.podcast_search import audio_key, feed_key  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    ("wrapped", "plain"),
+    [
+        (
+            "https://dts.podtrac.com/redirect.mp3/api.spreaker.com/download/episode/1/ep_543.mp3",
+            "https://api.spreaker.com/download/episode/1/ep_543.mp3",
+        ),
+        (
+            "https://www.podtrac.com/pts/redirect.mp3/pdst.fm/e/traffic.megaphone.fm/ADV1.mp3",
+            "https://traffic.megaphone.fm/ADV1.mp3",
+        ),
+        (
+            "https://chrt.fm/track/3B598B/traffic.megaphone.fm/IDG1.mp3?updated=1666810578",
+            "https://traffic.megaphone.fm/IDG1.mp3",
+        ),
+        (
+            "https://pdst.fm/e/traffic.megaphone.fm/ICF1.mp3?updated=1732551535",
+            "https://traffic.megaphone.fm/ICF1.mp3",
+        ),
+        (
+            "https://mgln.ai/e/482/traffic.omny.fm/d/clips/4fab/486b/89ec/audio.mp3",
+            "https://traffic.omny.fm/d/clips/4fab/486b/89ec/audio.mp3",
+        ),
+        (
+            "https://anchor.fm/s/a2e9334/podcast/play/79844797/https%3A%2F%2Fd3ctx.cloudfront.net"
+            "%2Fproduction%2Fexports%2Fa2e9334%2F79844797%2F6485.m4a",
+            "https://d3ctx.cloudfront.net/production/exports/a2e9334/79844797/6485.m4a",
+        ),
+    ],
+)
+def test_audio_key_unwraps_trackers(wrapped, plain):
+    assert audio_key(wrapped) == audio_key(plain) is not None
+
+
+def test_audio_key_ignores_query_on_a_file_scheme_and_case():
+    assert audio_key("https://Media.Host.fm/a/X.mp3?updated=1") == audio_key(
+        "http://media.host.fm/a/X.mp3"
+    )
+
+
+def test_audio_key_keeps_the_query_without_a_file_name():
+    assert audio_key("https://host.example/play?id=1") != audio_key(
+        "https://host.example/play?id=2"
+    )
+
+
+def test_audio_key_tells_different_files_apart():
+    assert audio_key("https://traffic.megaphone.fm/A.mp3") != audio_key(
+        "https://traffic.megaphone.fm/B.mp3"
+    )
+
+
+def test_feed_key_normalises_scheme_www_case_and_slash():
+    assert feed_key("http://www.Feeds.Example/a.xml/") == feed_key("https://feeds.example/a.xml")
+    assert feed_key("https://feeds.example/a.xml") != feed_key("https://feeds.example/b.xml")
+
+
+def test_keys_of_missing_links_are_none():
+    assert audio_key(None) is None and audio_key("") is None
+    assert feed_key(None) is None and feed_key("  ") is None

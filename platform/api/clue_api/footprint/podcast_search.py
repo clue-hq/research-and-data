@@ -21,7 +21,7 @@ import re
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, unquote, urlsplit
 
 from pydantic import BaseModel, Field
 
@@ -104,6 +104,53 @@ def _text_id(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+#: A path segment that is itself a host name: where a tracker's redirect wraps the real address.
+_HOST_SEGMENT = re.compile(r"(?:[a-z0-9-]+\.)+[a-z]{2,}")
+#: The last path segment of an audio or media file.
+_FILE_SEGMENT = re.compile(r"\.(?:mp3|m4a|mp4|aac|ogg|oga|opus|wav|flac|webm|m4v|mov)$")
+
+
+def audio_key(url: str | None) -> str | None:
+    """The audio file a link points at, seen through tracking redirects.
+
+    Trackers wrap the real address in their own path (``dts.podtrac.com/redirect.mp3/<host>/…``,
+    ``chrt.fm/track/<id>/<host>/…``, anchor.fm's percent-encoded ``…/play/<id>/https%3A%2F%2F…``),
+    sometimes several in a chain; the file starts at the last path segment that is a host name.
+    The scheme, host case and a leading ``www.`` are ignored, and so is the query of a file name
+    (it carries per-request tokens); a path with no file name keeps its query, because some hosts
+    serve every episode from one path.
+    """
+    if not url or not url.strip():
+        return None
+    parts = urlsplit(unquote(url.strip()))
+    segments = [seg for seg in f"{parts.netloc}{parts.path}".split("/") if seg]
+    if not segments:
+        return None
+    start = 0
+    for index, segment in enumerate(segments[1:], 1):
+        lowered = segment.lower().split(":")[0]
+        if _HOST_SEGMENT.fullmatch(lowered) and not _FILE_SEGMENT.search(lowered):
+            start = index
+    tail = segments[start:]
+    if tail and tail[0].lower() in ("http:", "https:"):
+        tail = tail[1:]
+    key = "/".join(tail).lower().removeprefix("www.")
+    if not _FILE_SEGMENT.search(key) and parts.query:
+        key = f"{key}?{parts.query}"
+    return key or None
+
+
+def feed_key(url: str | None) -> str | None:
+    """A feed link with the scheme, case, a leading ``www.`` and a trailing slash ignored."""
+    if not url or not url.strip():
+        return None
+    parts = urlsplit(url.strip())
+    key = f"{parts.netloc}{parts.path}".lower().removeprefix("www.").rstrip("/")
+    if parts.query:
+        key = f"{key}?{parts.query}"
+    return key or None
 
 
 def _links(text: str) -> list[str]:
