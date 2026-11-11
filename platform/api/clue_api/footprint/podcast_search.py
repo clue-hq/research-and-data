@@ -6,6 +6,12 @@ so an episode whose title and description never name its guest can still be foun
 2026-11-11). The same episode found by several searches or sources is listed once, with every
 search that found it; a missing feed link is filled from Apple's lookup.
 
+Two results are one episode only on proof from the publisher's own ids (review I14, 2026-11-12):
+the same source id, the same GUID within the same show, the same audio file seen through tracking
+redirects, or the same show, title, day and length; Exa results, which carry no feed, GUID or
+audio, on the same show name, title and day. Results that merely look alike stay separate lines,
+because a wrong merge pairs one episode's audio with another's description and guests.
+
 Nothing is dropped or ranked by name: the list keeps the order the searches found it, and whether
 an episode is really this person is the agent's judgement. A transcript often spells a name
 wrongly, so no code may judge an episode by its spelling.

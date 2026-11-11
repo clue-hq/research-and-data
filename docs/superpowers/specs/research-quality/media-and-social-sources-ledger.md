@@ -194,6 +194,19 @@ variant, employer and role) against the old name-only search, on the episodes we
 The price is a longer list for the agent to read (86–201 results per person against 4–66). Spend about
 21 ¢ (Exa). Not yet done: using Exa's ready-made transcript instead of transcribing an episode ourselves.
 
+### Recognising the same episode across sources (2026-11-12, review I14)
+
+Apple and Podcast Index both read the publisher's RSS feed, so they carry its ids. Coverage in the
+r44a stored replies: episode GUID, feed and audio file on 100% of 565 Apple and 561 Podcast Index
+episode results; Apple's show id on 100% of Apple and 88% of Podcast Index (`feedItunesId`);
+duration on 98% of Apple and 100% of Podcast Index. 37 episodes were found by both: same GUID,
+same audio, lengths within 1 s. Apple lists one feed under two show ids (Inspired Execution), and
+one GUID appears in 8 pairs of different feeds (host moves, syndication), so a GUID counts only
+within the same show. Trackers seen in front of audio files: podtrac (sometimes chained to
+pdst.fm), chrt.fm, pdst.fm, mgln.ai, anchor.fm (percent-encoded); 249 of 816 links carry a query.
+Exa hits carry none of these ids (show name, title and date only). `find_podcasts` now merges only
+on these proofs (`podcast_search._group`).
+
 ## 3. Transcription
 
 | Route | What it handles | Cost | Tested on | Result | Verdict |

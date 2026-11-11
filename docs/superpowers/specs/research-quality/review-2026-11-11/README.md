@@ -73,6 +73,15 @@ chat of 2026-11-11; they are not repeated here.
   error, unreadable answer) is now saved with its reason; the next read retries once; after that
   the saved failure is shown on every transcript page without asking Jev again (each ask can wait
   300 s twice). A saved answer always wins over saved failures. Not seen in r44a (all 5 answered).
+- **I14 fixed** (review tags `review/podcast-identity/start..end`, plan
+  `docs/superpowers/plans/2026-11-12-podcast-identity-merge.md`). Podcast results merge only on the
+  publisher's own ids: the same source id, the same GUID within the same show (Apple show id or
+  feed), the same audio file seen through tracking redirects, or the same show, title, day and
+  length; Exa results on the same show name, title and day. Missing values never match; anything
+  less stays two lines. Replayed on r44a's 1,187 stored results: 945 leads before, 948 after; the
+  3 old merges split apart were wrong or unproven (two different "Indian Genes" items; "The Cyber
+  World" in two feeds). The overview's "may be the same episode as #N" note (Task 4) waits for the
+  founder's approval of its wording.
 
 ## Critical
 
