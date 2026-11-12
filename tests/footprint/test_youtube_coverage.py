@@ -122,3 +122,80 @@ def test_the_text_the_agent_reads_carries_the_same_labels():
         "[00:05] Ann Barron-DiCamillo: Ann late.\n"
         "A line with: a colon and no label."
     )
+
+
+# --- rebuilding a paid transcript from saved answers after a crash (review C3) -------------------
+# Each saved answer carries the clip it was asked for (its request's videoMetadata). Recovery used
+# to pair answers with windows by position, which the coverage re-ask (two answers for one window)
+# broke: answers landed 23-40 minutes off, a window was never transcribed, and it read "complete".
+
+
+def timed(last_ts: int, word: str) -> Transcript:
+    lines = (TranscriptLine(0, "S1", f"{word} start"), TranscriptLine(last_ts, "S1", f"{word} end"))
+    return Transcript(model="m", text="\n".join(line.text for line in lines), lines=lines)
+
+
+WINDOWS = [(0, 2400), (2400, 4800), (4800, 7200)]
+
+
+def test_a_reasked_window_and_a_missing_window_are_placed_by_their_own_clips():
+    from clue_api.footprint.gemini_media_client import rebuild_windows
+
+    answers = [  # saved in arrival order: window 1, its re-ask, window 2; window 3 never answered
+        (0, timed(1000, "w1")),
+        (1000, timed(1380, "w1b")),
+        (2400, timed(2390, "w2")),
+    ]
+    joined = rebuild_windows(WINDOWS, answers)
+    assert [(line.ts_s, line.text) for line in joined.lines] == [
+        (0, "w1 start"),
+        (1000, "w1 end"),
+        (1000, "w1b start"),
+        (2380, "w1b end"),
+        (2400, "w2 start"),
+        (4790, "w2 end"),
+    ]
+    assert joined.finish_reason == "MISSING_80:00-120:00"
+
+
+def test_every_window_answered_with_a_reask_is_complete():
+    from clue_api.footprint.gemini_media_client import rebuild_windows
+
+    answers = [(0, timed(1000, "a")), (1000, timed(1380, "b")), (2400, timed(2390, "c"))]
+    answers.append((4800, timed(2390, "d")))
+    assert rebuild_windows(WINDOWS, answers).finish_reason == "STOP"
+
+
+def test_the_order_answers_were_saved_in_does_not_matter():
+    from clue_api.footprint.gemini_media_client import rebuild_windows
+
+    answers = [(2400, timed(2390, "c")), (0, timed(1000, "a")), (1000, timed(1380, "b"))]
+    joined = rebuild_windows(WINDOWS, answers)
+    assert [line.ts_s for line in joined.lines] == [0, 1000, 1000, 2380, 2400, 4790]
+
+
+def test_a_window_cut_short_with_no_reask_saved_is_partial_from_where_it_stopped():
+    from clue_api.footprint.gemini_media_client import rebuild_windows
+
+    joined = rebuild_windows([(0, 2400)], [(0, timed(1000, "a"))])
+    assert joined.finish_reason == "MISSING_16:40-40:00"
+
+
+def test_two_saved_answers_for_the_same_clip_count_once():
+    from clue_api.footprint.gemini_media_client import rebuild_windows
+
+    joined = rebuild_windows([(0, 2400)], [(0, timed(2390, "a")), (0, timed(2390, "a"))])
+    assert len(joined.lines) == 2 and joined.finish_reason == "STOP"
+
+
+def test_the_clip_is_read_from_the_saved_request():
+    from clue_api.footprint.gemini_media_client import clip_of_request
+
+    body = (
+        '{"contents":[{"parts":[{"fileData":{"fileUri":"https://www.youtube.com/watch?v=x",'
+        '"mimeType":"video/mp4"},"videoMetadata":{"endOffset":"2293s","fps":0.2,'
+        '"startOffset":"1000s"}},{"text":"prompt"}]}]}'
+    )
+    assert clip_of_request(body) == (1000, 2293)
+    assert clip_of_request('{"contents":[{"parts":[{"text":"no clip"}]}]}') is None
+    assert clip_of_request("not json") is None

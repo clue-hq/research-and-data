@@ -28,9 +28,11 @@ from clue_api.footprint.gemini_media_client import (
     GeminiMediaClient,
     SpeakerContext,
     Transcript,
+    clip_of_request,
     covered_window,
     detect_loops,
     join_windows,
+    rebuild_windows,
     sentence_lines,
     youtube_windows,
 )
@@ -96,7 +98,10 @@ def assess_transcript(
     )
 
 
-async def raw_responses(runtime: Any, conn: Any, operation: dict[str, Any]) -> list[dict[str, Any]]:
+async def raw_exchanges(
+    runtime: Any, conn: Any, operation: dict[str, Any]
+) -> list[tuple[str, dict[str, Any]]]:
+    """Each saved successful provider answer with the request text that asked for it."""
     row = (
         await conn.execute(
             text(
@@ -106,7 +111,7 @@ async def raw_responses(runtime: Any, conn: Any, operation: dict[str, Any]) -> l
             {"ws": runtime.scope.workspace_id, "id": operation["operation_id"]},
         )
     ).one()
-    responses = []
+    exchanges = []
     for key in row.artifact_keys:
         _, raw = await read_verified_artifact(
             conn, runtime.storage, storage_key=key, workspace_id=runtime.scope.workspace_id
@@ -130,8 +135,13 @@ async def raw_responses(runtime: Any, conn: Any, operation: dict[str, Any]) -> l
             except ValueError:
                 continue
             if isinstance(body, dict):
-                responses.append(body)
-    return responses
+                request = record.get("request") or {}
+                exchanges.append((str(request.get("body_text") or ""), body))
+    return exchanges
+
+
+async def raw_responses(runtime: Any, conn: Any, operation: dict[str, Any]) -> list[dict[str, Any]]:
+    return [body for _, body in await raw_exchanges(runtime, conn, operation)]
 
 
 async def resolve_url(runtime: Any, url: str, hint: str | None) -> Resolution:
@@ -614,24 +624,20 @@ async def _acquire_youtube(
                     runtime, conn, UUID(op["result"]["version_ref"])
                 )
             return receipt(saved, reused=True)
-        # Every window was paid but the transcript was never saved: rebuild it from the saved
-        # responses, as the Deepgram route does. A window that was never answered is an unknown
-        # outcome and is not bought again.
+        # The answers were paid but the transcript was never saved: rebuild it from the saved
+        # answers, as the Deepgram route does. Each answer is placed by the clip its own request
+        # asked for (a re-asked window has two answers), and a window that was never answered is
+        # named as missing, making the transcript partial; it is not bought again (review C3).
         async with runtime._conn_factory() as conn:
-            bodies = [b for b in await raw_responses(runtime, conn, op) if "candidates" in b]
-        if len(bodies) == len(windows):
-            model = runtime.settings.arv2_media_video_model
-            recovered = join_windows(
-                [
-                    (
-                        start,
-                        GeminiMediaClient.parse_native_recording(
-                            body, model=model, structured=True
-                        ),
-                    )
-                    for (start, _), body in zip(windows, bodies, strict=True)
-                ]
-            )
+            exchanges = await raw_exchanges(runtime, conn, op)
+        model = runtime.settings.arv2_media_video_model
+        answers = [
+            (clip[0], GeminiMediaClient.parse_native_recording(body, model=model, structured=True))
+            for asked, body in exchanges
+            if "candidates" in body and (clip := clip_of_request(asked)) is not None
+        ]
+        if answers:
+            recovered = rebuild_windows(windows, answers)
             return await _save_transcript(
                 runtime,
                 op=op,

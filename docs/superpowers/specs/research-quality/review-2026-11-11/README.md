@@ -73,6 +73,17 @@ chat of 2026-11-11; they are not repeated here.
   error, unreadable answer) is now saved with its reason; the next read retries once; after that
   the saved failure is shown on every transcript page without asking Jev again (each ask can wait
   300 s twice). A saved answer always wins over saved failures. Not seen in r44a (all 5 answered).
+- **C3 fixed** (review tags `review/youtube-recovery/start..end`). Recovery after a crash places each
+  saved Gemini answer by the clip its own saved request asked for (`videoMetadata`), not by its
+  position, so a re-asked window's two answers no longer shift the rest; every window is checked like
+  the live coverage check, and a window never answered is named (`MISSING_80:00-120:00`), making the
+  transcript partial instead of "complete". Any saved answers are now used, not only a full set.
+  **New, found while fixing (2026-11-12), not yet fixed:** Gemini's timestamps are not what the
+  windowing assumes. In r44a's FINOS panel (33:33) the first answer's times ran 0:00-25:52 then
+  jumped back (5:57-13:28) for the last 8 minutes; the coverage check took the highest time, re-asked
+  25:52-33:33, and the re-ask came back in whole-video time, which the join shifted by 25:52 again.
+  The saved transcript holds the last 8 minutes twice, both copies mistimed (57 segments past the
+  video's end). Proposal to the founder pending.
 - **I14 fixed** (review tags `review/podcast-identity/start..end`, plan
   `docs/superpowers/plans/2026-11-12-podcast-identity-merge.md`). Podcast results merge only on the
   publisher's own ids: the same source id, the same GUID within the same show (Apple show id or

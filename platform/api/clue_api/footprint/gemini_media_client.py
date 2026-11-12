@@ -753,6 +753,66 @@ def covered_window(
     return [(start, first), (resume, second)]
 
 
+def clip_of_request(body_text: str) -> tuple[int, int] | None:
+    """The clip a saved Gemini request asked for (``videoMetadata`` start and end, in seconds), or
+    ``None`` when the request names no clip or cannot be read."""
+    try:
+        body = json.loads(body_text)
+        for part in body["contents"][0]["parts"]:
+            clip = part.get("videoMetadata") if isinstance(part, dict) else None
+            if isinstance(clip, dict):
+                start = float(str(clip["startOffset"]).rstrip("s"))
+                end = float(str(clip["endOffset"]).rstrip("s"))
+                return int(start), int(end)
+    except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+        return None
+    return None
+
+
+def _clock(seconds: int) -> str:
+    return f"{seconds // 60:02d}:{seconds % 60:02d}"
+
+
+def rebuild_windows(
+    windows: Sequence[tuple[int, int]], answers: Sequence[tuple[int, Transcript]]
+) -> Transcript:
+    """A transcript rebuilt from saved answers after a crash (review C3).
+
+    Each answer is placed by the clip it was asked for, never by its position among the saved
+    answers: the coverage re-ask gives one window two answers. Every window is then checked the way
+    :func:`covered_window` checks it; a window with no answer, or one that stops short with no
+    answer for the rest, is named in ``finish_reason`` (``MISSING_80:00-120:00``), which makes the
+    transcript partial. Two answers for the same clip count once (the one that reaches further).
+    """
+    best: dict[int, Transcript] = {}
+    for start, part in answers:
+        kept = best.get(start)
+        if kept is None or (_last_ts(part) or 0) > (_last_ts(kept) or 0):
+            best[start] = part
+    if not best:
+        raise ValueError("no saved answers to rebuild from")
+    parts = sorted(best.items())
+    missing: list[tuple[int, int]] = []
+    for window_start, window_end in windows:
+        slack = max(COVERAGE_SLACK_S, int((window_end - window_start) * COVERAGE_SLACK_SHARE))
+        inside = [(start, part) for start, part in parts if window_start <= start < window_end]
+        if not inside:
+            missing.append((window_start, window_end))
+            continue
+        # An answer without timestamps cannot be checked and counts as covering its window.
+        reached = max(
+            window_end if _last_ts(part) is None else start + (_last_ts(part) or 0)
+            for start, part in inside
+        )
+        if reached < window_end - slack:
+            missing.append((reached, window_end))
+    joined = join_windows(parts)
+    if not missing:
+        return joined
+    gaps = ",".join(f"{_clock(a)}-{_clock(b)}" for a, b in missing)
+    return replace(joined, finish_reason=f"MISSING_{gaps}")
+
+
 _NUMBERED_LABEL_RE = re.compile(r"^(S\d+)(?:\s*\((.*)\))?$")
 _NOT_A_NAME_RE = re.compile(r"unknown|unidentified|unclear|^\W*$", re.IGNORECASE)
 
