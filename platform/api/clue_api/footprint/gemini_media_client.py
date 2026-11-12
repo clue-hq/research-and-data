@@ -716,41 +716,16 @@ def youtube_windows(duration_s: int, window_s: int) -> list[tuple[int, int]]:
     return [(start, min(start + window_s, duration_s)) for start in range(0, duration_s, window_s)]
 
 
-#: A window whose last timestamp falls short of its end by more than this is re-asked once for the
-#: missing part (founder 2026-11-09: Gemini can stop early without saying so).
-COVERAGE_SLACK_S = 60
-COVERAGE_SLACK_SHARE = 0.05
+def transcribe_windows(
+    transcribe: Callable[[int, int], Transcript], windows: Sequence[tuple[int, int]]
+) -> Transcript:
+    """One Gemini answer per window, accepted as it is (founder ruling 2026-11-12).
 
-
-def _last_ts(transcript: Transcript) -> int | None:
-    stamps = [line.ts_s for line in transcript.lines if line.ts_s is not None]
-    return max(stamps) if stamps else None
-
-
-def covered_window(
-    transcribe: Callable[[int, int], Transcript], start: int, end: int
-) -> list[tuple[int, Transcript]]:
-    """One window, checked for coverage: the last timestamp against the window's end.
-
-    Short by more than ``max(60 s, 5%)`` of the window: the missing part is asked once more, from
-    the last timestamp. Still short: the part is kept and marked ``STOPPED_EARLY_AT_<mm:ss>``, which
-    makes the joined transcript partial. A transcript without timestamps cannot be checked and is
-    kept as it is.
+    A window is never re-asked for a part it seems to have missed: that check read Gemini's own
+    timestamps, which can jump backwards or come back in whole-video time, and in r44a it had the
+    last 8 minutes of a panel transcribed twice.
     """
-    slack = max(COVERAGE_SLACK_S, int((end - start) * COVERAGE_SLACK_SHARE))
-    first = transcribe(start, end)
-    last = _last_ts(first)
-    if last is None or start + last >= end - slack:
-        return [(start, first)]
-    resume = start + last
-    second = transcribe(resume, end)
-    second_last = _last_ts(second)
-    reached = resume + (second_last or 0)
-    if reached < end - slack:
-        second = replace(
-            second, finish_reason=f"STOPPED_EARLY_AT_{reached // 60:02d}:{reached % 60:02d}"
-        )
-    return [(start, first), (resume, second)]
+    return join_windows([(start, transcribe(start, end)) for start, end in windows])
 
 
 def clip_of_request(body_text: str) -> tuple[int, int] | None:
@@ -779,33 +754,21 @@ def rebuild_windows(
     """A transcript rebuilt from saved answers after a crash (review C3).
 
     Each answer is placed by the clip it was asked for, never by its position among the saved
-    answers: the coverage re-ask gives one window two answers. Every window is then checked the way
-    :func:`covered_window` checks it; a window with no answer, or one that stops short with no
-    answer for the rest, is named in ``finish_reason`` (``MISSING_80:00-120:00``), which makes the
-    transcript partial. Two answers for the same clip count once (the one that reaches further).
+    answers, and is accepted as it is, like a live answer. A window with no saved answer is named
+    in ``finish_reason`` (``MISSING_80:00-120:00``), which makes the transcript partial. When one
+    clip was answered twice (a run repeated after a crash), the first saved answer is kept.
     """
-    best: dict[int, Transcript] = {}
+    first: dict[int, Transcript] = {}
     for start, part in answers:
-        kept = best.get(start)
-        if kept is None or (_last_ts(part) or 0) > (_last_ts(kept) or 0):
-            best[start] = part
-    if not best:
+        first.setdefault(start, part)
+    if not first:
         raise ValueError("no saved answers to rebuild from")
-    parts = sorted(best.items())
-    missing: list[tuple[int, int]] = []
-    for window_start, window_end in windows:
-        slack = max(COVERAGE_SLACK_S, int((window_end - window_start) * COVERAGE_SLACK_SHARE))
-        inside = [(start, part) for start, part in parts if window_start <= start < window_end]
-        if not inside:
-            missing.append((window_start, window_end))
-            continue
-        # An answer without timestamps cannot be checked and counts as covering its window.
-        reached = max(
-            window_end if _last_ts(part) is None else start + (_last_ts(part) or 0)
-            for start, part in inside
-        )
-        if reached < window_end - slack:
-            missing.append((reached, window_end))
+    parts = sorted(first.items())
+    missing = [
+        (window_start, window_end)
+        for window_start, window_end in windows
+        if not any(window_start <= start < window_end for start, _ in parts)
+    ]
     joined = join_windows(parts)
     if not missing:
         return joined

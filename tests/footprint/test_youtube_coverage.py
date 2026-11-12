@@ -1,12 +1,17 @@
-"""YouTube coverage check: a window Gemini stopped early is re-asked once for the missing part."""
+"""Long YouTube videos: one Gemini answer per window, accepted as it is.
+
+Founder ruling 2026-11-12: whatever Gemini returns for a window on the first attempt is kept; it is
+never re-asked for a part it seems to have missed (the coverage re-ask, built on Gemini's own
+timestamps, transcribed the last 8 minutes of r44a's FINOS panel twice).
+"""
 
 from __future__ import annotations
 
 from clue_api.footprint.gemini_media_client import (
     Transcript,
     TranscriptLine,
-    covered_window,
     join_windows,
+    transcribe_windows,
 )
 
 
@@ -32,32 +37,12 @@ class Fake:
         return self.answers.pop(0)
 
 
-def test_full_transcript_not_rerun():
-    fake = Fake(part(2350))
-    parts = covered_window(fake, 0, 2400)
-    assert fake.asked == [(0, 2400)] and len(parts) == 1
-
-
-def test_short_transcript_rerun_once():
-    fake = Fake(part(1200), part(1150, "rest"))
-    parts = covered_window(fake, 2400, 4800)
-    assert fake.asked == [(2400, 4800), (3600, 4800)]
-    joined = join_windows(parts)
-    assert joined.finish_reason == "STOP" and "rest" in joined.text
-    assert max(line.ts_s for line in joined.lines) == 3600 + 1150
-
-
-def test_still_short_marked_partial():
-    fake = Fake(part(600), part(300))
-    parts = covered_window(fake, 0, 2400)
-    assert len(fake.asked) == 2
-    joined = join_windows(parts)
-    assert joined.finish_reason == "STOPPED_EARLY_AT_15:00"
-
-
-def test_no_timestamps_is_left_as_is():
-    fake = Fake(part(None))
-    assert len(covered_window(fake, 0, 2400)) == 1 and len(fake.asked) == 1
+def test_every_window_is_asked_once_and_a_short_answer_is_kept():
+    fake = Fake(part(600, "first"), part(2350, "second"))
+    joined = transcribe_windows(fake, [(0, 2400), (2400, 4800)])
+    assert fake.asked == [(0, 2400), (2400, 4800)]
+    assert [line.text for line in joined.lines] == ["start", "first", "start", "second"]
+    assert joined.finish_reason == "STOP"
 
 
 def said(*lines: tuple[int, str, str]) -> Transcript:
@@ -126,8 +111,7 @@ def test_the_text_the_agent_reads_carries_the_same_labels():
 
 # --- rebuilding a paid transcript from saved answers after a crash (review C3) -------------------
 # Each saved answer carries the clip it was asked for (its request's videoMetadata). Recovery used
-# to pair answers with windows by position, which the coverage re-ask (two answers for one window)
-# broke: answers landed 23-40 minutes off, a window was never transcribed, and it read "complete".
+# to pair answers with windows by position, which slipped as soon as one window had two answers.
 
 
 def timed(last_ts: int, word: str) -> Transcript:
@@ -138,54 +122,32 @@ def timed(last_ts: int, word: str) -> Transcript:
 WINDOWS = [(0, 2400), (2400, 4800), (4800, 7200)]
 
 
-def test_a_reasked_window_and_a_missing_window_are_placed_by_their_own_clips():
+def test_answers_are_placed_by_their_own_clips_and_an_unanswered_window_is_named():
     from clue_api.footprint.gemini_media_client import rebuild_windows
 
-    answers = [  # saved in arrival order: window 1, its re-ask, window 2; window 3 never answered
-        (0, timed(1000, "w1")),
-        (1000, timed(1380, "w1b")),
-        (2400, timed(2390, "w2")),
-    ]
+    answers = [(2400, timed(2390, "w2")), (0, timed(1000, "w1"))]  # window 3 never answered
     joined = rebuild_windows(WINDOWS, answers)
     assert [(line.ts_s, line.text) for line in joined.lines] == [
         (0, "w1 start"),
         (1000, "w1 end"),
-        (1000, "w1b start"),
-        (2380, "w1b end"),
         (2400, "w2 start"),
         (4790, "w2 end"),
     ]
     assert joined.finish_reason == "MISSING_80:00-120:00"
 
 
-def test_every_window_answered_with_a_reask_is_complete():
-    from clue_api.footprint.gemini_media_client import rebuild_windows
-
-    answers = [(0, timed(1000, "a")), (1000, timed(1380, "b")), (2400, timed(2390, "c"))]
-    answers.append((4800, timed(2390, "d")))
-    assert rebuild_windows(WINDOWS, answers).finish_reason == "STOP"
-
-
-def test_the_order_answers_were_saved_in_does_not_matter():
-    from clue_api.footprint.gemini_media_client import rebuild_windows
-
-    answers = [(2400, timed(2390, "c")), (0, timed(1000, "a")), (1000, timed(1380, "b"))]
-    joined = rebuild_windows(WINDOWS, answers)
-    assert [line.ts_s for line in joined.lines] == [0, 1000, 1000, 2380, 2400, 4790]
-
-
-def test_a_window_cut_short_with_no_reask_saved_is_partial_from_where_it_stopped():
+def test_a_short_answer_is_accepted_as_it_is():
     from clue_api.footprint.gemini_media_client import rebuild_windows
 
     joined = rebuild_windows([(0, 2400)], [(0, timed(1000, "a"))])
-    assert joined.finish_reason == "MISSING_16:40-40:00"
+    assert joined.finish_reason == "STOP" and len(joined.lines) == 2
 
 
-def test_two_saved_answers_for_the_same_clip_count_once():
+def test_the_first_saved_answer_for_a_window_is_kept():
     from clue_api.footprint.gemini_media_client import rebuild_windows
 
-    joined = rebuild_windows([(0, 2400)], [(0, timed(2390, "a")), (0, timed(2390, "a"))])
-    assert len(joined.lines) == 2 and joined.finish_reason == "STOP"
+    joined = rebuild_windows([(0, 2400)], [(0, timed(900, "first")), (0, timed(2390, "later"))])
+    assert [line.text for line in joined.lines] == ["first start", "first end"]
 
 
 def test_the_clip_is_read_from_the_saved_request():

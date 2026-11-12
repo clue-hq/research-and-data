@@ -83,7 +83,10 @@ chat of 2026-11-11; they are not repeated here.
   jumped back (5:57-13:28) for the last 8 minutes; the coverage check took the highest time, re-asked
   25:52-33:33, and the re-ask came back in whole-video time, which the join shifted by 25:52 again.
   The saved transcript holds the last 8 minutes twice, both copies mistimed (57 segments past the
-  video's end). Proposal to the founder pending.
+  video's end). **Founder 2026-11-12:** keep it simple; each window gets one Gemini answer,
+  accepted as it is, never re-asked (review tags `review/no-reask/start..end`). Recovery likewise
+  accepts each saved answer as it is and names only windows with no answer. Still open: Gemini may
+  give whole-video times for windows after the first, which the join shifts again.
 - **I14 fixed** (review tags `review/podcast-identity/start..end`, plan
   `docs/superpowers/plans/2026-11-12-podcast-identity-merge.md`). Podcast results merge only on the
   publisher's own ids: the same source id, the same GUID within the same show (Apple show id or

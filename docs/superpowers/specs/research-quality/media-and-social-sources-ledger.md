@@ -46,6 +46,7 @@ gift pilot's recipients (`~/gift-poc`, `~/daymaker-rea`).
    of the same episode when there is one (publisher transcript or Deepgram); (2) otherwise Gemini on the public
    YouTube link; YouTube captions through treg are dropped as a route. The Gemini model is one env setting,
    `CLUE_ARV2_MEDIA_VIDEO_MODEL` (today `gemini-3.5-flash-lite`); the founder will choose it after trying models.
+   **Superseded 2026-11-12 (founder): no coverage check or re-ask; each window's first answer is kept as it is.**
    Add a coverage check: compare the transcript's last timestamp with the video length from the YouTube API and
    re-run only the missing part once. Shorter Gemini windows (`CLUE_ARV2_MEDIA_GEMINI_WINDOW_SECONDS`, now 2400)
    are worth considering. Gemini's transcripts carry speaker labels, so Jev picks the label as for Deepgram;

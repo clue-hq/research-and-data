@@ -29,11 +29,10 @@ from clue_api.footprint.gemini_media_client import (
     SpeakerContext,
     Transcript,
     clip_of_request,
-    covered_window,
     detect_loops,
-    join_windows,
     rebuild_windows,
     sentence_lines,
+    transcribe_windows,
     youtube_windows,
 )
 from clue_api.footprint.media_recording import prepare_audio
@@ -673,9 +672,7 @@ async def _acquire_youtube(
             )
             return part
 
-        return join_windows(
-            [part for start, end in windows for part in covered_window(transcribe, start, end)]
-        )
+        return transcribe_windows(transcribe, windows)
 
     transcript = await ops.call(runtime, op, "gemini", hop)
     return await _save_transcript(
