@@ -26,6 +26,9 @@ chat of 2026-11-11; they are not repeated here.
 - **I2, I3 fixed** in `3aa7d0fcf` (podcast and video searches; search part of I4).
 - **I5 and C1 fixed** in `94e07722e` (find_handles failures named; PDL record trimmed to the
   handle fields before it is stored; handles part of I4).
+- **I7 fixed** by `25de51b1d` (a malformed provider item is skipped and counted as "could not be
+  read", never a crash) and `00eedc3af` (short links are no longer followed, so no redirect-loop
+  crash). Re-checked 2026-11-12 against the current code with the reviewer's malformed items.
 - **I6 fixed** in `1a81709bc` (X ownership by account id; other accounts' tweets marked `in_feed`).
 - **I8 fixed** in `00eedc3af` (short links read, never followed; no spend, evidence or trace
   noise; the redirect-loop crash of I7 gone).
@@ -78,7 +81,7 @@ chat of 2026-11-11; they are not repeated here.
   position, so a re-asked window's two answers no longer shift the rest; every window is checked like
   the live coverage check, and a window never answered is named (`MISSING_80:00-120:00`), making the
   transcript partial instead of "complete". Any saved answers are now used, not only a full set.
-  **New, found while fixing (2026-11-12), not yet fixed:** Gemini's timestamps are not what the
+  **Found while fixing (2026-11-12), resolved below:** Gemini's timestamps are not what the
   windowing assumes. In r44a's FINOS panel (33:33) the first answer's times ran 0:00-25:52 then
   jumped back (5:57-13:28) for the last 8 minutes; the coverage check took the highest time, re-asked
   25:52-33:33, and the re-ask came back in whole-video time, which the join shifted by 25:52 again.
