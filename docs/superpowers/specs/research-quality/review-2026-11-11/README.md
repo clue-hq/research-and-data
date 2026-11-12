@@ -85,8 +85,10 @@ chat of 2026-11-11; they are not repeated here.
   The saved transcript holds the last 8 minutes twice, both copies mistimed (57 segments past the
   video's end). **Founder 2026-11-12:** keep it simple; each window gets one Gemini answer,
   accepted as it is, never re-asked (review tags `review/no-reask/start..end`). Recovery likewise
-  accepts each saved answer as it is and names only windows with no answer. Still open: Gemini may
-  give whole-video times for windows after the first, which the join shifts again.
+  accepts each saved answer as it is and names only windows with no answer. Whole-video times
+  (founder 2026-11-12, tags `review/window-times/start..end`): a window whose first timestamp is
+  already at or past its start keeps its times as written; rebuilt from its saved answers, the FINOS
+  panel has no line past the video's end (was 57).
 - **I14 fixed** (review tags `review/podcast-identity/start..end`, plan
   `docs/superpowers/plans/2026-11-12-podcast-identity-merge.md`). Podcast results merge only on the
   publisher's own ids: the same source id, the same GUID within the same show (Apple show id or

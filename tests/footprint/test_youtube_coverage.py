@@ -161,3 +161,14 @@ def test_the_clip_is_read_from_the_saved_request():
     assert clip_of_request(body) == (1000, 2293)
     assert clip_of_request('{"contents":[{"parts":[{"text":"no clip"}]}]}') is None
     assert clip_of_request("not json") is None
+
+
+def test_a_window_already_in_whole_video_time_is_not_shifted_again():
+    """Founder 2026-11-12. In r44a a clip from 25:52 came back timed 25:56 onwards (whole-video
+    time), and adding 25:52 again put lines at 51:48-59:21 of a 33-minute video. A window whose
+    first timestamp is already at or past its start keeps its times as Gemini wrote them."""
+    first = said((10, "S1", "Opening."))
+    whole_video_time = said((2410, "S1", "Second window."), (2500, "S1", "Later."))
+    clip_time = said((10, "S1", "Third window."))
+    joined = join_windows([(0, first), (2400, whole_video_time), (4800, clip_time)])
+    assert [line.ts_s for line in joined.lines] == [10, 2410, 2500, 4810]

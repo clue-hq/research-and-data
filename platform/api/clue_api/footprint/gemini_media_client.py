@@ -831,16 +831,21 @@ def join_windows(parts: Sequence[tuple[int, Transcript]]) -> Transcript:
     finish: str | None = "STOP"
     for number, (start, part) in enumerate(parts, 1):
         texts.append(_relabel_text(part.text, number, len(parts)))
+        # Gemini may time a clip from the start of the whole video (r44a: a clip from 25:52 came
+        # back as 25:56 onwards). Such times are kept as written; clip times get the clip's start
+        # added (founder 2026-11-12).
+        stamps = [line.ts_s for line in part.lines if line.ts_s is not None]
+        shift = 0 if stamps and stamps[0] >= start else start
         lines.extend(
             replace(
                 line,
-                ts_s=None if line.ts_s is None else line.ts_s + start,
+                ts_s=None if line.ts_s is None else line.ts_s + shift,
                 speaker=_speaker_across_parts(line.speaker, number, len(parts)),
             )
             for line in part.lines
         )
         quotes.extend(
-            replace(quote, ts_s=None if quote.ts_s is None else quote.ts_s + start)
+            replace(quote, ts_s=None if quote.ts_s is None else quote.ts_s + shift)
             for quote in part.quotes
         )
         if finish == "STOP" and part.finish_reason not in {None, "STOP", "stop"}:
