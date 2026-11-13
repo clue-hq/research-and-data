@@ -575,7 +575,12 @@ every workspace via `LUMEN_SITE_LIVE_WORKSPACES=*`) is on `main` and deployed.
     runtime switch off `document.cookie` and `cookieStore` before any section loads, for the page and
     every same-origin frame or window its code reaches (`site-kit/src/cookie-lock.ts`), and our
     servers set no cookies on `cluehq.page` or `edit.deeppresence.ai` — so no workspace's code can put
-    a cookie where another workspace's pages or editor would receive it. The editor server also reads
+    a cookie where another workspace's pages or editor would receive it. One planned exception
+    (founder 2026-11-13, visitor intelligence decision D10,
+    `docs/specs/WVI-5-v2-visitor-intelligence-on-puck-sites.md` §5.6): the page origin will set a
+    visitor cookie and its opt-out marker. Each is set by the server, unreadable by page code, and
+    named with the `__Host-` prefix so it reaches only the one workspace's address that set it; the
+    cookie lock does not affect it and it cannot reach another workspace. The editor server also reads
     no cookies and accepts up to 1 MB of headers. What only the list (or a customer's own domain)
     gives: Google Safe Browsing judging each workspace address on its own, so one abusive page cannot
     get all of `cluehq.page` flagged. Until then, unpublish an abusive page quickly, and point

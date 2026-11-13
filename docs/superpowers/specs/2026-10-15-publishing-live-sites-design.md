@@ -256,6 +256,14 @@ to the agent (§11).
 
 ## 7. Tracking
 
+> **Superseded 2026-11-13 (founder ruling; visitor intelligence D9).** The tracking design in this
+> section was never built and is replaced by `docs/specs/WVI-5-v2-visitor-intelligence-on-puck-sites.md`.
+> That document also replaces the visitor id in `localStorage` (§4.2), the `POST /_clue/events/{slug}`
+> route (§4.7) and its Worker rule (§4.8): events go to `POST /_clue/e` and are stored in `visit_event`,
+> and the visitor id is a cookie that page code cannot read. `kit.track` and the hydration report are
+> kept, sent the new way. Forms and the lead email (§6) are unchanged. The text below is kept as the
+> record of the earlier design.
+
 - The runtime sends a `page_view` on load; sections send their own events with `kit.track`. Each event
   carries the site, the route, the account the site was made for and the visitor id.
 - Stored in a new table `site_event` (workspace-scoped, retention-bounded). Hydration mismatch reports
